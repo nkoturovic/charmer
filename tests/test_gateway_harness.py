@@ -574,6 +574,7 @@ class GateAndEvidenceTests(unittest.TestCase):
             "test_gateway_v8_traffic",  # Exact native client and separately timed TLS traffic
             "test_gateway_surfaces",  # v8 traffic helpers and the fixture TLS OAuth route
             "test_gateway_fable",  # the Claude OAuth pool's fixture TLS upstream
+            "test_gateway_private_network",  # the redirect row's fixture TLS upstream
             "test_gateway_lifecycle", "test_gateway_doctor", "test_gateway_service",
         })
         modules = {"tests." + p.stem for p in (REPO_ROOT / "tests").glob("test_gateway_*.py")

@@ -157,7 +157,7 @@
     },
     {
       "basename": "cli-proxy-api-output-cap.patch",
-      "sha256": "4daca00e7711fa0d3d949483667ee492c34bd26670291d6b4715eb18bee8a550",
+      "sha256": "aee70e81d033f842dbdf6d538b1c4f6638fbe965986c5c7e2d73b493fab9d81d",
       "admitted": true
     },
     {
@@ -187,12 +187,17 @@
     },
     {
       "basename": "cli-proxy-api-codex-refresh-without-journal.patch",
-      "sha256": "53f48b53806db0bc6b2d411a32467dfaa9a365e552de9d6b50e6473ed282d78e",
+      "sha256": "0a112a12b1ef5f7116aca2aee337efa19902faa608da2346e96e4bd72026a3fd",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-native-advisor-beta-order.patch",
       "sha256": "d4e9fc3ea76787cde7553c25a753e6888402bbac4d865788160a37303757f3fa",
+      "admitted": true
+    },
+    {
+      "basename": "cli-proxy-api-private-network-dial.patch",
+      "sha256": "8cb2219558a8260ebfbdef3c170ff37c9daeacacf6968c39dee1af396a2ccb06",
       "admitted": true
     }
   ],
@@ -1066,7 +1071,7 @@
       "packages": [
         "./internal/runtime/executor"
       ],
-      "run": "^(TestCodexRefreshWithoutJournalFailureBeforeSendRecovers|TestCodexRefreshWithoutJournalRotatedTokensAreUsedAndSaved|TestCodexRefreshWithoutJournalUnsentExchangeHoldsNothing|TestCodexRefreshWithoutJournalRateLimitAndUnavailableAreRetried|TestCodexRefreshWithoutJournalLeftClaimDoesNotHoldTheGrant|TestCodexRefreshWithoutJournalWritesNoJournalFile)$",
+      "run": "^(TestCodexRefreshWithoutJournalFailureBeforeSendRecovers|TestCodexRefreshWithoutJournalRotatedTokensAreUsedAndSaved|TestCodexRefreshWithoutJournalUnsentExchangeHoldsNothing|TestCodexRefreshWithoutJournalRateLimitAndUnavailableAreRetried|TestCodexRefreshWithoutJournalLeftClaimDoesNotHoldTheGrant|TestCodexRefreshWithoutJournalWritesNoJournalFile|TestCodexRefreshWithoutJournalLostResponseEndsInSignIn)$",
       "platforms": "portable",
       "race": false,
       "count": null,
@@ -1076,7 +1081,46 @@
         "TestCodexRefreshWithoutJournalUnsentExchangeHoldsNothing",
         "TestCodexRefreshWithoutJournalRateLimitAndUnavailableAreRetried",
         "TestCodexRefreshWithoutJournalLeftClaimDoesNotHoldTheGrant",
-        "TestCodexRefreshWithoutJournalWritesNoJournalFile"
+        "TestCodexRefreshWithoutJournalWritesNoJournalFile",
+        "TestCodexRefreshWithoutJournalLostResponseEndsInSignIn"
+      ]
+    },
+    {
+      "name": "private-network-dial",
+      "packages": [
+        "./internal/privatenet",
+        "./internal/config",
+        "./internal/runtime/executor",
+        "./internal/watcher/diff",
+        "./internal/watcher/synthesizer"
+      ],
+      "run": "^(TestClassifyCorpus|TestCheckPrecedence|TestCheckLocal|TestDialerMixedAnswersResolveOnceAndDialOnlyTheClass|TestDialerLiteralAddressIsNotResolved|TestDialerRefusesWithTheStrongestReasonAndDialsNothing|TestDialerFixedGatewayPortsNeverDialed|TestDialerTailnetLocalAddressRule|TestDialControlRechecksTheSocketAddress|TestDialerConnectsOnLoopback|TestRefusedErrorIsFixedAndCanonical|TestTransportShapeAndCacheIdentity|TestTransportUsesNoEnvironmentProxyAndHTTP11|TestClientFollowsNoRedirect|TestOpenAICompatPrivateNetworkNormalization|TestPrivateNetworkEverySiteServesItsClass|TestPrivateNetworkEverySiteRefusesOutsideItsClass|TestPrivateNetworkRefusesTheGatewaysOwnPort|TestPrivateNetworkUsesNoProxy|TestPrivateNetworkKeylessFollowsNoRedirect|TestDiffOpenAICompatPrivateNetworkPrintsClassAndURLOnly|TestSynthesizeOpenAICompatPrivateNetworkClass)$",
+      "platforms": "portable",
+      "race": false,
+      "count": null,
+      "expected_tests": [
+        "TestClassifyCorpus",
+        "TestCheckPrecedence",
+        "TestCheckLocal",
+        "TestDialerMixedAnswersResolveOnceAndDialOnlyTheClass",
+        "TestDialerLiteralAddressIsNotResolved",
+        "TestDialerRefusesWithTheStrongestReasonAndDialsNothing",
+        "TestDialerFixedGatewayPortsNeverDialed",
+        "TestDialerTailnetLocalAddressRule",
+        "TestDialControlRechecksTheSocketAddress",
+        "TestDialerConnectsOnLoopback",
+        "TestRefusedErrorIsFixedAndCanonical",
+        "TestTransportShapeAndCacheIdentity",
+        "TestTransportUsesNoEnvironmentProxyAndHTTP11",
+        "TestClientFollowsNoRedirect",
+        "TestOpenAICompatPrivateNetworkNormalization",
+        "TestPrivateNetworkEverySiteServesItsClass",
+        "TestPrivateNetworkEverySiteRefusesOutsideItsClass",
+        "TestPrivateNetworkRefusesTheGatewaysOwnPort",
+        "TestPrivateNetworkUsesNoProxy",
+        "TestPrivateNetworkKeylessFollowsNoRedirect",
+        "TestDiffOpenAICompatPrivateNetworkPrintsClassAndURLOnly",
+        "TestSynthesizeOpenAICompatPrivateNetworkClass"
       ]
     },
     {
@@ -1180,6 +1224,10 @@
     {
       "patch": "cli-proxy-api-codex-refresh-without-journal.patch",
       "text": "failed to parse refresh response: missing or invalid token fields"
+    },
+    {
+      "patch": "cli-proxy-api-private-network-dial.patch",
+      "text": "private-network: refused provider=%s class=%s remote=%s reason=%s"
     }
   ]
 }

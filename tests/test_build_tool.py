@@ -448,6 +448,8 @@ if args[0] == "build":
     lines = []
     for fields in (line.split()[1:] for line in (src / "vendor" / "modules.txt").read_text().splitlines()
                    if line.startswith("# ")):
+        if fields[1:2] == ["=>"]:
+            continue  # a wildcard-replacement footer is no module of its own
         if "=>" in fields:
             at = fields.index("=>")
             target = (fields[at + 1:] + ["", ""])[:2]
@@ -617,10 +619,11 @@ class EndToEndTests(unittest.TestCase):
         self.recipe["source"]["tree_sha256"] = tool.tree_sha256(unpacked)
         self.write_recipe()
 
-    def replaced_vendor(self, header, *, licence=True):
+    def replaced_vendor(self, header, *, licence=True, footer=None):
         """A vendor tree that also holds example.orig, which go.mod replaces
-        (``header`` is its modules.txt line); Go vendors a replaced module
-        under the required import path."""
+        (``header`` is its modules.txt line, ``footer`` the trailing line Go
+        writes for a replacement without a left-hand version); Go vendors a
+        replaced module under the required import path."""
 
         orig = self.vendor / "example.orig"
         orig.mkdir(exist_ok=True)
@@ -629,7 +632,8 @@ class EndToEndTests(unittest.TestCase):
             (orig / "LICENSE").write_text(FORK_LICENSE)
         else:
             (orig / "LICENSE").unlink(missing_ok=True)
-        (self.vendor / "modules.txt").write_text(f"# example.dep v1.0.0\nexample.dep\n{header}\nexample.orig\n")
+        (self.vendor / "modules.txt").write_text(f"# example.dep v1.0.0\nexample.dep\n{header}\nexample.orig\n"
+                                                 + (f"{footer}\n" if footer else ""))
         self.recipe["vendor"]["tree_sha256"] = tool.tree_sha256(self.vendor)
         self.write_recipe()
         self.seed_vendor_cache()
@@ -1197,6 +1201,33 @@ class EndToEndTests(unittest.TestCase):
         notices = (self.dist / "licenses" / "THIRD_PARTY_NOTICES.txt").read_text()
         self.assertIn("example.orig v0.1.0-alpha.1 replaced by example.fork v0.1.2 (MIT)", notices)
         self.assertIn("Copyright (c) 2026 Fork Example", notices)
+
+    def test_a_wildcard_replacement_footer_keeps_the_versioned_record(self):
+        # A replacement without a left-hand version makes Go write the
+        # versioned header and a trailing "# path => replacement version"
+        # footer; the footer never displaces the header's record.
+        self.republish_source(self.FORK_SUMS)
+        self.replaced_vendor(self.REPLACED, footer="# example.orig => example.fork v0.1.2")
+        self.assertEqual(tool.vendored_records(self.vendor)["example.orig"],
+                         ("v0.1.0-alpha.1", "=>", "example.fork", "v0.1.2"))
+        self.run_tool("fetch", "vendor", "apply", "build")
+        self.run_tool("notices")
+        modules = {module["path"]: module for module in
+                   json.loads((self.licenses / "modules.json").read_text())["modules"]}
+        self.assertEqual(modules["example.orig"]["version"], "v0.1.0-alpha.1")
+        self.assertEqual(modules["example.orig"]["replace"], {"path": "example.fork", "version": "v0.1.2"})
+
+    def test_a_wildcard_footer_that_disagrees_with_its_header_is_refused(self):
+        for footer in ("# example.orig => example.fork v0.1.3", "# example.orig => example.other v0.1.2",
+                       "# example.missing => example.fork v0.1.2"):
+            with self.subTest(footer=footer):
+                self.replaced_vendor(self.REPLACED, footer=footer)
+                with self.assertRaisesRegex(tool.BuildError, "wildcard replacement .* does not match its module header"):
+                    tool.vendored_records(self.vendor)
+        self.replaced_vendor(self.REPLACED, footer="# example.orig => example.fork v0.1.2\n"
+                                                   "# example.orig => example.fork v0.1.2")
+        with self.assertRaisesRegex(tool.BuildError, "lists the wildcard replacement of example.orig twice"):
+            tool.vendored_records(self.vendor)
 
     def test_a_replacement_without_its_go_sum_hash_is_refused(self):
         # Only the required module's hash: the replacement's source is unverified.

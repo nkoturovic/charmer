@@ -1,0 +1,1916 @@
+diff --git a/internal/config/config_normalization.go b/internal/config/config_normalization.go
+index 40addc36..0f936439 100644
+--- a/internal/config/config_normalization.go
++++ b/internal/config/config_normalization.go
+@@ -1,10 +1,12 @@
+ package config
+ 
+ import (
++	"net/url"
+ 	"sort"
+ 	"strconv"
+ 	"strings"
+ 
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/privatenet"
+ 	sdkpluginstore "github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginstore"
+ 	log "github.com/sirupsen/logrus"
+ )
+@@ -297,6 +299,12 @@ func (cfg *Config) SanitizeOpenAICompatibility() {
+ 		e.Prefix = normalizeModelPrefix(e.Prefix)
+ 		e.BaseURL = strings.TrimSpace(e.BaseURL)
+ 		e.Headers = NormalizeHeaders(e.Headers)
++		if e.PrivateNetwork != nil {
++			if !normalizeOpenAICompatPrivateNetwork(&e) {
++				log.Warnf("private-network: provider %s dropped: invalid private-network declaration", e.Name)
++				continue
++			}
++		}
+ 		if e.BaseURL == "" {
+ 			// Skip providers with no base-url; treated as removed
+ 			continue
+@@ -306,6 +314,30 @@ func (cfg *Config) SanitizeOpenAICompatibility() {
+ 	cfg.OpenAICompatibility = out
+ }
+ 
++// normalizeOpenAICompatPrivateNetwork keeps a private-network entry iff its
++// class is loopback, lan or tailnet, it carries no top-level base-url (one
++// that normalization itself set is kept) and its base-url parses as http(s)
++// with a host; it then sets BaseURL from the declaration.
++func normalizeOpenAICompatPrivateNetwork(e *OpenAICompatibility) bool {
++	declared := *e.PrivateNetwork
++	declared.BaseURL = strings.TrimSpace(declared.BaseURL)
++	declared.Class = strings.TrimSpace(declared.Class)
++	if !privatenet.ValidClass(declared.Class) {
++		return false
++	}
++	if e.BaseURL != "" && !(e.PrivateNetworkNormalized && e.BaseURL == declared.BaseURL) {
++		return false
++	}
++	parsed, err := url.Parse(declared.BaseURL)
++	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.User != nil {
++		return false
++	}
++	e.PrivateNetwork = &declared
++	e.BaseURL = declared.BaseURL
++	e.PrivateNetworkNormalized = true
++	return true
++}
++
+ // SanitizeCodexKeys removes Codex API key entries missing a BaseURL.
+ // It trims whitespace and preserves order for remaining entries.
+ func (cfg *Config) SanitizeCodexKeys() {
+diff --git a/internal/config/config_types.go b/internal/config/config_types.go
+index 1e0b8777..2fd7e7cc 100644
+--- a/internal/config/config_types.go
++++ b/internal/config/config_types.go
+@@ -1104,6 +1104,16 @@ type OpenAICompatibility struct {
+ 	// BaseURL is the base URL for the external OpenAI-compatible API endpoint.
+ 	BaseURL string `yaml:"base-url" json:"base-url"`
+ 
++	// PrivateNetwork declares the provider on a private network: its base URL
++	// and the one class every upstream address must belong to. Such an entry
++	// carries no top-level base-url; normalization sets BaseURL from it.
++	PrivateNetwork *OpenAICompatPrivateNetwork `yaml:"private-network,omitempty" json:"private-network,omitempty"`
++
++	// PrivateNetworkNormalized marks an entry whose BaseURL normalization set
++	// from PrivateNetwork, so normalizing it (or a runtime copy) again keeps
++	// it. It is never read from or written to a config file.
++	PrivateNetworkNormalized bool `yaml:"-" json:"-"`
++
+ 	// APIKeyEntries defines API keys with optional per-key proxy configuration.
+ 	APIKeyEntries []OpenAICompatibilityAPIKey `yaml:"api-key-entries,omitempty" json:"api-key-entries,omitempty"`
+ 
+@@ -1132,6 +1142,13 @@ type OpenAICompatibility struct {
+ 	RequestScopedErrors []RequestScopedErrorRule `yaml:"request-scoped-errors,omitempty" json:"request-scoped-errors,omitempty"`
+ }
+ 
++// OpenAICompatPrivateNetwork is the private-network declaration of an
++// OpenAI-compatible provider. Class is loopback, lan or tailnet.
++type OpenAICompatPrivateNetwork struct {
++	BaseURL string `yaml:"base-url" json:"base-url"`
++	Class   string `yaml:"class" json:"class"`
++}
++
+ // OpenAICompatibilityAPIKey represents an API key configuration with optional proxy setting.
+ type OpenAICompatibilityAPIKey struct {
+ 	// APIKey is the authentication key for accessing the external API services.
+diff --git a/internal/config/openai_compat_private_network_test.go b/internal/config/openai_compat_private_network_test.go
+new file mode 100644
+index 00000000..ee803c33
+--- /dev/null
++++ b/internal/config/openai_compat_private_network_test.go
+@@ -0,0 +1,104 @@
++package config
++
++import (
++	"bytes"
++	"strings"
++	"testing"
++
++	log "github.com/sirupsen/logrus"
++)
++
++// The renderer's block form with JSON-quoted strings.
++const privateNetworkConfig = `openai-compatibility:
++  - name: "pn-loopback"
++    private-network:
++      base-url: " http://127.0.0.1:8010/v1 "
++      class: "loopback"
++    api-key-entries:
++      - api-key: "pn-sentinel-key-0123456789"
++    models:
++      - name: "wire"
++        alias: "pn-loopback-model"
++  - name: "pn-both"
++    base-url: "http://10.0.0.5:8010/v1"
++    private-network:
++      base-url: "http://10.0.0.5:8010/v1"
++      class: "lan"
++  - name: "pn-unknown-class"
++    private-network:
++      base-url: "http://10.0.0.5:8010/v1"
++      class: "public"
++  - name: "pn-scheme"
++    private-network:
++      base-url: "ftp://10.0.0.5/v1"
++      class: "lan"
++  - name: "pn-no-host"
++    private-network:
++      base-url: "http:///v1"
++      class: "lan"
++  - name: "pn-userinfo"
++    private-network:
++      base-url: "http://user:pn-userinfo-secret@10.0.0.5/v1"
++      class: "lan"
++  - name: "pn-empty-class"
++    private-network:
++      base-url: "http://10.0.0.5:8010/v1"
++  - name: "pn-tailnet"
++    private-network: {"base-url": "https://box.tailnet.example:8443/v1", "class": "tailnet"}
++  - name: "ordinary"
++    base-url: "https://api.example.com/v1"
++`
++
++func TestOpenAICompatPrivateNetworkNormalization(t *testing.T) {
++	var logs bytes.Buffer
++	logger := log.StandardLogger()
++	previous := logger.Out
++	logger.SetOutput(&logs)
++	t.Cleanup(func() { logger.SetOutput(previous) })
++
++	cfg, err := ParseConfigBytes([]byte(privateNetworkConfig))
++	if err != nil {
++		t.Fatal(err)
++	}
++	check := func(cfg *Config) {
++		t.Helper()
++		var names []string
++		for _, e := range cfg.OpenAICompatibility {
++			names = append(names, e.Name)
++		}
++		if strings.Join(names, ",") != "pn-loopback,pn-tailnet,ordinary" {
++			t.Fatalf("kept %v", names)
++		}
++		loopback, tailnet, ordinary := cfg.OpenAICompatibility[0], cfg.OpenAICompatibility[1], cfg.OpenAICompatibility[2]
++		if loopback.BaseURL != "http://127.0.0.1:8010/v1" || loopback.PrivateNetwork == nil ||
++			*loopback.PrivateNetwork != (OpenAICompatPrivateNetwork{BaseURL: "http://127.0.0.1:8010/v1", Class: "loopback"}) {
++			t.Fatalf("loopback entry = %+v %+v", loopback, loopback.PrivateNetwork)
++		}
++		if tailnet.BaseURL != "https://box.tailnet.example:8443/v1" || tailnet.PrivateNetwork.Class != "tailnet" {
++			t.Fatalf("tailnet entry = %+v", tailnet)
++		}
++		if ordinary.PrivateNetwork != nil || ordinary.BaseURL != "https://api.example.com/v1" {
++			t.Fatalf("ordinary entry = %+v", ordinary)
++		}
++	}
++	check(cfg)
++	// Normalizing again, or a runtime copy, keeps the entries normalization
++	// itself completed.
++	cfg.SanitizeOpenAICompatibility()
++	check(cfg)
++	runtime := cfg.CloneForRuntime()
++	runtime.SanitizeOpenAICompatibility()
++	check(runtime)
++
++	text := logs.String()
++	for _, name := range []string{"pn-both", "pn-unknown-class", "pn-scheme", "pn-no-host", "pn-userinfo", "pn-empty-class"} {
++		if !strings.Contains(text, "private-network: provider "+name+" dropped: invalid private-network declaration") {
++			t.Errorf("no fixed warning for %s", name)
++		}
++	}
++	for _, leaked := range []string{"10.0.0.5", "pn-userinfo-secret", "pn-sentinel-key", "ftp://", "public"} {
++		if strings.Contains(text, leaked) {
++			t.Errorf("warning printed %q", leaked)
++		}
++	}
++}
+diff --git a/internal/privatenet/privatenet.go b/internal/privatenet/privatenet.go
+new file mode 100644
+index 00000000..1258cc62
+--- /dev/null
++++ b/internal/privatenet/privatenet.go
+@@ -0,0 +1,412 @@
++// Package privatenet is the dial guard for OpenAI-compatible providers that
++// are declared on a private network (the "private-network" block of an
++// openai-compatibility entry: a base URL and one class, loopback, lan or
++// tailnet).
++//
++// Such a provider is reached only through Transport: no proxy from any
++// source, HTTP/1.1, no redirect, and a dialer that resolves the host once,
++// drops every address outside the declared class, dials only the remaining
++// addresses by literal address, re-checks the address in the socket's dial
++// control hook and, for a tailnet, checks the connection's local address
++// before any byte is written. Loopback to the gateway's own port, 8316 and
++// 8317 is refused whatever the class.
++//
++// Classification is one ordered table (the first matching rule wins), the
++// same table the launcher uses; both are tested against one corpus of
++// addresses. A zone is dropped and an IPv4-mapped IPv6 address is read as
++// its IPv4 address before an address is classified; an IPv4-compatible
++// address (::/96, other than ::1) is never a provider address.
++//
++// The package depends on the standard library only.
++package privatenet
++
++import (
++	"context"
++	"crypto/tls"
++	"errors"
++	"net"
++	"net/http"
++	"net/netip"
++	"slices"
++	"strconv"
++	"strings"
++	"sync"
++	"syscall"
++	"time"
++)
++
++// The declarable classes, and the two classes no provider may use.
++const (
++	Loopback = "loopback"
++	LAN      = "lan"
++	Tailnet  = "tailnet"
++	Never    = "never"
++	Public   = "public"
++)
++
++// Refusal reasons, the words of the refusal log line.
++const (
++	ReasonNever           = "never"
++	ReasonGatewayPort     = "gateway-port"
++	ReasonOutsideClass    = "outside-class"
++	ReasonLocalNotTailnet = "local-not-tailnet"
++)
++
++// FixedGatewayPorts are refused on loopback for every class, together with
++// the gateway's own configured port.
++var FixedGatewayPorts = []int{8316, 8317}
++
++// DialTimeout bounds one connection attempt.
++const DialTimeout = 30 * time.Second
++
++type rule struct {
++	prefix netip.Prefix
++	class  string
++}
++
++// rules is the classification table; the first matching rule wins, so the
++// specific exclusions come before the ranges that contain them.
++var rules = []rule{
++	// Cloud instance metadata services.
++	{netip.MustParsePrefix("169.254.169.254/32"), Never},
++	{netip.MustParsePrefix("100.100.100.200/32"), Never},
++	{netip.MustParsePrefix("fd00:ec2::254/128"), Never},
++	{netip.MustParsePrefix("127.0.0.0/8"), Loopback},
++	{netip.MustParsePrefix("::1/128"), Loopback},
++	{netip.MustParsePrefix("0.0.0.0/8"), Never},
++	{netip.MustParsePrefix("169.254.0.0/16"), Never},
++	{netip.MustParsePrefix("224.0.0.0/4"), Never},
++	{netip.MustParsePrefix("255.255.255.255/32"), Never},
++	{netip.MustParsePrefix("::/128"), Never},
++	{netip.MustParsePrefix("::/96"), Never},
++	{netip.MustParsePrefix("fe80::/10"), Never},
++	{netip.MustParsePrefix("ff00::/8"), Never},
++	// The overlay's own service and reserved addresses, and its 4via6 range.
++	{netip.MustParsePrefix("100.100.0.0/24"), Never},
++	{netip.MustParsePrefix("100.100.100.0/24"), Never},
++	{netip.MustParsePrefix("100.115.92.0/23"), Never},
++	{netip.MustParsePrefix("100.101.102.103/32"), Never},
++	{netip.MustParsePrefix("fd7a:115c:a1e0::53/128"), Never},
++	{netip.MustParsePrefix("fd7a:115c:a1e0:b1a::/64"), Never},
++	{netip.MustParsePrefix("100.64.0.0/10"), Tailnet},
++	{netip.MustParsePrefix("fd7a:115c:a1e0::/48"), Tailnet},
++	{netip.MustParsePrefix("10.0.0.0/8"), LAN},
++	{netip.MustParsePrefix("172.16.0.0/12"), LAN},
++	{netip.MustParsePrefix("192.168.0.0/16"), LAN},
++	{netip.MustParsePrefix("fc00::/7"), LAN},
++}
++
++// ValidClass reports whether class is one a provider may declare.
++func ValidClass(class string) bool {
++	return class == Loopback || class == LAN || class == Tailnet
++}
++
++// Normalize drops a zone and reads an IPv4-mapped IPv6 address as IPv4.
++func Normalize(addr netip.Addr) netip.Addr {
++	return addr.WithZone("").Unmap()
++}
++
++// Classify returns loopback, lan, tailnet, never or public. An invalid
++// address is never.
++func Classify(addr netip.Addr) string {
++	if !addr.IsValid() {
++		return Never
++	}
++	addr = Normalize(addr)
++	for _, r := range rules {
++		if r.prefix.Contains(addr) {
++			return r.class
++		}
++	}
++	return Public
++}
++
++// Check returns the refusal reason for a connection to addr:port for a
++// provider declared on class, or "" when it is allowed. The precedence is
++// never, then gateway-port (a loopback address on a gateway port, whatever
++// the class), then outside-class; an undeclarable class allows nothing.
++func Check(addr netip.Addr, port int, class string, gatewayPorts []int) string {
++	found := Classify(addr)
++	switch {
++	case found == Never:
++		return ReasonNever
++	case found == Loopback && slices.Contains(gatewayPorts, port):
++		return ReasonGatewayPort
++	case !ValidClass(class) || found != class:
++		return ReasonOutsideClass
++	}
++	return ""
++}
++
++// CheckLocal is the local-address rule: a tailnet connection's own address
++// must be a tailnet address too. Other classes have no local-address rule.
++func CheckLocal(addr netip.Addr, class string) string {
++	if class == Tailnet && Classify(addr) != Tailnet {
++		return ReasonLocalNotTailnet
++	}
++	return ""
++}
++
++// rank orders refusal reasons by precedence (lower is stronger).
++func rank(reason string) int {
++	switch reason {
++	case ReasonNever:
++		return 0
++	case ReasonGatewayPort:
++		return 1
++	case ReasonOutsideClass:
++		return 2
++	}
++	return 3
++}
++
++// RefusedError is a refused upstream address. Its text names only the
++// declared class; Remote and Reason are for the refusal log line, never for
++// the client.
++type RefusedError struct {
++	Class  string
++	Remote string
++	Reason string
++}
++
++// Error returns the fixed client-visible text.
++func (e *RefusedError) Error() string {
++	return "upstream address refused: outside the provider's private network (" + displayClass(e.Class) + ")"
++}
++
++// StatusCode reports 502 Bad Gateway.
++func (e *RefusedError) StatusCode() int { return http.StatusBadGateway }
++
++func displayClass(class string) string {
++	if ValidClass(class) {
++		return class
++	}
++	return "unknown"
++}
++
++// IsRefused reports whether err is, or wraps, a refused address.
++func IsRefused(err error) bool {
++	var refused *RefusedError
++	return errors.As(err, &refused)
++}
++
++// Canonical returns a fresh copy of the refusal err wraps, built locally and
++// wrapping nothing (the HTTP client wraps a dial error with the request
++// URL), and whether err is a refusal.
++func Canonical(err error) (*RefusedError, bool) {
++	var refused *RefusedError
++	if !errors.As(err, &refused) || refused == nil {
++		return nil, false
++	}
++	return &RefusedError{Class: refused.Class, Remote: refused.Remote, Reason: refused.Reason}, true
++}
++
++// LookupFunc resolves a host name to its addresses.
++type LookupFunc func(ctx context.Context, network, host string) ([]netip.Addr, error)
++
++// ConnectFunc opens one connection to a literal address. control is the
++// dial control hook the connection must run before it connects.
++type ConnectFunc func(ctx context.Context, network, address string, control func(ctx context.Context, network, address string, c syscall.RawConn) error) (net.Conn, error)
++
++// Dialer is the guarded dialer of one class.
++type Dialer struct {
++	Class        string
++	GatewayPorts []int
++	// Lookup resolves a host name once; nil uses the default resolver.
++	Lookup LookupFunc
++	// Connect opens a connection; nil uses a net.Dialer with DialTimeout.
++	Connect ConnectFunc
++}
++
++// NewDialer returns the guarded dialer of class for a gateway listening on
++// gatewayPort (0 when unknown).
++func NewDialer(class string, gatewayPort int) *Dialer {
++	return &Dialer{Class: class, GatewayPorts: gatewayPorts(gatewayPort)}
++}
++
++func gatewayPorts(port int) []int {
++	ports := slices.Clone(FixedGatewayPorts)
++	if port > 0 && !slices.Contains(ports, port) {
++		ports = append(ports, port)
++	}
++	slices.Sort(ports)
++	return ports
++}
++
++func defaultLookup(ctx context.Context, network, host string) ([]netip.Addr, error) {
++	return net.DefaultResolver.LookupNetIP(ctx, network, host)
++}
++
++func defaultConnect(ctx context.Context, network, address string, control func(ctx context.Context, network, address string, c syscall.RawConn) error) (net.Conn, error) {
++	d := &net.Dialer{Timeout: DialTimeout, KeepAlive: 30 * time.Second, ControlContext: control}
++	return d.DialContext(ctx, network, address)
++}
++
++func (d *Dialer) refusal(addr netip.Addr, reason string) *RefusedError {
++	return &RefusedError{Class: d.Class, Remote: Normalize(addr).String(), Reason: reason}
++}
++
++// control re-checks the address a socket is about to connect to.
++func (d *Dialer) control(_ context.Context, _ string, address string, _ syscall.RawConn) error {
++	target, err := netip.ParseAddrPort(address)
++	if err != nil {
++		return &RefusedError{Class: d.Class, Remote: "", Reason: ReasonNever}
++	}
++	if reason := Check(target.Addr(), int(target.Port()), d.Class, d.GatewayPorts); reason != "" {
++		return d.refusal(target.Addr(), reason)
++	}
++	return nil
++}
++
++// DialContext resolves address's host once, keeps the addresses the class
++// allows and dials them in order by literal address. When every address is
++// refused, the strongest refusal is returned.
++func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
++	host, portText, err := net.SplitHostPort(address)
++	if err != nil {
++		return nil, err
++	}
++	port, err := strconv.Atoi(portText)
++	if err != nil || port < 1 || port > 65535 {
++		return nil, &net.AddrError{Err: "invalid port", Addr: address}
++	}
++	var candidates []netip.Addr
++	if literal, errParse := netip.ParseAddr(host); errParse == nil {
++		candidates = []netip.Addr{literal}
++	} else {
++		lookup := d.Lookup
++		if lookup == nil {
++			lookup = defaultLookup
++		}
++		candidates, err = lookup(ctx, "ip", host)
++		if err != nil {
++			return nil, err
++		}
++	}
++	var refused *RefusedError
++	allowed := make([]netip.Addr, 0, len(candidates))
++	for _, candidate := range candidates {
++		candidate = Normalize(candidate)
++		if reason := Check(candidate, port, d.Class, d.GatewayPorts); reason != "" {
++			if refused == nil || rank(reason) < rank(refused.Reason) {
++				refused = d.refusal(candidate, reason)
++			}
++			continue
++		}
++		if !slices.Contains(allowed, candidate) {
++			allowed = append(allowed, candidate)
++		}
++	}
++	if len(allowed) == 0 {
++		if refused == nil {
++			refused = &RefusedError{Class: d.Class, Reason: ReasonOutsideClass}
++		}
++		return nil, refused
++	}
++	connect := d.Connect
++	if connect == nil {
++		connect = defaultConnect
++	}
++	var lastErr error
++	for _, target := range allowed {
++		conn, errDial := connect(ctx, "tcp", netip.AddrPortFrom(target, uint16(port)).String(), d.control)
++		if errDial != nil {
++			lastErr = errDial
++			if IsRefused(errDial) || ctx.Err() != nil {
++				return nil, errDial
++			}
++			continue
++		}
++		if errLocal := d.checkLocal(conn); errLocal != nil {
++			_ = conn.Close()
++			return nil, errLocal
++		}
++		return conn, nil
++	}
++	return nil, lastErr
++}
++
++// checkLocal applies the local-address rule to an open connection.
++func (d *Dialer) checkLocal(conn net.Conn) error {
++	if d.Class != Tailnet {
++		return nil
++	}
++	local, ok := addrOf(conn.LocalAddr())
++	if !ok {
++		return &RefusedError{Class: d.Class, Reason: ReasonLocalNotTailnet}
++	}
++	if reason := CheckLocal(local, d.Class); reason != "" {
++		return d.refusal(local, reason)
++	}
++	return nil
++}
++
++func addrOf(addr net.Addr) (netip.Addr, bool) {
++	switch a := addr.(type) {
++	case *net.TCPAddr:
++		ip, ok := netip.AddrFromSlice(a.IP)
++		return ip, ok
++	case nil:
++		return netip.Addr{}, false
++	}
++	parsed, err := netip.ParseAddrPort(addr.String())
++	if err != nil {
++		return netip.Addr{}, false
++	}
++	return parsed.Addr(), true
++}
++
++type transportKey struct {
++	class string
++	ports string
++}
++
++var (
++	transportsMu sync.Mutex
++	transports   = map[transportKey]*http.Transport{}
++)
++
++// Transport returns the cached transport of class for a gateway listening on
++// gatewayPort. The class and the refused port set are its cache identity.
++func Transport(class string, gatewayPort int) *http.Transport {
++	ports := gatewayPorts(gatewayPort)
++	texts := make([]string, len(ports))
++	for i, port := range ports {
++		texts[i] = strconv.Itoa(port)
++	}
++	key := transportKey{class: class, ports: strings.Join(texts, ",")}
++	transportsMu.Lock()
++	defer transportsMu.Unlock()
++	if t, ok := transports[key]; ok {
++		return t
++	}
++	t := NewTransport(&Dialer{Class: class, GatewayPorts: ports})
++	transports[key] = t
++	return t
++}
++
++// NewTransport returns a transport that dials only through d: no proxy,
++// HTTP/1.1 only, no response-header timeout.
++func NewTransport(d *Dialer) *http.Transport {
++	return &http.Transport{
++		Proxy:                 nil,
++		DialContext:           d.DialContext,
++		ForceAttemptHTTP2:     false,
++		TLSNextProto:          map[string]func(string, *tls.Conn) http.RoundTripper{},
++		MaxIdleConns:          100,
++		IdleConnTimeout:       90 * time.Second,
++		TLSHandshakeTimeout:   10 * time.Second,
++		ExpectContinueTimeout: time.Second,
++	}
++}
++
++// RefuseRedirect is the client redirect policy: no redirect is followed.
++func RefuseRedirect(*http.Request, []*http.Request) error {
++	return http.ErrUseLastResponse
++}
++
++// Client returns an HTTP client for a provider declared on class: the cached
++// transport and no redirect.
++func Client(class string, gatewayPort int) *http.Client {
++	return &http.Client{Transport: Transport(class, gatewayPort), CheckRedirect: RefuseRedirect}
++}
+diff --git a/internal/privatenet/privatenet_test.go b/internal/privatenet/privatenet_test.go
+new file mode 100644
+index 00000000..aaf424ff
+--- /dev/null
++++ b/internal/privatenet/privatenet_test.go
+@@ -0,0 +1,489 @@
++package privatenet
++
++import (
++	"context"
++	"crypto/tls"
++	"crypto/x509"
++	"encoding/json"
++	"errors"
++	"net"
++	"net/http"
++	"net/http/httptest"
++	"net/netip"
++	"net/url"
++	"os"
++	"reflect"
++	"strconv"
++	"strings"
++	"sync"
++	"sync/atomic"
++	"syscall"
++	"testing"
++	"time"
++)
++
++// The corpus is a byte-identical copy of the launcher's address corpus; the
++// launcher's tests check that the two copies are equal.
++func TestClassifyCorpus(t *testing.T) {
++	raw, err := os.ReadFile("testdata/netclass-corpus.json")
++	if err != nil {
++		t.Fatal(err)
++	}
++	var corpus struct {
++		Version int `json:"version"`
++		Cases   []struct {
++			Address string `json:"address"`
++			Class   string `json:"class"`
++		} `json:"cases"`
++	}
++	if err := json.Unmarshal(raw, &corpus); err != nil {
++		t.Fatal(err)
++	}
++	if corpus.Version != 1 || len(corpus.Cases) < 100 {
++		t.Fatalf("corpus version %d with %d cases", corpus.Version, len(corpus.Cases))
++	}
++	seen := map[string]bool{}
++	for _, c := range corpus.Cases {
++		addr, err := netip.ParseAddr(c.Address)
++		if err != nil {
++			t.Errorf("%s: %v", c.Address, err)
++			continue
++		}
++		seen[c.Class] = true
++		if got := Classify(addr); got != c.Class {
++			t.Errorf("Classify(%s) = %s, want %s", c.Address, got, c.Class)
++		}
++	}
++	for _, class := range []string{Loopback, LAN, Tailnet, Never, Public} {
++		if !seen[class] {
++			t.Errorf("corpus has no %s case", class)
++		}
++	}
++}
++
++func TestCheckPrecedence(t *testing.T) {
++	ports := gatewayPorts(18317)
++	for _, c := range []struct {
++		addr  string
++		port  int
++		class string
++		want  string
++	}{
++		{"127.0.0.1", 9000, Loopback, ""},
++		{"::1", 9000, Loopback, ""},
++		{"::ffff:127.0.0.1", 9000, Loopback, ""},
++		{"127.0.0.1", 8317, Loopback, ReasonGatewayPort},
++		{"127.0.0.1", 8316, Loopback, ReasonGatewayPort},
++		{"127.0.0.1", 18317, Loopback, ReasonGatewayPort},
++		{"::ffff:127.0.0.1", 8316, Loopback, ReasonGatewayPort},
++		{"::1", 8317, Loopback, ReasonGatewayPort},
++		{"127.0.0.1", 8317, LAN, ReasonGatewayPort},
++		{"127.0.0.1", 8317, Tailnet, ReasonGatewayPort},
++		{"127.0.0.1", 9000, LAN, ReasonOutsideClass},
++		{"127.0.0.1", 9000, Tailnet, ReasonOutsideClass},
++		{"10.0.0.1", 8317, LAN, ""},
++		{"10.0.0.1", 80, Tailnet, ReasonOutsideClass},
++		{"100.88.12.34", 80, Tailnet, ""},
++		{"100.88.12.34", 80, LAN, ReasonOutsideClass},
++		{"fd7a:115c:a1e0::1", 8317, Tailnet, ""},
++		{"8.8.8.8", 443, LAN, ReasonOutsideClass},
++		{"169.254.169.254", 80, LAN, ReasonNever},
++		{"169.254.169.254", 8317, Loopback, ReasonNever},
++		{"100.100.100.100", 8317, Tailnet, ReasonNever},
++		{"fd7a:115c:a1e0:b1a::5", 80, Tailnet, ReasonNever},
++		{"::127.0.0.1", 8317, Loopback, ReasonNever},
++		{"0.0.0.0", 8317, Loopback, ReasonNever},
++		{"127.0.0.1", 9000, "", ReasonOutsideClass},
++		{"127.0.0.1", 9000, "public", ReasonOutsideClass},
++		{"127.0.0.1", 9000, "Loopback", ReasonOutsideClass},
++	} {
++		if got := Check(netip.MustParseAddr(c.addr), c.port, c.class, ports); got != c.want {
++			t.Errorf("Check(%s, %d, %q) = %q, want %q", c.addr, c.port, c.class, got, c.want)
++		}
++	}
++}
++
++func TestCheckLocal(t *testing.T) {
++	for _, c := range []struct {
++		addr  string
++		class string
++		want  string
++	}{
++		{"100.88.1.2", Tailnet, ""},
++		{"fd7a:115c:a1e0::2", Tailnet, ""},
++		{"192.168.1.10", Tailnet, ReasonLocalNotTailnet},
++		{"127.0.0.1", Tailnet, ReasonLocalNotTailnet},
++		{"100.100.100.100", Tailnet, ReasonLocalNotTailnet},
++		{"192.168.1.10", LAN, ""},
++		{"127.0.0.1", Loopback, ""},
++	} {
++		if got := CheckLocal(netip.MustParseAddr(c.addr), c.class); got != c.want {
++			t.Errorf("CheckLocal(%s, %s) = %q, want %q", c.addr, c.class, got, c.want)
++		}
++	}
++}
++
++type fakeConn struct {
++	net.Conn
++	local, remote net.Addr
++	closed        atomic.Bool
++}
++
++func (c *fakeConn) LocalAddr() net.Addr  { return c.local }
++func (c *fakeConn) RemoteAddr() net.Addr { return c.remote }
++func (c *fakeConn) Close() error         { c.closed.Store(true); return nil }
++
++type dialRecord struct {
++	mu      sync.Mutex
++	lookups []string
++	dials   []string
++}
++
++func (r *dialRecord) lookup(answers ...string) LookupFunc {
++	return func(_ context.Context, _ string, host string) ([]netip.Addr, error) {
++		r.mu.Lock()
++		r.lookups = append(r.lookups, host)
++		r.mu.Unlock()
++		out := make([]netip.Addr, 0, len(answers))
++		for _, a := range answers {
++			out = append(out, netip.MustParseAddr(a))
++		}
++		return out, nil
++	}
++}
++
++// connect records each attempt; the first fail attempts are refused by the
++// peer, the next one connects with the given local address.
++func (r *dialRecord) connect(fail int, local string) ConnectFunc {
++	return func(_ context.Context, _ string, address string, _ func(context.Context, string, string, syscall.RawConn) error) (net.Conn, error) {
++		r.mu.Lock()
++		r.dials = append(r.dials, address)
++		n := len(r.dials)
++		r.mu.Unlock()
++		if n <= fail {
++			return nil, &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}
++		}
++		target := netip.MustParseAddrPort(address)
++		return &fakeConn{local: net.TCPAddrFromAddrPort(netip.AddrPortFrom(netip.MustParseAddr(local), 40000)), remote: net.TCPAddrFromAddrPort(target)}, nil
++	}
++}
++
++func TestDialerMixedAnswersResolveOnceAndDialOnlyTheClass(t *testing.T) {
++	rec := &dialRecord{}
++	d := &Dialer{Class: LAN, GatewayPorts: gatewayPorts(0),
++		Lookup:  rec.lookup("127.0.0.1", "10.0.0.5", "100.88.1.1", "169.254.169.254", "8.8.8.8", "10.0.0.5", "::ffff:10.0.0.6", "fe80::1%eth0", "fd12::7"),
++		Connect: rec.connect(1, "10.0.0.2")}
++	conn, err := d.DialContext(context.Background(), "tcp", "llm.lan.example:8010")
++	if err != nil {
++		t.Fatal(err)
++	}
++	_ = conn.Close()
++	if len(rec.lookups) != 1 || rec.lookups[0] != "llm.lan.example" {
++		t.Fatalf("lookups = %v, want one", rec.lookups)
++	}
++	if want := []string{"10.0.0.5:8010", "10.0.0.6:8010"}; !reflect.DeepEqual(rec.dials, want) {
++		t.Fatalf("dials = %v, want %v", rec.dials, want)
++	}
++}
++
++func TestDialerLiteralAddressIsNotResolved(t *testing.T) {
++	rec := &dialRecord{}
++	d := &Dialer{Class: LAN, GatewayPorts: gatewayPorts(0), Lookup: rec.lookup("10.9.9.9"), Connect: rec.connect(0, "10.0.0.2")}
++	for _, address := range []string{"10.0.0.5:80", "[fd12::5]:80"} {
++		conn, err := d.DialContext(context.Background(), "tcp", address)
++		if err != nil {
++			t.Fatal(err)
++		}
++		_ = conn.Close()
++	}
++	if len(rec.lookups) != 0 {
++		t.Fatalf("a literal address was resolved: %v", rec.lookups)
++	}
++	if want := []string{"10.0.0.5:80", "[fd12::5]:80"}; !reflect.DeepEqual(rec.dials, want) {
++		t.Fatalf("dials = %v, want %v", rec.dials, want)
++	}
++}
++
++func TestDialerRefusesWithTheStrongestReasonAndDialsNothing(t *testing.T) {
++	for _, c := range []struct {
++		name    string
++		class   string
++		port    int
++		answers []string
++		reason  string
++		remote  string
++	}{
++		{"outside", LAN, 80, []string{"8.8.8.8", "100.88.1.1"}, ReasonOutsideClass, "8.8.8.8"},
++		{"gateway port over outside", LAN, 8317, []string{"8.8.8.8", "127.0.0.1"}, ReasonGatewayPort, "127.0.0.1"},
++		{"never over gateway port", Loopback, 8316, []string{"127.0.0.1", "169.254.169.254"}, ReasonNever, "169.254.169.254"},
++		{"mapped never", Tailnet, 80, []string{"::ffff:100.100.100.100"}, ReasonNever, "100.100.100.100"},
++		{"own port", Loopback, 18400, []string{"::1"}, ReasonGatewayPort, "::1"},
++		{"unknown class", "bogus", 80, []string{"127.0.0.1"}, ReasonOutsideClass, "127.0.0.1"},
++		{"no answer", LAN, 80, nil, ReasonOutsideClass, ""},
++	} {
++		t.Run(c.name, func(t *testing.T) {
++			rec := &dialRecord{}
++			d := &Dialer{Class: c.class, GatewayPorts: gatewayPorts(18400), Lookup: rec.lookup(c.answers...), Connect: rec.connect(0, "10.0.0.2")}
++			conn, err := d.DialContext(context.Background(), "tcp", "host.example:"+strconv.Itoa(c.port))
++			if conn != nil {
++				t.Fatal("a connection was returned")
++			}
++			var refused *RefusedError
++			if !errors.As(err, &refused) || refused.Reason != c.reason || refused.Remote != c.remote {
++				t.Fatalf("err = %#v, want reason %s remote %q", err, c.reason, c.remote)
++			}
++			if len(rec.dials) != 0 {
++				t.Fatalf("dialed %v", rec.dials)
++			}
++		})
++	}
++}
++
++func TestDialerFixedGatewayPortsNeverDialed(t *testing.T) {
++	for _, port := range []int{8316, 8317} {
++		rec := &dialRecord{}
++		d := NewDialer(Loopback, 0)
++		d.Lookup, d.Connect = rec.lookup("127.0.0.1"), rec.connect(0, "127.0.0.1")
++		if _, err := d.DialContext(context.Background(), "tcp", "127.0.0.1:"+strconv.Itoa(port)); !IsRefused(err) {
++			t.Fatalf("port %d: err = %v", port, err)
++		}
++		if len(rec.dials) != 0 {
++			t.Fatalf("port %d dialed: %v", port, rec.dials)
++		}
++	}
++}
++
++func TestDialerTailnetLocalAddressRule(t *testing.T) {
++	for _, c := range []struct {
++		local  string
++		reason string
++	}{
++		{"100.88.1.2", ""},
++		{"fd7a:115c:a1e0::9", ""},
++		{"192.168.1.10", ReasonLocalNotTailnet},
++		{"127.0.0.1", ReasonLocalNotTailnet},
++	} {
++		rec := &dialRecord{}
++		var opened *fakeConn
++		connect := rec.connect(0, c.local)
++		d := &Dialer{Class: Tailnet, GatewayPorts: gatewayPorts(0), Lookup: rec.lookup("100.88.1.1"),
++			Connect: func(ctx context.Context, network, address string, control func(context.Context, string, string, syscall.RawConn) error) (net.Conn, error) {
++				conn, err := connect(ctx, network, address, control)
++				opened, _ = conn.(*fakeConn)
++				return conn, err
++			}}
++		conn, err := d.DialContext(context.Background(), "tcp", "box.tailnet.example:8010")
++		if c.reason == "" {
++			if err != nil || conn == nil {
++				t.Fatalf("local %s: err = %v", c.local, err)
++			}
++			continue
++		}
++		var refused *RefusedError
++		if conn != nil || !errors.As(err, &refused) || refused.Reason != c.reason || refused.Remote != c.local {
++			t.Fatalf("local %s: conn=%v err=%#v", c.local, conn, err)
++		}
++		if opened == nil || !opened.closed.Load() {
++			t.Fatalf("local %s: the refused connection was not closed", c.local)
++		}
++	}
++}
++
++// The control hook re-checks the address the socket really connects to: a
++// connect that ignores the filtered address still cannot reach a listener
++// outside the class.
++func TestDialControlRechecksTheSocketAddress(t *testing.T) {
++	listener, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer func() { _ = listener.Close() }()
++	var accepts atomic.Int64
++	go func() {
++		for {
++			conn, errAccept := listener.Accept()
++			if errAccept != nil {
++				return
++			}
++			accepts.Add(1)
++			_ = conn.Close()
++		}
++	}()
++	d := &Dialer{Class: LAN, GatewayPorts: gatewayPorts(0), Lookup: (&dialRecord{}).lookup("10.0.0.5"),
++		Connect: func(ctx context.Context, network, _ string, control func(context.Context, string, string, syscall.RawConn) error) (net.Conn, error) {
++			return defaultConnect(ctx, network, listener.Addr().String(), control)
++		}}
++	conn, err := d.DialContext(context.Background(), "tcp", "llm.lan.example:8010")
++	if conn != nil {
++		_ = conn.Close()
++		t.Fatal("connected outside the class")
++	}
++	var refused *RefusedError
++	if !errors.As(err, &refused) || refused.Reason != ReasonOutsideClass || refused.Remote != "127.0.0.1" {
++		t.Fatalf("err = %#v", err)
++	}
++	time.Sleep(50 * time.Millisecond)
++	if accepts.Load() != 0 {
++		t.Fatalf("listener accepted %d connections", accepts.Load())
++	}
++	for _, c := range []struct {
++		address, reason string
++	}{
++		{"127.0.0.1:8317", ReasonGatewayPort},
++		{"[::ffff:127.0.0.1]:8316", ReasonGatewayPort},
++		{"169.254.169.254:80", ReasonNever},
++		{"10.0.0.5:8010", ""},
++	} {
++		errControl := d.control(context.Background(), "tcp", c.address, nil)
++		if c.reason == "" {
++			if errControl != nil {
++				t.Fatalf("control(%s) = %v", c.address, errControl)
++			}
++			continue
++		}
++		if !errors.As(errControl, &refused) || refused.Reason != c.reason {
++			t.Fatalf("control(%s) = %v, want %s", c.address, errControl, c.reason)
++		}
++	}
++}
++
++func TestDialerConnectsOnLoopback(t *testing.T) {
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }))
++	defer server.Close()
++	resp, err := Client(Loopback, 0).Get(server.URL)
++	if err != nil {
++		t.Fatal(err)
++	}
++	_ = resp.Body.Close()
++	if resp.StatusCode != http.StatusOK || resp.ProtoMajor != 1 {
++		t.Fatalf("status %d proto %s", resp.StatusCode, resp.Proto)
++	}
++	if _, err := Client(Tailnet, 0).Get(server.URL); !IsRefused(err) {
++		t.Fatalf("tailnet to loopback: err = %v", err)
++	}
++}
++
++func TestRefusedErrorIsFixedAndCanonical(t *testing.T) {
++	refused := &RefusedError{Class: Tailnet, Remote: "127.0.0.1", Reason: ReasonOutsideClass}
++	const want = "upstream address refused: outside the provider's private network (tailnet)"
++	if refused.Error() != want || refused.StatusCode() != http.StatusBadGateway {
++		t.Fatalf("error %q status %d", refused.Error(), refused.StatusCode())
++	}
++	if text := (&RefusedError{Class: "x-secret"}).Error(); strings.Contains(text, "x-secret") {
++		t.Fatalf("an unknown class reached the text: %q", text)
++	}
++	wrapped := &url.Error{Op: "Post", URL: "http://127.0.0.1:9/v1/chat/completions?key=secret",
++		Err: &net.OpError{Op: "dial", Net: "tcp", Err: refused}}
++	fresh, ok := Canonical(wrapped)
++	if !ok || fresh == refused || *fresh != *refused || errors.Unwrap(fresh) != nil || fresh.Error() != want {
++		t.Fatalf("canonical = %#v, %t", fresh, ok)
++	}
++	if _, ok := Canonical(errors.New("other")); ok {
++		t.Fatal("an unrelated error was canonicalized")
++	}
++}
++
++func TestTransportShapeAndCacheIdentity(t *testing.T) {
++	a := Transport(LAN, 0)
++	if a != Transport(LAN, 0) || a != Transport(LAN, 8317) {
++		t.Fatal("the same class and port set built two transports")
++	}
++	if a == Transport(Tailnet, 0) || a == Transport(LAN, 18317) {
++		t.Fatal("a different class or port set shared a transport")
++	}
++	if a.Proxy != nil || a.ForceAttemptHTTP2 || a.TLSNextProto == nil || len(a.TLSNextProto) != 0 || a.ResponseHeaderTimeout != 0 {
++		t.Fatal("transport is not proxy-free HTTP/1.1 without a response-header timeout")
++	}
++	if DialTimeout != 30*time.Second {
++		t.Fatalf("dial timeout %s", DialTimeout)
++	}
++	client := Client(LAN, 0)
++	if client.Transport != a || reflect.ValueOf(client.CheckRedirect).Pointer() != reflect.ValueOf(RefuseRedirect).Pointer() {
++		t.Fatal("client does not use the cached transport and the redirect refusal")
++	}
++}
++
++// An environment proxy is never consulted (the transport has no Proxy
++// function), and a server that offers HTTP/2 is spoken to in HTTP/1.1.
++func TestTransportUsesNoEnvironmentProxyAndHTTP11(t *testing.T) {
++	var proxied atomic.Int64
++	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
++		proxied.Add(1)
++		w.WriteHeader(http.StatusTeapot)
++	}))
++	defer proxy.Close()
++	for _, name := range []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"} {
++		t.Setenv(name, proxy.URL)
++	}
++	t.Setenv("NO_PROXY", "")
++	t.Setenv("no_proxy", "")
++	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		_, _ = w.Write([]byte(r.Proto))
++	}))
++	server.EnableHTTP2 = true
++	server.StartTLS()
++	defer server.Close()
++	pool := x509.NewCertPool()
++	pool.AddCert(server.Certificate())
++	transport := NewTransport(NewDialer(Loopback, 0))
++	transport.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
++	resp, err := (&http.Client{Transport: transport, CheckRedirect: RefuseRedirect}).Get(server.URL)
++	if err != nil {
++		t.Fatal(err)
++	}
++	_ = resp.Body.Close()
++	if resp.ProtoMajor != 1 || proxied.Load() != 0 {
++		t.Fatalf("proto %s, proxy hits %d", resp.Proto, proxied.Load())
++	}
++}
++
++// No redirect is followed: relative, same-origin, another port, http to
++// https and https to http.
++func TestClientFollowsNoRedirect(t *testing.T) {
++	var followed atomic.Int64
++	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { followed.Add(1) }))
++	defer target.Close()
++	tlsTarget := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { followed.Add(1) }))
++	defer tlsTarget.Close()
++	var location atomic.Value
++	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		if r.URL.Path == "/followed" {
++			followed.Add(1)
++			return
++		}
++		http.Redirect(w, r, location.Load().(string), http.StatusTemporaryRedirect)
++	}))
++	defer origin.Close()
++	tlsOrigin := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		http.Redirect(w, r, target.URL+"/followed", http.StatusTemporaryRedirect)
++	}))
++	defer tlsOrigin.Close()
++	pool := x509.NewCertPool()
++	pool.AddCert(tlsOrigin.Certificate())
++	pool.AddCert(tlsTarget.Certificate())
++	transport := NewTransport(NewDialer(Loopback, 0))
++	transport.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
++	client := &http.Client{Transport: transport, CheckRedirect: Client(Loopback, 0).CheckRedirect}
++	for _, c := range []struct {
++		name, from, to string
++	}{
++		{"relative", origin.URL, "/followed"},
++		{"same origin", origin.URL, origin.URL + "/followed"},
++		{"another port", origin.URL, target.URL + "/followed"},
++		{"http to https", origin.URL, tlsTarget.URL + "/followed"},
++		{"https to http", tlsOrigin.URL, ""},
++	} {
++		location.Store(c.to)
++		resp, err := client.Post(c.from+"/v1/chat/completions", "application/json", strings.NewReader(`{}`))
++		if err != nil {
++			t.Fatalf("%s: %v", c.name, err)
++		}
++		_ = resp.Body.Close()
++		if resp.StatusCode != http.StatusTemporaryRedirect {
++			t.Fatalf("%s: status %d", c.name, resp.StatusCode)
++		}
++	}
++	if followed.Load() != 0 {
++		t.Fatalf("%d redirects followed", followed.Load())
++	}
++}
+diff --git a/internal/privatenet/testdata/netclass-corpus.json b/internal/privatenet/testdata/netclass-corpus.json
+new file mode 100644
+index 00000000..03e52dfb
+--- /dev/null
++++ b/internal/privatenet/testdata/netclass-corpus.json
+@@ -0,0 +1,132 @@
++{
++  "version": 1,
++  "cases": [
++    {"address": "127.0.0.0", "class": "loopback"},
++    {"address": "127.0.0.1", "class": "loopback"},
++    {"address": "127.255.255.255", "class": "loopback"},
++    {"address": "126.255.255.255", "class": "public"},
++    {"address": "128.0.0.0", "class": "public"},
++    {"address": "::1", "class": "loopback"},
++    {"address": "0:0:0:0:0:0:0:1", "class": "loopback"},
++    {"address": "::2", "class": "never"},
++    {"address": "::ffff:127.0.0.1", "class": "loopback"},
++    {"address": "::ffff:7f00:1", "class": "loopback"},
++
++    {"address": "10.0.0.0", "class": "lan"},
++    {"address": "10.255.255.255", "class": "lan"},
++    {"address": "9.255.255.255", "class": "public"},
++    {"address": "11.0.0.0", "class": "public"},
++    {"address": "172.16.0.0", "class": "lan"},
++    {"address": "172.31.255.255", "class": "lan"},
++    {"address": "172.15.255.255", "class": "public"},
++    {"address": "172.32.0.0", "class": "public"},
++    {"address": "192.168.0.0", "class": "lan"},
++    {"address": "192.168.255.255", "class": "lan"},
++    {"address": "192.167.255.255", "class": "public"},
++    {"address": "192.169.0.0", "class": "public"},
++    {"address": "fc00::", "class": "lan"},
++    {"address": "fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", "class": "lan"},
++    {"address": "fbff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", "class": "public"},
++    {"address": "fe00::", "class": "public"},
++    {"address": "fd12:3456:789a::1", "class": "lan"},
++    {"address": "fd00:ec2::253", "class": "lan"},
++    {"address": "fd00:ec2::255", "class": "lan"},
++    {"address": "fd7a:115c:a1df:ffff:ffff:ffff:ffff:ffff", "class": "lan"},
++    {"address": "fd7a:115c:a1e1::", "class": "lan"},
++    {"address": "::ffff:192.168.1.10", "class": "lan"},
++
++    {"address": "100.64.0.0", "class": "tailnet"},
++    {"address": "100.127.255.255", "class": "tailnet"},
++    {"address": "100.63.255.255", "class": "public"},
++    {"address": "100.128.0.0", "class": "public"},
++    {"address": "100.88.12.34", "class": "tailnet"},
++    {"address": "100.99.255.255", "class": "tailnet"},
++    {"address": "100.100.1.0", "class": "tailnet"},
++    {"address": "100.100.99.255", "class": "tailnet"},
++    {"address": "100.100.101.0", "class": "tailnet"},
++    {"address": "100.101.102.102", "class": "tailnet"},
++    {"address": "100.101.102.104", "class": "tailnet"},
++    {"address": "100.115.91.255", "class": "tailnet"},
++    {"address": "100.115.94.0", "class": "tailnet"},
++    {"address": "fd7a:115c:a1e0::", "class": "tailnet"},
++    {"address": "fd7a:115c:a1e0:ffff:ffff:ffff:ffff:ffff", "class": "tailnet"},
++    {"address": "fd7a:115c:a1e0:5ee:2c1:9a00:7b:10", "class": "tailnet"},
++    {"address": "fd7a:115c:a1e0::52", "class": "tailnet"},
++    {"address": "fd7a:115c:a1e0::54", "class": "tailnet"},
++    {"address": "fd7a:115c:a1e0:b19:ffff:ffff:ffff:ffff", "class": "tailnet"},
++    {"address": "fd7a:115c:a1e0:b1b::", "class": "tailnet"},
++    {"address": "::ffff:100.88.12.34", "class": "tailnet"},
++
++    {"address": "100.100.0.0", "class": "never"},
++    {"address": "100.100.0.255", "class": "never"},
++    {"address": "100.100.100.0", "class": "never"},
++    {"address": "100.100.100.100", "class": "never"},
++    {"address": "100.100.100.199", "class": "never"},
++    {"address": "100.100.100.200", "class": "never"},
++    {"address": "100.100.100.201", "class": "never"},
++    {"address": "100.100.100.255", "class": "never"},
++    {"address": "100.101.102.103", "class": "never"},
++    {"address": "100.115.92.0", "class": "never"},
++    {"address": "100.115.93.255", "class": "never"},
++    {"address": "fd7a:115c:a1e0::53", "class": "never"},
++    {"address": "FD7A:115C:A1E0:0:0:0:0:53", "class": "never"},
++    {"address": "fd7a:115c:a1e0:b1a::", "class": "never"},
++    {"address": "fd7a:115c:a1e0:b1a:0:7:a01:105", "class": "never"},
++    {"address": "fd7a:115c:a1e0:b1a:ffff:ffff:ffff:ffff", "class": "never"},
++    {"address": "::ffff:100.100.100.100", "class": "never"},
++
++    {"address": "0.0.0.0", "class": "never"},
++    {"address": "0.255.255.255", "class": "never"},
++    {"address": "1.0.0.0", "class": "public"},
++    {"address": "169.254.0.0", "class": "never"},
++    {"address": "169.254.169.253", "class": "never"},
++    {"address": "169.254.169.254", "class": "never"},
++    {"address": "169.254.169.255", "class": "never"},
++    {"address": "169.254.255.255", "class": "never"},
++    {"address": "169.253.255.255", "class": "public"},
++    {"address": "169.255.0.0", "class": "public"},
++    {"address": "224.0.0.0", "class": "never"},
++    {"address": "239.255.255.255", "class": "never"},
++    {"address": "223.255.255.255", "class": "public"},
++    {"address": "240.0.0.0", "class": "public"},
++    {"address": "255.255.255.254", "class": "public"},
++    {"address": "255.255.255.255", "class": "never"},
++    {"address": "::", "class": "never"},
++    {"address": "::ffff:ffff", "class": "never"},
++    {"address": "::1:0:0", "class": "public"},
++    {"address": "::100.64.0.10", "class": "never"},
++    {"address": "::10.1.2.3", "class": "never"},
++    {"address": "::127.0.0.1", "class": "never"},
++    {"address": "fd00:ec2::254", "class": "never"},
++    {"address": "fe80::", "class": "never"},
++    {"address": "febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff", "class": "never"},
++    {"address": "fe7f:ffff:ffff:ffff:ffff:ffff:ffff:ffff", "class": "public"},
++    {"address": "fec0::", "class": "public"},
++    {"address": "ff00::", "class": "never"},
++    {"address": "ff02::1", "class": "never"},
++    {"address": "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", "class": "never"},
++    {"address": "feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", "class": "public"},
++    {"address": "::ffff:169.254.169.254", "class": "never"},
++    {"address": "::ffff:0.0.0.0", "class": "never"},
++
++    {"address": "fe80::1%eth0", "class": "never"},
++    {"address": "ff02::1%eth0", "class": "never"},
++    {"address": "fd12:3456:789a::1%eth0", "class": "lan"},
++    {"address": "fd7a:115c:a1e0:5ee:2c1:9a00:7b:10%tun0", "class": "tailnet"},
++
++    {"address": "192.0.2.1", "class": "public"},
++    {"address": "198.51.100.7", "class": "public"},
++    {"address": "203.0.113.9", "class": "public"},
++    {"address": "198.18.0.1", "class": "public"},
++    {"address": "198.19.255.255", "class": "public"},
++    {"address": "2001:db8::1", "class": "public"},
++    {"address": "64:ff9b::a00:1", "class": "public"},
++    {"address": "64:ff9b::7f00:1", "class": "public"},
++    {"address": "64:ff9b:1::a00:1", "class": "public"},
++    {"address": "2002:a00:1::1", "class": "public"},
++    {"address": "2002:6458:c22::1", "class": "public"},
++    {"address": "2001:0:4136:e378:8000:63bf:3fff:fdd2", "class": "public"},
++    {"address": "::ffff:192.0.2.1", "class": "public"},
++    {"address": "::ffff:0:a00:1", "class": "public"}
++  ]
++}
+diff --git a/internal/runtime/executor/openai_compat_executor.go b/internal/runtime/executor/openai_compat_executor.go
+index dedf9d46..d7762628 100644
+--- a/internal/runtime/executor/openai_compat_executor.go
++++ b/internal/runtime/executor/openai_compat_executor.go
+@@ -98,7 +98,7 @@ func (e *OpenAICompatExecutor) HttpRequest(ctx context.Context, auth *cliproxyau
+ 		return nil, err
+ 	}
+ 	httpClient, redirectMode := e.newHTTPClient(ctx, auth, httpReq)
+-	return redirectMode.StripLocation(httpClient.Do(httpReq))
++	return openAICompatRefusals{auth: auth}.Result(redirectMode.StripLocation(httpClient.Do(httpReq)))
+ }
+ 
+ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (resp cliproxyexecutor.Response, err error) {
+@@ -239,7 +239,7 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
+ 
+ 	httpClient, redirectMode := e.newHTTPClient(ctx, auth, httpReq)
+ 	httpClient = reporter.TrackHTTPClient(httpClient)
+-	httpResp, err := redirectMode.Result(httpClient.Do(httpReq))
++	httpResp, err := openAICompatRefusals{auth: auth}.Result(redirectMode.Result(httpClient.Do(httpReq)))
+ 	if err != nil {
+ 		if keyed {
+ 			err = openAICompatKeyedTransportError(err)
+@@ -365,7 +365,7 @@ func (e *OpenAICompatExecutor) executeImages(ctx context.Context, auth *cliproxy
+ 
+ 	httpClient, redirectMode := e.newHTTPClient(ctx, auth, httpReq)
+ 	httpClient = reporter.TrackHTTPClient(httpClient)
+-	httpResp, err := redirectMode.Result(httpClient.Do(httpReq))
++	httpResp, err := openAICompatRefusals{auth: auth}.Result(redirectMode.Result(httpClient.Do(httpReq)))
+ 	if err != nil {
+ 		helps.RecordAPIResponseError(ctx, e.cfg, err)
+ 		return resp, err
+@@ -526,7 +526,7 @@ func (e *OpenAICompatExecutor) executeStreamWithCredentials(ctx context.Context,
+ 	httpClient, redirectMode := e.newHTTPClient(ctx, auth, httpReq)
+ 	// Early role/empty frames are only first-packet fallbacks, not effective tokens.
+ 	httpClient = reporter.TrackHTTPClientRoundTripOnly(httpClient)
+-	httpResp, err := redirectMode.Result(httpClient.Do(httpReq))
++	httpResp, err := openAICompatRefusals{auth: auth}.Result(redirectMode.Result(httpClient.Do(httpReq)))
+ 	if err != nil {
+ 		if keyed {
+ 			err = openAICompatKeyedTransportError(err)
+@@ -834,7 +834,7 @@ func (e *OpenAICompatExecutor) executeImagesStream(ctx context.Context, auth *cl
+ 
+ 	httpClient, redirectMode := e.newHTTPClient(ctx, auth, httpReq)
+ 	httpClient = reporter.TrackHTTPClient(httpClient)
+-	httpResp, err := redirectMode.Result(httpClient.Do(httpReq))
++	httpResp, err := openAICompatRefusals{auth: auth}.Result(redirectMode.Result(httpClient.Do(httpReq)))
+ 	if err != nil {
+ 		helps.RecordAPIResponseError(ctx, e.cfg, err)
+ 		return nil, err
+diff --git a/internal/runtime/executor/openai_compat_keyed_safety.go b/internal/runtime/executor/openai_compat_keyed_safety.go
+index 63e647f1..f061693d 100644
+--- a/internal/runtime/executor/openai_compat_keyed_safety.go
++++ b/internal/runtime/executor/openai_compat_keyed_safety.go
+@@ -13,6 +13,7 @@ import (
+ 
+ 	"github.com/router-for-me/CLIProxyAPI/v8/internal/compatsafe"
+ 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/privatenet"
+ 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
+ 	"github.com/router-for-me/CLIProxyAPI/v8/internal/upstreamredirect"
+ 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+@@ -88,9 +89,14 @@ func openAICompatKeyedRequestLog(info helps.UpstreamRequestLog) helps.UpstreamRe
+ }
+ 
+ // openAICompatKeyedTransportError keeps only the trusted identity of a
+-// transport, read or scanner error of the keyed route.
++// transport, read or scanner error of the keyed route. A private-network
++// refusal is kept: it is already the fresh local error built after Do.
+ func openAICompatKeyedTransportError(err error) error {
+-	return compatsafe.Transport(err, upstreamredirect.IsRefused)
++	return compatsafe.Transport(err, openAICompatKeptRefusal)
++}
++
++func openAICompatKeptRefusal(err error) bool {
++	return upstreamredirect.IsRefused(err) || privatenet.IsRefused(err)
+ }
+ 
+ // closeOpenAICompatBody closes an upstream body; on the keyed route a close
+diff --git a/internal/runtime/executor/openai_compat_private_network.go b/internal/runtime/executor/openai_compat_private_network.go
+new file mode 100644
+index 00000000..d8ab532d
+--- /dev/null
++++ b/internal/runtime/executor/openai_compat_private_network.go
+@@ -0,0 +1,56 @@
++package executor
++
++import (
++	"net/http"
++	"strings"
++
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/privatenet"
++	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
++	log "github.com/sirupsen/logrus"
++)
++
++// openAICompatPrivateNetwork returns the declared class of an auth
++// synthesized from a private-network entry. Such an auth is dialed only
++// through the private-network guard; an empty or unknown class refuses
++// every address.
++func openAICompatPrivateNetwork(auth *cliproxyauth.Auth) (string, bool) {
++	if auth == nil || auth.Attributes == nil {
++		return "", false
++	}
++	class, ok := auth.Attributes["private_network"]
++	return strings.TrimSpace(class), ok
++}
++
++// openAICompatRefusals canonicalizes a private-network refusal after Do: the
++// HTTP client wraps a dial error with the request URL, so the refusal is
++// replaced by a fresh, locally built error before it is logged or returned,
++// and the refusal log line is written here, once.
++type openAICompatRefusals struct {
++	auth *cliproxyauth.Auth
++}
++
++func (r openAICompatRefusals) Result(resp *http.Response, err error) (*http.Response, error) {
++	if err == nil {
++		return resp, nil
++	}
++	refused, ok := privatenet.Canonical(err)
++	if !ok {
++		return resp, err
++	}
++	if resp != nil && resp.Body != nil {
++		_ = resp.Body.Close()
++	}
++	provider := ""
++	if r.auth != nil {
++		provider = strings.TrimSpace(r.auth.Attributes["compat_name"])
++		if provider == "" {
++			provider = strings.TrimSpace(r.auth.Label)
++		}
++	}
++	remote := refused.Remote
++	if remote == "" {
++		remote = "-"
++	}
++	log.Warnf("private-network: refused provider=%s class=%s remote=%s reason=%s", provider, refused.Class, remote, refused.Reason)
++	return nil, refused
++}
+diff --git a/internal/runtime/executor/openai_compat_private_network_test.go b/internal/runtime/executor/openai_compat_private_network_test.go
+new file mode 100644
+index 00000000..1f9cef72
+--- /dev/null
++++ b/internal/runtime/executor/openai_compat_private_network_test.go
+@@ -0,0 +1,287 @@
++package executor
++
++import (
++	"bytes"
++	"context"
++	"errors"
++	"io"
++	"net"
++	"net/http"
++	"net/http/httptest"
++	"strconv"
++	"strings"
++	"sync"
++	"sync/atomic"
++	"testing"
++
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/privatenet"
++	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
++	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
++	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
++	log "github.com/sirupsen/logrus"
++)
++
++const privateNetworkKey = "pn-sentinel-key-0123456789"
++
++// privateNetworkUpstream is a loopback provider that counts accepted
++// connections and requests and answers every compat site.
++type privateNetworkUpstream struct {
++	server   *httptest.Server
++	accepts  atomic.Int64
++	requests atomic.Int64
++	mu       sync.Mutex
++	auth     []string
++}
++
++func newPrivateNetworkUpstream(t *testing.T) *privateNetworkUpstream {
++	t.Helper()
++	u := &privateNetworkUpstream{}
++	u.server = httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		u.requests.Add(1)
++		u.mu.Lock()
++		u.auth = append(u.auth, r.Header.Get("Authorization"))
++		u.mu.Unlock()
++		body, _ := io.ReadAll(r.Body)
++		stream := bytes.Contains(body, []byte(`"stream":true`))
++		switch {
++		case strings.HasSuffix(r.URL.Path, "/chat/completions") && stream:
++			w.Header().Set("Content-Type", "text/event-stream")
++			_, _ = io.WriteString(w, "data: {\"id\":\"c1\",\"object\":\"chat.completion.chunk\",\"model\":\"pn-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
++		case strings.HasSuffix(r.URL.Path, "/chat/completions"):
++			w.Header().Set("Content-Type", "application/json")
++			_, _ = io.WriteString(w, `{"id":"c1","object":"chat.completion","model":"pn-model","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
++		case strings.HasSuffix(r.URL.Path, "/images/generations") && stream:
++			w.Header().Set("Content-Type", "text/event-stream")
++			_, _ = io.WriteString(w, "data: {\"type\":\"image_generation.completed\",\"model\":\"gpt-image-2\",\"b64_json\":\"AAAA\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2}}\n\n")
++		case strings.HasSuffix(r.URL.Path, "/images/generations"):
++			w.Header().Set("Content-Type", "application/json")
++			_, _ = io.WriteString(w, `{"created":1,"data":[{"b64_json":"AAAA"}]}`)
++		case strings.HasSuffix(r.URL.Path, "/responses/compact"):
++			w.Header().Set("Content-Type", "application/json")
++			_, _ = io.WriteString(w, `{"id":"resp_1","object":"response.compaction","usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}`)
++		default:
++			w.Header().Set("Content-Type", "application/json")
++			_, _ = io.WriteString(w, `{"object":"list","data":[]}`)
++		}
++	}))
++	u.server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
++		if state == http.StateNew {
++			u.accepts.Add(1)
++		}
++	}
++	u.server.Start()
++	t.Cleanup(u.server.Close)
++	return u
++}
++
++func (u *privateNetworkUpstream) port() int {
++	return u.server.Listener.Addr().(*net.TCPAddr).Port
++}
++
++func privateNetworkAuth(baseURL, class, key string) *cliproxyauth.Auth {
++	attrs := map[string]string{"base_url": baseURL, "compat_name": "pn-provider", "provider_key": "pn-provider", "private_network": class}
++	if key != "" {
++		attrs["api_key"] = key
++	}
++	return &cliproxyauth.Auth{ID: "pn-auth", Provider: "openai-compatibility", Label: "pn-provider", Attributes: attrs}
++}
++
++func privateNetworkExecutor(port int) *OpenAICompatExecutor {
++	return NewOpenAICompatExecutor("openai-compatibility", &config.Config{
++		Port:                port,
++		OpenAICompatibility: []config.OpenAICompatibility{{Name: "pn-provider"}},
++	})
++}
++
++func drainPrivateNetworkStream(result *cliproxyexecutor.StreamResult, err error) error {
++	if err != nil {
++		return err
++	}
++	for chunk := range result.Chunks {
++		if chunk.Err != nil {
++			return chunk.Err
++		}
++	}
++	return nil
++}
++
++// privateNetworkSites are the five compat client construction sites and the
++// compact path; each runs one request through the executor.
++var privateNetworkSites = []struct {
++	name string
++	run  func(ctx context.Context, e *OpenAICompatExecutor, auth *cliproxyauth.Auth) error
++}{
++	{"execute", func(ctx context.Context, e *OpenAICompatExecutor, auth *cliproxyauth.Auth) error {
++		_, err := e.Execute(ctx, auth, cliproxyexecutor.Request{Model: "pn-model", Payload: []byte(`{"model":"pn-model","messages":[{"role":"user","content":"hi"}]}`)},
++			cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAI})
++		return err
++	}},
++	{"stream", func(ctx context.Context, e *OpenAICompatExecutor, auth *cliproxyauth.Auth) error {
++		return drainPrivateNetworkStream(e.ExecuteStream(ctx, auth, cliproxyexecutor.Request{Model: "pn-model", Payload: []byte(`{"model":"pn-model","messages":[{"role":"user","content":"hi"}],"stream":true}`)},
++			cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAI, Stream: true}))
++	}},
++	{"images", func(ctx context.Context, e *OpenAICompatExecutor, auth *cliproxyauth.Auth) error {
++		_, err := e.Execute(ctx, auth, cliproxyexecutor.Request{Model: "gpt-image-2", Payload: []byte(`{"model":"gpt-image-2","prompt":"p"}`)},
++			cliproxyexecutor.Options{SourceFormat: sdktranslator.FromString("openai-image"), Metadata: map[string]any{cliproxyexecutor.RequestPathMetadataKey: "/v1/images/generations"}})
++		return err
++	}},
++	{"images stream", func(ctx context.Context, e *OpenAICompatExecutor, auth *cliproxyauth.Auth) error {
++		return drainPrivateNetworkStream(e.ExecuteStream(ctx, auth, cliproxyexecutor.Request{Model: "gpt-image-2", Payload: []byte(`{"model":"gpt-image-2","prompt":"p","stream":true}`)},
++			cliproxyexecutor.Options{SourceFormat: sdktranslator.FromString("openai-image"), Stream: true, Metadata: map[string]any{cliproxyexecutor.RequestPathMetadataKey: "/v1/images/generations"}}))
++	}},
++	{"generic request", func(ctx context.Context, e *OpenAICompatExecutor, auth *cliproxyauth.Auth) error {
++		req, err := http.NewRequestWithContext(ctx, http.MethodGet, auth.Attributes["base_url"]+"/models", nil)
++		if err != nil {
++			return err
++		}
++		resp, err := e.HttpRequest(ctx, auth, req)
++		if resp != nil && resp.Body != nil {
++			_ = resp.Body.Close()
++		}
++		return err
++	}},
++	{"compact", func(ctx context.Context, e *OpenAICompatExecutor, auth *cliproxyauth.Auth) error {
++		_, err := e.Execute(ctx, auth, cliproxyexecutor.Request{Model: "pn-model", Payload: []byte(`{"model":"pn-model","input":[{"role":"user","content":"hi"}]}`)},
++			cliproxyexecutor.Options{SourceFormat: sdktranslator.FromString("openai-response"), Alt: "responses/compact"})
++		return err
++	}},
++}
++
++func capturePrivateNetworkLog(t *testing.T) *bytes.Buffer {
++	t.Helper()
++	var buf bytes.Buffer
++	logger := log.StandardLogger()
++	previousOut, previousLevel := logger.Out, logger.GetLevel()
++	logger.SetOutput(&buf)
++	logger.SetLevel(log.DebugLevel)
++	t.Cleanup(func() {
++		logger.SetOutput(previousOut)
++		logger.SetLevel(previousLevel)
++	})
++	return &buf
++}
++
++func TestPrivateNetworkEverySiteServesItsClass(t *testing.T) {
++	for _, site := range privateNetworkSites {
++		t.Run(site.name, func(t *testing.T) {
++			upstream := newPrivateNetworkUpstream(t)
++			auth := privateNetworkAuth(upstream.server.URL+"/v1", privatenet.Loopback, privateNetworkKey)
++			if err := site.run(context.Background(), privateNetworkExecutor(18317), auth); err != nil {
++				t.Fatalf("err = %v", err)
++			}
++			if upstream.requests.Load() != 1 {
++				t.Fatalf("upstream requests = %d", upstream.requests.Load())
++			}
++			if got := upstream.auth[0]; got != "Bearer "+privateNetworkKey {
++				t.Fatalf("authorization = %q", got)
++			}
++		})
++	}
++}
++
++func TestPrivateNetworkEverySiteRefusesOutsideItsClass(t *testing.T) {
++	const want = "upstream address refused: outside the provider's private network (tailnet)"
++	for _, site := range privateNetworkSites {
++		for _, key := range []string{privateNetworkKey, ""} {
++			t.Run(site.name+"/keyed="+strconv.FormatBool(key != ""), func(t *testing.T) {
++				logs := capturePrivateNetworkLog(t)
++				upstream := newPrivateNetworkUpstream(t)
++				auth := privateNetworkAuth(upstream.server.URL+"/v1", privatenet.Tailnet, key)
++				err := site.run(context.Background(), privateNetworkExecutor(18317), auth)
++				if err == nil || err.Error() != want {
++					t.Fatalf("err = %v", err)
++				}
++				var status interface{ StatusCode() int }
++				if !errors.As(err, &status) || status.StatusCode() != http.StatusBadGateway || errors.Unwrap(err) != nil {
++					t.Fatalf("err %#v is not the fresh 502 refusal", err)
++				}
++				if upstream.accepts.Load() != 0 || upstream.requests.Load() != 0 {
++					t.Fatalf("upstream accepts=%d requests=%d", upstream.accepts.Load(), upstream.requests.Load())
++				}
++				line := "private-network: refused provider=pn-provider class=tailnet remote=127.0.0.1 reason=outside-class"
++				if text := logs.String(); !strings.Contains(text, line) || strings.Contains(text, privateNetworkKey) {
++					t.Fatalf("log = %q", text)
++				}
++			})
++		}
++	}
++}
++
++func TestPrivateNetworkRefusesTheGatewaysOwnPort(t *testing.T) {
++	upstream := newPrivateNetworkUpstream(t)
++	auth := privateNetworkAuth(upstream.server.URL+"/v1", privatenet.Loopback, privateNetworkKey)
++	err := privateNetworkSites[0].run(context.Background(), privateNetworkExecutor(upstream.port()), auth)
++	refused, ok := privatenet.Canonical(err)
++	if !ok || refused.Reason != privatenet.ReasonGatewayPort || upstream.accepts.Load() != 0 {
++		t.Fatalf("err = %v accepts = %d", err, upstream.accepts.Load())
++	}
++}
++
++// Every proxy source is ignored: the global proxy-url, the credential's
++// proxy-url, a per-request proxy and a context round-tripper. The control
++// shows the same settings do reach an ordinary compat entry.
++func TestPrivateNetworkUsesNoProxy(t *testing.T) {
++	var proxied atomic.Int64
++	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
++		proxied.Add(1)
++		w.WriteHeader(http.StatusTeapot)
++	}))
++	defer proxy.Close()
++	var roundTripped atomic.Int64
++	contextTransport := privateNetworkRoundTripper(func(*http.Request) (*http.Response, error) {
++		roundTripped.Add(1)
++		return nil, errors.New("context round-tripper used")
++	})
++	run := func(class string) (*privateNetworkUpstream, error) {
++		upstream := newPrivateNetworkUpstream(t)
++		auth := privateNetworkAuth(upstream.server.URL+"/v1", class, privateNetworkKey)
++		if class == "" {
++			delete(auth.Attributes, "private_network")
++		}
++		auth.ProxyURL = proxy.URL
++		e := privateNetworkExecutor(18317)
++		e.cfg.ProxyURL = proxy.URL
++		ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", http.RoundTripper(contextTransport))
++		ctx = cliproxyexecutor.WithRequestProxyURL(ctx, proxy.URL)
++		return upstream, privateNetworkSites[0].run(ctx, e, auth)
++	}
++	upstream, err := run(privatenet.Loopback)
++	if err != nil || upstream.requests.Load() != 1 || proxied.Load() != 0 || roundTripped.Load() != 0 {
++		t.Fatalf("err=%v upstream=%d proxied=%d round-tripped=%d", err, upstream.requests.Load(), proxied.Load(), roundTripped.Load())
++	}
++	control, _ := run("")
++	if proxied.Load() == 0 || control.requests.Load() != 0 {
++		t.Fatalf("control: proxied=%d upstream=%d", proxied.Load(), control.requests.Load())
++	}
++}
++
++type privateNetworkRoundTripper func(*http.Request) (*http.Response, error)
++
++func (f privateNetworkRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
++
++// A keyless private-network entry follows no redirect either (an ordinary
++// keyless entry follows Go's default policy).
++func TestPrivateNetworkKeylessFollowsNoRedirect(t *testing.T) {
++	var followed atomic.Int64
++	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { followed.Add(1) }))
++	defer target.Close()
++	for _, location := range []string{"/v1/elsewhere", target.URL + "/v1/chat/completions"} {
++		origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++			if r.URL.Path == "/v1/elsewhere" {
++				followed.Add(1)
++				return
++			}
++			http.Redirect(w, r, location, http.StatusTemporaryRedirect)
++		}))
++		auth := privateNetworkAuth(origin.URL+"/v1", privatenet.Loopback, "")
++		err := privateNetworkSites[0].run(context.Background(), privateNetworkExecutor(18317), auth)
++		origin.Close()
++		if err == nil || err.Error() != "upstream redirect refused" {
++			t.Fatalf("%s: err = %v", location, err)
++		}
++	}
++	if followed.Load() != 0 {
++		t.Fatalf("%d redirects followed", followed.Load())
++	}
++}
+diff --git a/internal/runtime/executor/openai_compat_redirect.go b/internal/runtime/executor/openai_compat_redirect.go
+index 6e1c8775..39379ef6 100644
+--- a/internal/runtime/executor/openai_compat_redirect.go
++++ b/internal/runtime/executor/openai_compat_redirect.go
+@@ -5,6 +5,7 @@ import (
+ 	"net/http"
+ 	"strings"
+ 
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/privatenet"
+ 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
+ 	"github.com/router-for-me/CLIProxyAPI/v8/internal/upstreamredirect"
+ 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+@@ -87,7 +88,19 @@ func openAICompatRequestRedirectMode(auth *cliproxyauth.Auth, req *http.Request)
+ // newHTTPClient returns the compat HTTP client for the prepared request req,
+ // with the redirect policy captured from auth and req, and that mode for the
+ // post-Do check. Call it after every header of req is set and before Do.
++//
++// A private-network entry, keyed or keyless, never gets the shared
++// proxy-aware client: it gets the private-network transport of its class
++// (no proxy from any source, HTTP/1.1, the guarded dialer) and follows no
++// redirect.
+ func (e *OpenAICompatExecutor) newHTTPClient(ctx context.Context, auth *cliproxyauth.Auth, req *http.Request) (*http.Client, upstreamredirect.Mode) {
++	if class, ok := openAICompatPrivateNetwork(auth); ok {
++		gatewayPort := 0
++		if e.cfg != nil {
++			gatewayPort = e.cfg.Port
++		}
++		return privatenet.Client(class, gatewayPort), upstreamredirect.RefuseAll
++	}
+ 	mode := openAICompatRequestRedirectMode(auth, req)
+ 	return upstreamredirect.Guard(helps.NewProxyAwareHTTPClient(ctx, e.cfg, auth, 0), mode), mode
+ }
+diff --git a/internal/watcher/diff/openai_compat.go b/internal/watcher/diff/openai_compat.go
+index c9d839a8..56bfcb57 100644
+--- a/internal/watcher/diff/openai_compat.go
++++ b/internal/watcher/diff/openai_compat.go
+@@ -4,6 +4,7 @@ import (
+ 	"crypto/sha256"
+ 	"encoding/hex"
+ 	"fmt"
++	"net/url"
+ 	"sort"
+ 	"strings"
+ 
+@@ -101,12 +102,35 @@ func describeOpenAICompatibilityUpdate(oldEntry, newEntry config.OpenAICompatibi
+ 	if openAICompatConnectionPoolChanged(oldEntry, newEntry) {
+ 		details = append(details, "connection-pool updated")
+ 	}
++	if !privateNetworkEqual(oldEntry.PrivateNetwork, newEntry.PrivateNetwork) {
++		details = append(details, fmt.Sprintf("private-network %s -> %s", formatPrivateNetwork(oldEntry.PrivateNetwork), formatPrivateNetwork(newEntry.PrivateNetwork)))
++	}
+ 	if len(details) == 0 {
+ 		return ""
+ 	}
+ 	return "(" + strings.Join(details, ", ") + ")"
+ }
+ 
++func privateNetworkEqual(a, b *config.OpenAICompatPrivateNetwork) bool {
++	if a == nil || b == nil {
++		return a == b
++	}
++	return *a == *b
++}
++
++// formatPrivateNetwork prints a declaration's class and URL only: scheme,
++// host and path, never userinfo, query or fragment.
++func formatPrivateNetwork(declared *config.OpenAICompatPrivateNetwork) string {
++	if declared == nil {
++		return "none"
++	}
++	where := "<redacted>"
++	if parsed, err := url.Parse(strings.TrimSpace(declared.BaseURL)); err == nil && parsed.Host != "" {
++		where = parsed.Scheme + "://" + parsed.Host + parsed.EscapedPath()
++	}
++	return strings.TrimSpace(declared.Class) + " " + where
++}
++
+ func openAICompatConnectionPoolChanged(oldEntry, newEntry config.OpenAICompatibility) bool {
+ 	if !connectionPoolConfigEqual(oldEntry.ConnectionPool, newEntry.ConnectionPool) {
+ 		return true
+diff --git a/internal/watcher/diff/openai_compat_private_network_test.go b/internal/watcher/diff/openai_compat_private_network_test.go
+new file mode 100644
+index 00000000..7fe489cd
+--- /dev/null
++++ b/internal/watcher/diff/openai_compat_private_network_test.go
+@@ -0,0 +1,44 @@
++package diff
++
++import (
++	"strings"
++	"testing"
++
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++)
++
++func TestDiffOpenAICompatPrivateNetworkPrintsClassAndURLOnly(t *testing.T) {
++	entry := func(url, class string) config.OpenAICompatibility {
++		return config.OpenAICompatibility{
++			Name:           "pn-provider",
++			BaseURL:        url,
++			PrivateNetwork: &config.OpenAICompatPrivateNetwork{BaseURL: url, Class: class},
++			APIKeyEntries:  []config.OpenAICompatibilityAPIKey{{APIKey: "pn-sentinel-key-0123456789"}},
++		}
++	}
++	changes := DiffOpenAICompatibility(
++		[]config.OpenAICompatibility{entry("http://127.0.0.1:8010/v1", "loopback")},
++		[]config.OpenAICompatibility{entry("http://100.88.1.1:8010/v1?token=pn-query-secret", "tailnet")},
++	)
++	if len(changes) != 1 || changes[0] != "provider updated: pn-provider (private-network loopback http://127.0.0.1:8010/v1 -> tailnet http://100.88.1.1:8010/v1)" {
++		t.Fatalf("changes = %q", changes)
++	}
++	if strings.Contains(changes[0], "pn-sentinel-key") || strings.Contains(changes[0], "pn-query-secret") {
++		t.Fatal("a secret reached the change line")
++	}
++	unchanged := DiffOpenAICompatibility([]config.OpenAICompatibility{entry("http://127.0.0.1:8010/v1", "loopback")},
++		[]config.OpenAICompatibility{entry("http://127.0.0.1:8010/v1", "loopback")})
++	if len(unchanged) != 0 {
++		t.Fatalf("unchanged entry reported %q", unchanged)
++	}
++	added := DiffOpenAICompatibility(nil, []config.OpenAICompatibility{{Name: "pn-provider", PrivateNetwork: &config.OpenAICompatPrivateNetwork{BaseURL: "http://u:pn-userinfo-secret@10.0.0.5/v1", Class: "lan"}}})
++	ordinary := entry("http://127.0.0.1:8010/v1", "loopback")
++	ordinary.PrivateNetwork = nil
++	removed := DiffOpenAICompatibility([]config.OpenAICompatibility{entry("http://127.0.0.1:8010/v1", "loopback")}, []config.OpenAICompatibility{ordinary})
++	if len(added) != 1 || strings.Contains(added[0], "pn-userinfo-secret") {
++		t.Fatalf("added = %q", added)
++	}
++	if len(removed) != 1 || removed[0] != "provider updated: pn-provider (private-network loopback http://127.0.0.1:8010/v1 -> none)" {
++		t.Fatalf("removed = %q", removed)
++	}
++}
+diff --git a/internal/watcher/synthesizer/config.go b/internal/watcher/synthesizer/config.go
+index 9b38d1bd..f57adfb8 100644
+--- a/internal/watcher/synthesizer/config.go
++++ b/internal/watcher/synthesizer/config.go
+@@ -51,6 +51,15 @@ func OpenAICompatConnectionPool(compat *config.OpenAICompatibility, entry *confi
+ 	return openAICompatConnectionPool(compat, entry)
+ }
+ 
++// addPrivateNetworkToAttrs records a private-network entry's class; the
++// compat executor then dials it only through the private-network guard.
++func addPrivateNetworkToAttrs(declared *config.OpenAICompatPrivateNetwork, attrs map[string]string) {
++	if declared == nil || attrs == nil {
++		return
++	}
++	attrs["private_network"] = declared.Class
++}
++
+ func openAICompatConnectionPool(compat *config.OpenAICompatibility, entry *config.OpenAICompatibilityAPIKey) *config.ProxyConnectionPoolConfig {
+ 	var group *config.ProxyConnectionPoolConfig
+ 	if compat != nil {
+@@ -419,6 +428,7 @@ func (s *ConfigSynthesizer) synthesizeOpenAICompat(ctx *SynthesisContext) []*cor
+ 				attrs["models_hash"] = hash
+ 			}
+ 			addConfigHeadersToAttrs(compat.Headers, attrs)
++			addPrivateNetworkToAttrs(compat.PrivateNetwork, attrs)
+ 			a := &coreauth.Auth{
+ 				ID:                  id,
+ 				Provider:            internalProviderKey,
+@@ -467,6 +477,7 @@ func (s *ConfigSynthesizer) synthesizeOpenAICompat(ctx *SynthesisContext) []*cor
+ 				attrs["models_hash"] = hash
+ 			}
+ 			addConfigHeadersToAttrs(compat.Headers, attrs)
++			addPrivateNetworkToAttrs(compat.PrivateNetwork, attrs)
+ 			a := &coreauth.Auth{
+ 				ID:                  id,
+ 				Provider:            internalProviderKey,
+diff --git a/internal/watcher/synthesizer/openai_compat_private_network_test.go b/internal/watcher/synthesizer/openai_compat_private_network_test.go
+new file mode 100644
+index 00000000..5bdda60b
+--- /dev/null
++++ b/internal/watcher/synthesizer/openai_compat_private_network_test.go
+@@ -0,0 +1,54 @@
++package synthesizer
++
++import (
++	"testing"
++	"time"
++
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++)
++
++func TestSynthesizeOpenAICompatPrivateNetworkClass(t *testing.T) {
++	cfg, err := config.ParseConfigBytes([]byte(`openai-compatibility:
++  - name: "pn-keyed"
++    private-network:
++      base-url: "http://127.0.0.1:8010/v1"
++      class: "loopback"
++    api-key-entries:
++      - api-key: "pn-key"
++  - name: "pn-keyless"
++    private-network:
++      base-url: "http://100.88.1.1:8010/v1"
++      class: "tailnet"
++  - name: "ordinary"
++    base-url: "http://127.0.0.1:8011/v1"
++`))
++	if err != nil {
++		t.Fatal(err)
++	}
++	auths, err := NewConfigSynthesizer().Synthesize(&SynthesisContext{Config: cfg, Now: time.Now(), IDGenerator: NewStableIDGenerator()})
++	if err != nil {
++		t.Fatal(err)
++	}
++	want := map[string][2]string{
++		"pn-keyed":   {"http://127.0.0.1:8010/v1", "loopback"},
++		"pn-keyless": {"http://100.88.1.1:8010/v1", "tailnet"},
++	}
++	seen := 0
++	for _, a := range auths {
++		class, declared := a.Attributes["private_network"]
++		switch a.Label {
++		case "ordinary":
++			if declared {
++				t.Fatal("an ordinary entry carries a private-network class")
++			}
++		case "pn-keyed", "pn-keyless":
++			seen++
++			if !declared || class != want[a.Label][1] || a.Attributes["base_url"] != want[a.Label][0] {
++				t.Fatalf("%s attributes = %v", a.Label, a.Attributes)
++			}
++		}
++	}
++	if seen != 2 {
++		t.Fatalf("private-network auths = %d", seen)
++	}
++}

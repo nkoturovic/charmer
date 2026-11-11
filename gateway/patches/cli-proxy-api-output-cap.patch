@@ -248,10 +248,10 @@ index 00000000..7b05d888
 +}
 diff --git a/internal/runtime/executor/codex_key_output_cap_test.go b/internal/runtime/executor/codex_key_output_cap_test.go
 new file mode 100644
-index 00000000..29f94d8c
+index 00000000..9b6d4cc4
 --- /dev/null
 +++ b/internal/runtime/executor/codex_key_output_cap_test.go
-@@ -0,0 +1,433 @@
+@@ -0,0 +1,464 @@
 +package executor
 +
 +import (
@@ -682,6 +682,37 @@ index 00000000..29f94d8c
 +		})
 +		t.Run(fmt.Sprintf("key/stream=%t", stream), func(t *testing.T) {
 +			codexOutputCapWant(t, codexOutputCapWebsocketFrame(t, codexOutputCapKeyAuth, withCap, stream), "32000")
++		})
++	}
++}
++
++// A compact request on the account route is not covered by the drop (its
++// Responses body is sent as the client wrote it, as in 2.4.0): the client's
++// max_output_tokens passes through, and a body that names its limit
++// otherwise carries no max_output_tokens.
++func TestCodexAccountCompactPassesTheClientCapThrough(t *testing.T) {
++	cases := []struct{ name, from, payload, want, legacy string }{
++		{"responses", "openai-response", `{"model":"gpt-5.5","max_output_tokens":1000,` + codexOutputCapInput + `}`, "1000", ""},
++		{"responses legacy field", "openai-response", `{"model":"gpt-5.5","max_completion_tokens":1000,` + codexOutputCapInput + `}`, "", "1000"},
++		{"messages", "claude", `{"model":"gpt-5.5","max_tokens":1000,` + codexOutputCapMessage + `}`, "", ""},
++	}
++	for _, tc := range cases {
++		t.Run(tc.name, func(t *testing.T) {
++			req := cliproxyexecutor.Request{Model: "gpt-5.5", Payload: []byte(tc.payload)}
++			opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FromString(tc.from), Alt: "responses/compact"}
++			hits := codexOutputCapRequest(t, &config.Config{}, codexOutputCapAccountAuth, req, opts)
++			if len(hits) != 1 || hits[0].path != "/responses/compact" {
++				t.Fatalf("compact upstream requests = %d, want one /responses/compact", len(hits))
++			}
++			if hits[0].header.Get("Chatgpt-Account-Id") != codexOutputCapAccount {
++				t.Fatalf("request did not take the account route: %v", hits[0].header)
++			}
++			if got := ojson.GetBytes(hits[0].body, "max_output_tokens").Raw; got != tc.want {
++				t.Fatalf("compact max_output_tokens = %q, want %q; body=%s", got, tc.want, hits[0].body)
++			}
++			if got := ojson.GetBytes(hits[0].body, "max_completion_tokens").Raw; got != tc.legacy {
++				t.Fatalf("compact max_completion_tokens = %q, want %q; body=%s", got, tc.legacy, hits[0].body)
++			}
 +		})
 +	}
 +}

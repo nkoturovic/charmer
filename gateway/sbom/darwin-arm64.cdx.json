@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:177a89f6-4a0d-5a6a-b04f-08bed50b5a78",
+  "serialNumber": "urn:uuid:86d8df30-4b92-50cc-8284-01c600e4e772",
   "version": 1,
   "metadata": {
     "tools": {
@@ -240,6 +240,12 @@
             "diff": {
               "url": "gateway/patches/cli-proxy-api-native-advisor-beta-order.patch"
             }
+          },
+          {
+            "type": "unofficial",
+            "diff": {
+              "url": "gateway/patches/cli-proxy-api-private-network-dial.patch"
+            }
           }
         ],
         "notes": "Built from the upstream source at the commit above with the patches applied in order; each patch's sha256 and the patched tree's normalised sha256 (vendor/ excluded) are the charmer:gateway properties."
@@ -283,7 +289,7 @@
         },
         {
           "name": "charmer:gateway:post-apply-tree-sha256",
-          "value": "0e8a168990bfd791ae8c5e0a71cafcd7b74ac6f076a27b329db667370a8050ea"
+          "value": "3cd19f08970f8e228e5bcacc2cd3edd8c90bc4f1ec1efd52c7f60e1904cf3e57"
         },
         {
           "name": "charmer:gateway:build-godebug",
@@ -375,7 +381,7 @@
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-output-cap.patch@4daca00e7711fa0d3d949483667ee492c34bd26670291d6b4715eb18bee8a550"
+          "value": "cli-proxy-api-output-cap.patch@aee70e81d033f842dbdf6d538b1c4f6638fbe965986c5c7e2d73b493fab9d81d"
         },
         {
           "name": "charmer:gateway:patch",
@@ -399,11 +405,15 @@
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-codex-refresh-without-journal.patch@53f48b53806db0bc6b2d411a32467dfaa9a365e552de9d6b50e6473ed282d78e"
+          "value": "cli-proxy-api-codex-refresh-without-journal.patch@0a112a12b1ef5f7116aca2aee337efa19902faa608da2346e96e4bd72026a3fd"
         },
         {
           "name": "charmer:gateway:patch",
           "value": "cli-proxy-api-native-advisor-beta-order.patch@d4e9fc3ea76787cde7553c25a753e6888402bbac4d865788160a37303757f3fa"
+        },
+        {
+          "name": "charmer:gateway:patch",
+          "value": "cli-proxy-api-private-network-dial.patch@8cb2219558a8260ebfbdef3c170ff37c9daeacacf6968c39dee1af396a2ccb06"
         }
       ]
     }
