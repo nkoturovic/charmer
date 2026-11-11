@@ -230,21 +230,38 @@ def native_text(turn: UpstreamTurn, body: dict[str, Any], text: str = "PROBE-OK"
     turn.full(status, data, content_type)
 
 
+# A chunk-size line: hex digits, optional whitespace and chunk extensions.
+_CHUNK_SIZE = re.compile(rb"[0-9A-Fa-f]{1,16}[ \t]*(?:;[^\r\n]*)?")
+_LINE_LIMIT = 4096
+
+
 class ChunkedBody:
     """Incremental HTTP/1.1 chunked transfer decoding: :meth:`feed` takes
     the raw bytes as they arrive and returns the payload bytes they complete
-    (chunk-size lines, chunk ends and trailers removed)."""
+    (chunk-size lines, chunk ends and trailers removed). The framing is
+    checked as it goes: a size line that is not hex digits (with optional
+    extensions), a chunk not ended by CRLF, a malformed trailer or bytes
+    after the last chunk set :attr:`error` and stop the decoding there; a
+    framing failure is never completion. :meth:`ending` says how the body
+    ended: ``complete``, ``error`` or where it was cut short."""
 
     def __init__(self) -> None:
         self.buffer = bytearray()
         self.state = "size"
         self.remaining = 0
-        self.done = False
+        self.complete = False
+        self.error: str | None = None
 
     def feed(self, data: bytes) -> bytes:
+        if self.error is not None:
+            return b""
+        if self.complete:
+            if data:
+                self.error = "bytes after the last chunk"
+            return b""
         self.buffer += data
         out = bytearray()
-        while not self.done:
+        while self.error is None and not self.complete:
             if self.state == "data":
                 if not self.buffer:
                     break
@@ -258,24 +275,51 @@ class ChunkedBody:
             if self.state == "end":
                 if len(self.buffer) < 2:
                     break
+                if bytes(self.buffer[:2]) != b"\r\n":
+                    self.error = "a chunk does not end with CRLF"
+                    break
                 del self.buffer[:2]
                 self.state = "size"
                 continue
             line_end = self.buffer.find(b"\r\n")
             if line_end < 0:
+                if len(self.buffer) > _LINE_LIMIT:
+                    self.error = "an over-long framing line"
                 break
             line = bytes(self.buffer[:line_end])
             del self.buffer[:line_end + 2]
             if self.state == "trailer":
-                self.done = not line
+                if not line:
+                    self.complete = True
+                elif b":" not in line:
+                    self.error = "a malformed trailer field"
                 continue
-            try:
-                size = int(line.split(b";", 1)[0].strip(), 16)
-            except ValueError:
-                self.done = True
+            if not _CHUNK_SIZE.fullmatch(line):
+                self.error = "a malformed chunk-size line"
                 break
+            size = int(line.split(b";", 1)[0].strip(), 16)
             self.state, self.remaining = ("trailer", 0) if size == 0 else ("data", size)
+        if self.complete and self.buffer and self.error is None:
+            self.error = "bytes after the last chunk"
         return bytes(out)
+
+    def ending(self) -> str:
+        """``error``, ``complete``, or how the bytes stopped short:
+        ``truncated-mid-chunk``, ``truncated-before-chunk-end``,
+        ``truncated-mid-size-line``, ``truncated-between-chunks`` or
+        ``truncated-in-trailer``."""
+
+        if self.error is not None:
+            return "error"
+        if self.complete:
+            return "complete"
+        if self.state == "data":
+            return "truncated-mid-chunk"
+        if self.state == "end":
+            return "truncated-before-chunk-end"
+        if self.state == "trailer":
+            return "truncated-in-trailer"
+        return "truncated-mid-size-line" if self.buffer else "truncated-between-chunks"
 
 
 _STOP_REASON = re.compile(rb'"stop_reason"\s*:\s*"([a-z_]{1,40})"')
@@ -288,13 +332,19 @@ class BodyObserver:
     body byte and an SSE marker split across chunks counts when it is whole.
     ``row`` gets ``headers``, ``status``, ``first_body``, ``first_event``
     (a ``data:`` line), ``first_comment`` (a line starting with ``:``) and,
-    from :meth:`finish`, the counts, the event types in order (at most 64) and
-    the stop reasons."""
+    from :meth:`finish`, the counts, the event types in order (at most 64),
+    the stop reasons and ``framing``: how the body ended (``complete``,
+    ``error`` with ``framing_error``, a ``truncated-*`` form, ``eof`` for a
+    body that runs to the connection's end, ``no-response``). A decoded
+    prefix stays observable whatever the framing; the verdicts read
+    ``framing`` before trusting it."""
 
     def __init__(self, row: dict[str, Any], clock: Any):
         self.row, self.clock = row, clock
         self.head = bytearray()
         self.decoder: ChunkedBody | None = None
+        self.length: int | None = None
+        self.received = 0
         self.payload = bytearray()
         self.in_body = False
 
@@ -312,7 +362,11 @@ class BodyObserver:
             if any(name.strip().lower() == b"transfer-encoding" and b"chunked" in value.lower()
                    for name, value in fields):
                 self.decoder = ChunkedBody()
+            else:
+                lengths = [value.strip() for name, value in fields if name.strip().lower() == b"content-length"]
+                self.length = int(lengths[0]) if lengths and lengths[0].isdigit() else None
             data = rest
+        self.received += len(data)
         decoded = self.decoder.feed(data) if self.decoder is not None else data
         if not decoded:
             return
@@ -324,8 +378,24 @@ class BodyObserver:
         if "first_comment" not in self.row and _COMMENT.search(self.payload):
             self.row["first_comment"] = now
 
+    def ending(self) -> str:
+        if not self.in_body:
+            return "no-response"
+        if self.decoder is not None:
+            return self.decoder.ending()
+        if self.length is None:
+            return "eof"
+        if self.received == self.length:
+            return "complete"
+        return "truncated-mid-body" if self.received < self.length else "error"
+
     def finish(self) -> None:
         payload = bytes(self.payload)
+        self.row["framing"] = self.ending()
+        if self.decoder is not None and self.decoder.error is not None:
+            self.row["framing_error"] = self.decoder.error
+        elif self.row["framing"] == "error":
+            self.row["framing_error"] = "bytes beyond Content-Length"
         self.row.update(bytes=len(payload), events=len(re.findall(rb"(?:^|\n)data:", payload)),
                         comments=len(_COMMENT.findall(payload)),
                         event_types=[kind.decode() for kind in

@@ -113,48 +113,69 @@ def parts(request: dict[str, Any]) -> str:
 
 def stimulus_problems(name: str, observed: dict[str, Any]) -> list[str]:
     """What shows the row's stimulus did not happen as stated
-    (:data:`STIMULI`): no upstream request on the source's model, none sent
-    the stimulus, or the client's first request on that model did not get it
-    through the gateway (its status; the refusal's stop reason; a stream that
-    carried a text delta and then ended without ``message_stop``). A refused
-    400 may be resent on the same model any number of times, each refused."""
+    (:data:`STIMULI`), from the recorded facts, never from the script's
+    intent alone: an upstream request on the source's model; every one of
+    its replies with the stated status, and one of them sending the
+    stimulus (``sent`` supplements the status); a client request on that
+    model for each, every one answered with the stated status, its body's
+    framing well formed and complete. The refusal's stop reason reaches the
+    client; the cut row's first upstream reply was recorded cut after a
+    text delta and the client's first stream stopped short after a text
+    delta (its connection ending mid-chunk, or a complete framing without
+    ``message_stop``). A framing error is never that cut. A refused 400 may
+    be resent on the same model any number of times, each refused."""
 
     spec, wire = STIMULI[name], models._wire(_SOURCE)
     upstream = [hit for hit in observed["upstream_lead"] if hit.get("model") == wire]
     if not upstream:
         return [f"no upstream request on {wire}"]
     problems = []
+    statuses = [hit.get("status") for hit in upstream]
+    if any(status != spec["status"] for status in statuses):
+        problems.append(f"the upstream answered the requests on {wire} with {statuses}, not {spec['status']} each")
     if not any(hit.get("sent") == spec["sent"] for hit in upstream):
         problems.append(f"the upstream never sent {spec['sent']} (sent {[hit.get('sent') for hit in upstream]})")
     if name == "refusal-400" and any(hit.get("sent") != spec["sent"] for hit in upstream):
         problems.append("a request on the source's model was answered other than with the 400")
-    if name == "mid-stream-cut" and not any(hit.get("sent") == spec["sent"] and "cut" in hit for hit in upstream):
-        problems.append("the upstream never cut a stream")
     client = [row for row in observed["main_rows"] if row.get("model") == wire]
     if not client:
         return [*problems, f"no client request on {wire}"]
+    if len(client) != len(upstream):
+        problems.append(f"{len(client)} client requests on {wire}, {len(upstream)} upstream")
+    client_statuses = [row.get("status") for row in client]
+    if any(status != spec["status"] for status in client_statuses):
+        problems.append(f"the client's requests on {wire} got {client_statuses}, not {spec['status']} each")
+    for index, row in enumerate(client, start=1):
+        framing = row.get("framing")
+        if framing == "error":
+            problems.append(f"client request {index} on {wire}: malformed framing ({row.get('framing_error')})")
+        elif framing != "complete" and not (name == "mid-stream-cut" and index == 1):
+            problems.append(f"client request {index} on {wire} ended {framing}, not complete")
     first = client[0]
-    if first.get("status") != spec["status"]:
-        problems.append(f"the first client request on {wire} got {first.get('status')}, not {spec['status']}")
     if name == "stream-refusal" and "refusal" not in first.get("stop_reasons", ()):
         problems.append("the refusal's stop reason never reached the client")
     if name == "mid-stream-cut":
-        types = first.get("event_types", ())
-        if "content_block_delta" not in types or "message_stop" in types:
-            problems.append(f"the client's first stream was not cut after a text delta (events {list(types)})")
+        if upstream[0].get("sent") != spec["sent"] or "cut" not in upstream[0]:
+            problems.append("the upstream did not cut its first reply on the source's model")
+        types, framing = list(first.get("event_types") or ()), str(first.get("framing"))
+        stopped_short = framing.startswith("truncated-") or (framing == "complete" and "message_stop" not in types)
+        if "content_block_delta" not in types or "message_stop" in types or not stopped_short:
+            problems.append(f"the client's first stream was not cut after a text delta "
+                            f"(framing {framing}, events {types})")
     return problems
 
 
 def first_on_source(observed: dict[str, Any]) -> str:
     """The client's first request on the source's model as the relay saw it:
-    status, last event type, stop reasons."""
+    status, last event type, stop reasons, framing."""
 
     rows = [row for row in observed.get("main_rows", ()) if row.get("model") == models._wire(_SOURCE)]
     if not rows:
         return "-"
     first = rows[0]
     types = first.get("event_types") or ["-"]
-    return f"{first.get('status')}:{types[-1]}:{','.join(first.get('stop_reasons') or ['-'])}"
+    return (f"{first.get('status')}:{types[-1]}:{','.join(first.get('stop_reasons') or ['-'])}"
+            f":{first.get('framing')}")
 
 
 def row_problems(name: str, observed: dict[str, Any], expected: str | None) -> list[str]:
@@ -262,7 +283,8 @@ class GatewayRefusalRowsProbe(models._SpikeTestCase):
                 "main_models": [row["model"] for row in main],
                 "main_statuses": [row.get("status") for row in main],
                 "main_parts": [parts(row["request"]) for row in main],
-                "main_rows": [{key: row.get(key) for key in ("model", "status", "event_types", "stop_reasons")}
+                "main_rows": [{key: row.get(key) for key in ("model", "status", "event_types", "stop_reasons",
+                                                             "framing", "framing_error")}
                               for row in main],
                 "upstream_models": [hit["model"] for hit in gateway.upstream.hits if hit.get("main")],
                 "upstream_lead": [{key: hit.get(key) for key in ("model", "sent", "status", "cut")
@@ -354,20 +376,7 @@ class RowVerdictTests(unittest.TestCase):
 
     def test_a_row_needs_its_stimulus_to_have_happened(self) -> None:
         wire = models._wire(_SOURCE)
-        evidence = {
-            "stream-refusal": {"upstream_lead": [{"model": wire, "sent": "refusal-event", "status": 200}] * 2,
-                               "main_rows": [{"model": wire, "status": 200, "stop_reasons": ["refusal"],
-                                              "event_types": ["message_start", "message_delta", "message_stop"]},
-                                             {"model": "claude-opus-4-8", "status": 200}]},
-            "refusal-400": {"upstream_lead": [{"model": wire, "sent": "status-400", "status": 400}] * 6,
-                            "main_rows": [{"model": wire, "status": 400}] * 6},
-            "mid-stream-cut": {"upstream_lead": [{"model": wire, "sent": "cut-after-delta", "status": 200, "cut": 1.0},
-                                                 {"model": wire, "sent": "answer", "status": 200}],
-                               "main_rows": [{"model": wire, "status": 200, "stop_reasons": [],
-                                              "event_types": ["message_start", "content_block_start",
-                                                              "content_block_delta"]},
-                                             {"model": wire, "status": 200}]},
-        }
+        evidence = _evidence()
         for name, observed in evidence.items():
             with self.subTest(name):
                 self.assertEqual(stimulus_problems(name, observed), [])
@@ -381,21 +390,93 @@ class RowVerdictTests(unittest.TestCase):
                 self.assertTrue(stimulus_problems(name, {**observed, "upstream_lead": other}))
         # An uncut, complete answer is no cut.
         uncut = {"upstream_lead": [{"model": wire, "sent": "answer", "status": 200}],
-                 "main_rows": [{"model": wire, "status": 200, "stop_reasons": ["end_turn"],
+                 "main_rows": [{"model": wire, "status": 200, "stop_reasons": ["end_turn"], "framing": "complete",
                                 "event_types": ["message_start", "content_block_delta", "message_delta",
                                                 "message_stop"]}]}
         self.assertTrue(stimulus_problems("mid-stream-cut", uncut))
         self.assertTrue(stimulus_problems("mid-stream-cut", {**evidence["mid-stream-cut"],
-                                                             "main_rows": uncut["main_rows"]}))
+                                                             "main_rows": [*uncut["main_rows"], _COMPLETE]}))
         stated = {**evidence["mid-stream-cut"], "upstream_lead": [
-            {"model": wire, "sent": "cut-after-delta", "status": 200}]}
+            {"model": wire, "sent": "cut-after-delta", "status": 200}, {"model": wire, "sent": "answer",
+                                                                         "status": 200}]}
         self.assertTrue(stimulus_problems("mid-stream-cut", stated))  # stated, never cut
         # A refusal that never reached the client, a 400 row with one answer.
         refused = evidence["stream-refusal"]
         self.assertTrue(stimulus_problems("stream-refusal", {**refused, "main_rows": [
-            {**refused["main_rows"][0], "stop_reasons": ["end_turn"]}]}))
+            {**refused["main_rows"][0], "stop_reasons": ["end_turn"]}, *refused["main_rows"][1:]]}))
         self.assertTrue(stimulus_problems("refusal-400", {**evidence["refusal-400"], "upstream_lead": [
-            {"model": wire, "sent": "status-400", "status": 400}, {"model": wire, "sent": "answer", "status": 200}]}))
+            {"model": wire, "sent": "status-400", "status": 400}, {"model": wire, "sent": "answer", "status": 200},
+            *[{"model": wire, "sent": "status-400", "status": 400}] * 4]}))
+
+    def test_every_source_reply_needs_the_stated_status(self) -> None:
+        """A 400 first, then 422 on the later requests on the source's model,
+        is no 400 row: every recorded upstream status and every client status
+        counts, whatever ``sent`` says, and however many resends."""
+
+        wire = models._wire(_SOURCE)
+        good = _evidence()["refusal-400"]
+        later_422 = [{"model": wire, "sent": "status-400", "status": 400},
+                     *[{"model": wire, "sent": "status-400", "status": 422}] * 5]
+        client_422 = [{**good["main_rows"][0]}, *[{**row, "status": 422} for row in good["main_rows"][1:]]]
+        for label, observed in (
+                ("upstream and client 400 then 422", {"upstream_lead": later_422, "main_rows": client_422}),
+                ("client 400 then 422", {**good, "main_rows": client_422}),
+                ("upstream 400 then 422", {**good, "upstream_lead": later_422})):
+            with self.subTest(label):
+                self.assertTrue(stimulus_problems("refusal-400", observed))
+        for count in (1, 2, 9):
+            with self.subTest(resends=count):
+                self.assertEqual(stimulus_problems("refusal-400", {"upstream_lead": good["upstream_lead"][:1] * count,
+                                                                   "main_rows": good["main_rows"][:1] * count}), [])
+        self.assertTrue(stimulus_problems("refusal-400", {**good, "main_rows": good["main_rows"][:5]}))
+
+    def test_a_malformed_or_unexpected_framing_is_never_a_pass(self) -> None:
+        evidence = _evidence()
+        for name, observed in evidence.items():
+            for index in range(len(observed["main_rows"])):
+                if observed["main_rows"][index].get("model") != models._wire(_SOURCE):
+                    continue
+                broken = [dict(row) for row in observed["main_rows"]]
+                broken[index].update(framing="error", framing_error="a malformed chunk-size line")
+                with self.subTest(name, request=index + 1, framing="error"):
+                    self.assertTrue(stimulus_problems(name, {**observed, "main_rows": broken}))
+                if name == "mid-stream-cut" and index == 0:
+                    continue
+                short = [dict(row) for row in observed["main_rows"]]
+                short[index]["framing"] = "truncated-mid-chunk"
+                with self.subTest(name, request=index + 1, framing="truncated"):
+                    self.assertTrue(stimulus_problems(name, {**observed, "main_rows": short}))
+        cut = evidence["mid-stream-cut"]
+        for framing in ("truncated-mid-chunk", "truncated-between-chunks", "complete"):
+            first = {**cut["main_rows"][0], "framing": framing}
+            with self.subTest("the intended cut", framing=framing):
+                self.assertEqual(stimulus_problems("mid-stream-cut",
+                                                   {**cut, "main_rows": [first, *cut["main_rows"][1:]]}), [])
+
+
+_COMPLETE = {"model": models._wire(_SOURCE), "status": 200, "framing": "complete", "stop_reasons": ["end_turn"],
+             "event_types": ["message_start", "content_block_delta", "message_delta", "message_stop"]}
+
+
+def _evidence() -> dict[str, dict[str, Any]]:
+    """Each row's recorded facts as a passing run shows them."""
+
+    wire = models._wire(_SOURCE)
+    refused = {"model": wire, "status": 200, "stop_reasons": ["refusal"], "framing": "complete",
+               "event_types": ["message_start", "message_delta", "message_stop"]}
+    return {
+        "stream-refusal": {"upstream_lead": [{"model": wire, "sent": "refusal-event", "status": 200}] * 2,
+                           "main_rows": [refused, refused, {**_COMPLETE, "model": "claude-opus-4-8"}]},
+        "refusal-400": {"upstream_lead": [{"model": wire, "sent": "status-400", "status": 400}] * 6,
+                        "main_rows": [{"model": wire, "status": 400, "framing": "complete", "event_types": [],
+                                       "stop_reasons": []}] * 6},
+        "mid-stream-cut": {"upstream_lead": [{"model": wire, "sent": "cut-after-delta", "status": 200, "cut": 1.0},
+                                             {"model": wire, "sent": "answer", "status": 200}],
+                           "main_rows": [{"model": wire, "status": 200, "stop_reasons": [], "framing": "complete",
+                                          "event_types": ["message_start", "content_block_start",
+                                                          "content_block_delta", "error"]},
+                                         _COMPLETE]},
+    }
 
 
 class _Clock:
@@ -446,6 +527,82 @@ class RelayObservationTests(unittest.TestCase):
         observer.feed(b"{}")
         observer.finish()
         self.assertEqual((row["status"], row["bytes"], row["events"], row["stop_reasons"]), (400, 2, 0, []))
+        self.assertEqual(row["framing"], "complete")
+
+    def _observe(self, *pieces: bytes) -> dict[str, Any]:
+        clock, row = _Clock(), {}
+        observer = stream.BodyObserver(row, clock)
+        for piece in pieces:
+            observer.feed(piece)
+            clock.value += 1.0
+        observer.finish()
+        return row
+
+    @staticmethod
+    def _chunk(data: bytes) -> bytes:
+        return f"{len(data):x}\r\n".encode() + data + b"\r\n"
+
+    _PREFIX = (b"event: message_start\ndata: {}\n\n", b"event: content_block_start\ndata: {}\n\n",
+               b'event: content_block_delta\ndata: {"delta": {"text": "PROBE"}}\n\n')
+
+    def _cut_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        """The cut row's evidence with ``row`` as the client's first stream."""
+
+        cut = _evidence()["mid-stream-cut"]
+        first = {"model": models._wire(_SOURCE), **{key: row.get(key) for key in (
+            "status", "event_types", "stop_reasons", "framing", "framing_error")}}
+        return {**cut, "main_rows": [first, *cut["main_rows"][1:]]}
+
+    def test_a_malformed_chunk_size_line_is_a_framing_error(self) -> None:
+        """A valid prefix through a text delta, then a size line that is not
+        hex: a framing error, never the cut."""
+
+        row = self._observe(self.HEAD, *map(self._chunk, self._PREFIX), b"not-hex\r\nmore\r\n0\r\n\r\n")
+        self.assertEqual((row["framing"], row["framing_error"]), ("error", "a malformed chunk-size line"))
+        self.assertIn("content_block_delta", row["event_types"])
+        self.assertTrue(stimulus_problems("mid-stream-cut", self._cut_row(row)))
+        for line in (b"0x5", b"5 5", b"-1", b"", b"5\r", b"1" * 17):
+            with self.subTest(line=line):
+                self.assertEqual(self._observe(self.HEAD, line + b"\r\nhello\r\n0\r\n\r\n")["framing"], "error")
+        self.assertEqual(self._observe(self.HEAD, b"5;name=value\r\nhello\r\n0\r\n\r\n")["framing"], "complete")
+
+    def test_an_invalid_chunk_terminator_is_a_framing_error(self) -> None:
+        row = self._observe(self.HEAD, b"1\r\nxZZ0\r\n\r\n")
+        self.assertEqual((row["framing"], row["framing_error"]), ("error", "a chunk does not end with CRLF"))
+        self.assertEqual(self._observe(self.HEAD, b"1\r\nx\n0\r\n\r\n")["framing"], "error")
+        self.assertEqual(self._observe(self.HEAD, b"1\r\nx\r\n0\r\n\r\nextra")["framing"], "error")
+        self.assertEqual(self._observe(self.HEAD, b"1\r\nx\r\n0\r\nbad trailer\r\n\r\n")["framing"], "error")
+        self.assertEqual(self._observe(self.HEAD, b"1\r\nx\r\n0\r\nX-Trailer: 1\r\n\r\n")["framing"],
+                         "complete")
+
+    def test_truncated_framing_is_reported_and_only_the_intended_cut_passes(self) -> None:
+        prefix = b"".join(map(self._chunk, self._PREFIX))
+        for tail, framing in ((b"", "truncated-between-chunks"), (b"40\r\nevent: message_d", "truncated-mid-chunk"),
+                              (b"4", "truncated-mid-size-line"), (self._chunk(b"x")[:-2], "truncated-before-chunk-end"),
+                              (b"0\r\n", "truncated-in-trailer")):
+            with self.subTest(framing):
+                row = self._observe(self.HEAD, prefix + tail)
+                self.assertEqual(row["framing"], framing)
+                # The intended cut (the upstream recorded it) passes on a stream
+                # that stopped short; an unexpected one fails any other row.
+                self.assertEqual(stimulus_problems("mid-stream-cut", self._cut_row(row)), [])
+                refused = _evidence()["stream-refusal"]
+                short = {**refused, "main_rows": [{**refused["main_rows"][0], "framing": row["framing"]},
+                                                  *refused["main_rows"][1:]]}
+                self.assertTrue(stimulus_problems("stream-refusal", short))
+                without_cut = self._cut_row(row)
+                without_cut["upstream_lead"] = [{key: value for key, value in hit.items() if key != "cut"}
+                                                for hit in without_cut["upstream_lead"]]
+                self.assertTrue(stimulus_problems("mid-stream-cut", without_cut))
+        whole = self._observe(self.HEAD, prefix + b"0\r\n\r\n")
+        self.assertEqual(whole["framing"], "complete")
+
+    def test_a_content_length_body_must_be_whole(self) -> None:
+        head = b"HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: 4\r\n\r\n"
+        self.assertEqual(self._observe(head, b"{}")["framing"], "truncated-mid-body")
+        self.assertEqual(self._observe(head, b"{  }")["framing"], "complete")
+        self.assertEqual(self._observe(head, b"{    }")["framing"], "error")
+        self.assertEqual(self._observe(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n")["framing"], "no-response")
 
 
 if __name__ == "__main__":
