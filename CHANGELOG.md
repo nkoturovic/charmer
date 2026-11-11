@@ -47,6 +47,10 @@ compiled settings and routes until their next launch or resume.
 - `charmer doctor --help` says what plain doctor writes: no repairs and no
   release metadata; launcher initialization may refresh shared helpers;
   `doctor --json` writes no local state.
+- Setup, updates and `charmer doctor -v` name the processes seen using a
+  kept Claude Code copy (at most eight, by PID and program name, never their
+  arguments); a copy whose lock cannot be checked no longer implies a
+  holder.
 - Key bars put row actions first and end with `? N more`; Providers
   refreshes from one observation.
 - The gateway's key-value store is turned off in the shipped
