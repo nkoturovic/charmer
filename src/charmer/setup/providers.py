@@ -877,8 +877,8 @@ def plan_approve(runtime: Any, provider_id: str) -> ApprovePlan:
     listing = provider.listing_origin
     body = texts.APPROVE_BODY.format(name=provider.secret_name, present=texts.APPROVE_PRESENT[present],
                                      origin=provider.origin, auth_text=auth_text, listing=listing or "none")
-    lines = body.split("\n") + list(_network_lines(runtime, cmd, provider, f"providers approve {provider_id}",
-                                                   "nothing approved"))
+    network_lines = _network_lines(runtime, cmd, provider, f"providers approve {provider_id}", "nothing approved")
+    lines = body.split("\n") + list(network_lines) + ([texts.NETWORK_SCOPE] if network_lines else [])
     changed = status == "changed"
     if changed and previous_origin:
         lines.append(texts.APPROVE_PREVIOUS.format(previous_origin=previous_origin))
@@ -1373,6 +1373,9 @@ class EndpointPlan(model.Plan):
     # surface offers: reusing or replacing that key instead of a new one).
     preset_secret: str = ""
     preset_sharers: tuple[str, ...] = ()
+    # A provider on a private network: what plain HTTP means there and what
+    # its host resolves to now (the route approval shows them).
+    network_lines: tuple[str, ...] = ()
 
 
 def _new_declaration_checks(runtime: Any, ctx: Any, provider_id: str) -> None:
@@ -1472,9 +1475,9 @@ def _keyed_declaration_plan(runtime: Any, cmd: Any, ctx: Any, provider_id: str, 
     preview = texts.ENDPOINT_PREVIEW.format(id=provider_id, kind_label=texts.KIND_LABELS[kind], base_url=base_url,
                                             secret_name=secret_name, auth_text=texts.AUTH_TEXT[auth],
                                             origin=resolved.origin, family=family, host=host)
+    network_lines = _network_lines(runtime, cmd, resolved, f"providers add {provider_id}", "nothing written")
     lines = ((head,) if head else ()) + tuple(preview.split("\n")) + _key_use_lines(
-        provider_id, secret_name, key_use, shared, preset_secret, preset_sharers) + _network_lines(
-        runtime, cmd, resolved, f"providers add {provider_id}", "nothing written")
+        provider_id, secret_name, key_use, shared, preset_secret, preset_sharers) + network_lines
     digest = model.digest_of("add-endpoint", provider_id, strict_json.sha256_hex(raw), resolved.route_digest,
                              list(location), served.sample, preset, key_use, secret_name, length, list(shared),
                              preset_secret, list(preset_sharers))
@@ -1483,7 +1486,7 @@ def _keyed_declaration_plan(runtime: Any, cmd: Any, ctx: Any, provider_id: str, 
                         resolved.base_url, resolved.origin, auth, family, secret_name, listing, raw,
                         resolved.route_digest, location, served=served, preset=preset,
                         key_present=length is not None, key_length=length, key_use=key_use, shared_with=shared,
-                        preset_secret=preset_secret, preset_sharers=preset_sharers)
+                        preset_secret=preset_secret, preset_sharers=preset_sharers, network_lines=network_lines)
 
 
 def _key_use_lines(provider_id: str, secret_name: str, key_use: str, shared: Sequence[str], preset_secret: str,
@@ -1830,7 +1833,12 @@ def picker_entries(runtime: Any, *, only: str | None = None) -> tuple[PickerEntr
         entries.append(PickerEntry("other:openai-compatible", "other", texts.PICKER_OTHER, "",
                                    texts.OPENAI_COMPAT_CLOSED_LABEL, "endpoint", None, "",
                                    texts.OPENAI_COMPAT_CLOSED_NOTE, False, False))
-    lan = [info for info in presets.values() if not info.keyed]
+    # A server on a private network with an API key, next to the keyless
+    # one (offered only while both routes are open in this build).
+    if audited and catalog.private_network_audited(runtime.catalog.docs.get("gateway")):
+        entries.append(PickerEntry("other:network", "other", texts.PICKER_OTHER, "",
+                                   texts.PICKER_LABELS["other:network"], "network", None, "", "", True, False))
+    lan =[info for info in presets.values() if not info.keyed]
     for info in sorted(lan, key=lambda item: (not item.generic, item.display.lower(), item.name)):
         label = (texts.PICKER_LABELS["other:lan"] if info.generic
                  else texts.PICKER_LABELS["preset:lan"].format(display=info.display))

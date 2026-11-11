@@ -138,6 +138,8 @@ T_SESSIONS = "tests.test_screens_sessions"
 T_DISPATCH = "tests.test_tui_dispatch"
 T_FINDINGS = "tests.test_screens_findings"
 T_WINDOW = "tests.test_agent_context"
+T_NETWORK = "tests.test_network_providers"
+_NETWORK_OPEN = "this build's private-network routes are open"
 
 OPERATIONS: tuple[Op, ...] = (
     # ------------------------------------------------------------ launch
@@ -397,6 +399,19 @@ OPERATIONS: tuple[Op, ...] = (
             _t("providers.new", "card → G → N → a preset → another address",
                "a reviewed preset whose vendor documents another address",
                f"{T_PROVIDERS}.PresetTests.test_another_documented_address_is_declared_and_approved")),
+       confirm="consent naming every request", stream="stdout", exit="user"),
+    Op("providers.private-network", "providers",
+       "declare an OpenAI-compatible provider on a private network (a key may use plain HTTP there; the gateway "
+       "connects only to addresses in that network)",
+       cli=("providers add --network", "providers template --network"),
+       tui=(_t("providers.new", "card → G → N → a server on your network with an API key", _NETWORK_OPEN,
+               f"{T_NETWORK}.NetworkTuiTests.test_n_adds_a_keyed_server_on_the_tailnet"),
+            _t("get-started.add-provider", "card → W → A → a server on your network with an API key", _NETWORK_OPEN,
+               f"{T_NETWORK}.NetworkTuiTests.test_get_started_a_adds_a_keyed_server_on_the_lan"),
+            _t("providers.new", "card → G → N → a server on your network (no key) → its network", _NETWORK_OPEN,
+               f"{T_NETWORK}.NetworkTuiTests.test_n_adds_a_keyless_server_on_the_tailnet"),
+            _t("providers.edit", "card → G → E → its network", "a provider you added, OpenAI-compatible",
+               f"{T_NETWORK}.NetworkTuiTests.test_e_edits_the_network_and_the_route_is_approved_again")),
        confirm="consent naming every request", stream="stdout", exit="user"),
     Op("providers.declare-only", "providers", "write an inert declaration without approving its route",
        audience="scripting", cli=("providers add --declare-only",),
@@ -1193,8 +1208,10 @@ OPTION_ARGUMENTS: Mapping[str, str] = {
     "providers add --listing-auth": _DECLARED_PROVIDER + "model list authentication",
     "providers add --listing-shape": _DECLARED_PROVIDER + "model list shape",
     "providers add --listing-url": _DECLARED_PROVIDER + "model list URL",
+    "providers add --network": _DECLARED_PROVIDER + "private network",
     "providers add --secret-ref": _DECLARED_PROVIDER + "key reference (env:NAME)",
     "providers template --kind": "the kind of provider the template is for",
+    "providers template --network": "the private network the template's provider is on",
     "restore-2x --assume-dead": "sessions the restore treats as ended, recording their end",
     "restore-2x --not-running": "sessions the restore treats as exited",
     "session-event --hook-protocol": "the protocol of the lifecycle hook that reports the event",

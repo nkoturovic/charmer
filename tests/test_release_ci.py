@@ -1781,17 +1781,28 @@ cat "$STUB/text"; exit "$(cat "$STUB/text.exit")"
             return (stamp.pid, True) if stamp.binary == os.path.realpath(sys.executable) else (None, None)
 
         known = observation.BackgroundLiveness(True, frozenset())
-        variants = {"macOS answers": ([sys.executable], owner, None),
-                    "ps shows a short name": (["python3"], owner, "ps does not report the executable path"),
-                    "lsof misses the listener": ([sys.executable],
+        # Each row set is built from the child's PID, which the parent walk sees first.
+        variants = {"macOS answers": (lambda child: [(child, sys.executable)], owner, None),
+                    "ps shows a short name": (lambda child: [(child, "python3")], owner,
+                                              "ps does not report the executable path"),
+                    "the path belongs to another process": (lambda child: [(1, sys.executable)], owner,
+                                                            "ps does not report the executable path"),
+                    "lsof misses the listener": (lambda child: [(child, sys.executable)],
                                                  lambda base, *, pid: observation.OwnerVerdict("none", "nothing"),
                                                  "expected ours, unknown, none")}
-        for name, (paths_seen, listener, problem) in variants.items():
+        for name, (rows_for, listener, problem) in variants.items():
+            walked: list[int] = []
+
+            def ancestors(pid: int) -> frozenset[int]:
+                walked.append(pid)
+                return frozenset({pid, os.getpid(), 1})
+
             with self.subTest(name), \
                     mock.patch.object(darwin_process, "listener_owner", listener), \
                     mock.patch.object(darwin_process, "gateway_pid", identity), \
-                    mock.patch.object(darwin_process, "executable_paths", lambda: paths_seen), \
-                    mock.patch.object(darwin_process, "ancestor_pids", lambda pid: frozenset({pid, os.getpid(), 1})), \
+                    mock.patch.object(darwin_process, "executable_processes",
+                                      lambda rows_for=rows_for, walked=walked: rows_for(walked[-1])), \
+                    mock.patch.object(darwin_process, "ancestor_pids", ancestors), \
                     mock.patch.object(darwin_process, "background_liveness", lambda root=None: known):
                 if problem is None:
                     lines = tool.native_checks("darwin", self.tmp)

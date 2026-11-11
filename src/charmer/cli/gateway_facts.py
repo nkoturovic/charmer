@@ -300,6 +300,13 @@ def _provider_facts(runtime: runtime_mod.Runtime) -> ProviderFacts:
         fact["transport_label"] = (f"transport: {selection.choice}" if selection else f"transport: {kind}")
         if selection is not None and selection.problem:
             fact["transport_label"] += f" — {selection.problem}"
+        declared = operator_layer.providers.get(provider_id) if origin == "operator" else None
+        network_text = operator_mod.credential_transport(declared) if declared is not None else None
+        if network_text is not None and selection is None:
+            # A provider on a private network: how the key travels, the
+            # network and the key's state (never its value).
+            key_state = credential if fact["auth"] != "none" else "no key"
+            fact["transport_label"] = f"transport: {network_text} · {key_state}"
         if origin == "operator":
             fact["route"] = operator_layer.route_status.get(provider_id, "unapproved")
         if origin == "operator" or operator_lines:

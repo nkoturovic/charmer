@@ -6,6 +6,96 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.5.0] — 2026-11-11
+
+### Upgrade notes
+
+2.5.0 changes the launcher, the gateway (CLIProxyAPI 8.0.67) and the pinned
+Claude Code, from 2.1.312 to 2.1.322; catalog 44 ships with it. State and
+record formats stay 4. After `charmer update`, restart the gateway between
+turns (`charmer gateway restart`, guarded) and check
+`charmer update --verify`. Running managed sessions keep their client,
+compiled settings and routes until their next launch or resume.
+
+### Added
+
+- A keyed OpenAI-compatible provider can be declared on a private network
+  (`charmer providers add --network loopback|lan|tailnet …`). Its key is
+  sent over plain HTTP only to addresses in that network, checked at
+  declaration, at approval and at every connection; the gateway receives
+  the base URL and the network class, never a plain base URL. In the
+  launcher, Providers **N** and Get started **A** offer a server on your
+  network with an API key, the OpenAI-compatible forms choose the network,
+  and **E** changes it (approved again).
+- Models: **A** adds a model from the screen. Every screen has complete key
+  help, and a census checks that each key a screen handles is listed.
+
+### Changed
+
+- Claude Code 2.1.322 is the pinned client (signed for all eight
+  platforms; settings keys added: `disableReplyCheck`,
+  `disableWindowsBashCommandSplit`, `responseComparisonEnabled`; none
+  removed); catalog 44.
+- A launch clears Claude Code's newer host switches
+  (`CLAUDE_CODE_SESSION_BEGAN_AS_COPY`, `CLAUDE_CODE_HOST_OWNED_CONFIG_DIR`,
+  `CLAUDE_CODE_PERSONAL_HOOKS_OFF`, `CLAUDE_CODE_DISABLE_NESTED_SESSION_ID`)
+  and refuses `--session-began-as-copy` as a passthrough option.
+- `charmer providers show` and `--resolved` name the credential transport;
+  doctor reports what a private-network host resolves to and when a
+  restart is needed. The served plan names a private-network provider's
+  class; a class change is a route change.
+- `charmer doctor --help` says what plain doctor writes: no repairs and no
+  release metadata; launcher initialization may refresh shared helpers;
+  `doctor --json` writes no local state.
+- Setup, updates and `charmer doctor -v` name the processes seen using a
+  kept Claude Code copy (at most eight, by PID and program name, never their
+  arguments); a copy whose lock cannot be checked no longer implies a
+  holder.
+- Key bars put row actions first and end with `? N more`; Providers
+  refreshes from one observation.
+- The gateway's key-value store is turned off in the shipped
+  configuration.
+- The bundled CPython is built from python-build-standalone 20261110
+  (Expat 2.10.0; on Linux zlib 1.4 and libedit); the Nix channel lane,
+  release journey images and CI tools follow their newest releases.
+
+### Fixed
+
+- Account rows offer **Add models** and signed-in rows offer **Sign out**.
+- Long results keep their remedies, repeated identical ones included.
+- Settings navigation and arrow keys, form help and choice controls, empty
+  states, picker overflow and the stable minimum size; lineup targets and a
+  narrow propagation view stay readable; marked Sessions keeps stop and
+  repair.
+- DeepSeek Pro's retirement explanation no longer claims that its upstream
+  model redirects to Flash; the line stays removed.
+
+### Security
+
+- Managed sessions deny the model's use of Claude Code's plugin-authoring
+  skill and its writes into the session's mod folder
+  (`~/.claude/dev-mods`): on Claude Code 2.1.312 and 2.1.322 a mod written
+  there loaded at the next start without a question in every mode.
+- Managed sessions turn off Claude Code's background service
+  (`/background`, `--bg`, "Move to background and exit"), which would run
+  the session without charmer's lead prompt.
+- Private-network routes refuse public, link-local, metadata and
+  overlay-reserved addresses; `charmer discover` reaches them directly,
+  with no proxy and no redirects. A build whose gateway lacks the
+  private-network guard renders, serves, captures and fences nothing of
+  such a provider.
+- An exact, expiring non-use review covers CPython CVE-2026-124249: the
+  vulnerable code is present in the bundled runtime and charmer does not
+  call it.
+
+### Known limits
+
+- Deny rules cover Claude Code's tools, shell commands included, not a
+  program the model runs: in bypass mode such a program can still write the
+  mod folder. In default and auto mode the client asks first.
+- `setup --answers` cannot declare a private network yet.
+- The Nix development shell keeps GnuPG 2.4.9 (FreePG).
+
 ## [2.4.0] — 2026-10-28
 
 ### Upgrade notes

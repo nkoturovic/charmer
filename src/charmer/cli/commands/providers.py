@@ -1453,9 +1453,9 @@ def edit_target(runtime: runtime_mod.Runtime, provider_id: str) -> bytes | int:
 
 def edited_declaration(previous: bytes, values: Mapping[str, str]) -> bytes:
     """``previous`` with the edit form's answers applied: the display name,
-    the base URL, how the key is sent, the model family and the model list
-    URL (blank removes it). The id, the kind and the key name stay; every
-    other field is kept as it was."""
+    the base URL, how the key is sent, the private network (none removes
+    it), the model family and the model list URL (blank removes it). The id,
+    the kind and the key name stay; every other field is kept as it was."""
 
     document = strict_json.loads(previous)
     block = document["provider"]
@@ -1472,6 +1472,13 @@ def edited_declaration(previous: bytes, values: Mapping[str, str]) -> bytes:
             auth.pop("header", None)
     if "family" in values:
         block["independence_family"] = values["family"].strip() or "unknown"
+    if "network" in values:
+        # Another network is another route: it is approved again before use.
+        network = values["network"].strip()
+        if network in ("", "none"):
+            block.pop("network", None)
+        else:
+            block["network"] = network
     if "listing" in values:
         listing = values["listing"].strip()
         if not listing:

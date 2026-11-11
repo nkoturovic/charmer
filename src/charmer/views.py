@@ -2934,15 +2934,19 @@ def provider_kind_choices(*, keyed_audited: bool = True) -> tuple[tuple[str, str
     return tuple(choice for choice in PROVIDER_KIND_CHOICES if choice[0] != "openai-compatible")
 
 
-def provider_form_fields(*, kind="anthropic-compatible", keyed_audited: bool = True):
+def provider_form_fields(*, kind="anthropic-compatible", keyed_audited: bool = True, network_offered: bool = False):
     choices = provider_kind_choices(keyed_audited=keyed_audited)
     label = "Generation protocol (↑↓ chooses)"
     if not keyed_audited:
         label += " " + PROVIDER_KIND_CLOSED_LABEL
+    network = ((("network", NETWORK_FORM_LABEL + " — OpenAI-compatible kinds only", NETWORK_NONE,
+                 ((NETWORK_NONE, "none — not on a private network"), *NETWORK_FORM_CHOICES)),)
+               if network_offered else ())
     return (
         ("id", "Provider id", "", ()),
         ("kind", label, kind, choices),
         ("url", "Base URL (vendor-documented endpoint)", "", ()),
+        *network,
         ("auth", "Authentication", "none" if kind == "openai-compatible-lan" else "bearer",
          endpoint_auth_choices(kind)),
         ("secret", "Logical secret name (NAME, not a key value)", "", ()),
@@ -2964,22 +2968,64 @@ def endpoint_auth_choices(kind: str):
                  if kind != "openai-compatible" or choice[0] == "bearer")
 
 
-def endpoint_form_fields(kind: str):
-    """The form of your own Anthropic- or OpenAI-compatible endpoint."""
+# The private network a provider is on (``--network``): the gateway connects
+# only to addresses in it, so a key may travel over plain HTTP there.
+NETWORK_NONE = "none"
+NETWORK_FORM_LABEL = "Private network (↑↓ chooses)"
+NETWORK_FORM_CHOICES = (
+    ("loopback", "loopback — this computer only (127.0.0.0/8, ::1)"),
+    ("lan", "lan — your local network (10/8, 172.16/12, 192.168/16, fc00::/7)"),
+    ("tailnet", "tailnet — your overlay network (100.64.0.0/10, fd7a:115c:a1e0::/48)"),
+)
+NETWORK_NONE_CHOICE = {
+    "openai-compatible": (NETWORK_NONE, "none — the key needs https"),
+    "openai-compatible-lan": (NETWORK_NONE, "none — a local-network name or address"),
+}
+NETWORK_KINDS = frozenset(NETWORK_NONE_CHOICE)
 
-    return (
+
+def network_field(kind: str, default: str | None = None, *, required: bool = False):
+    """The network choice of an OpenAI-compatible kind (``required``: a
+    server on a private network, no "none")."""
+
+    choices = NETWORK_FORM_CHOICES if required else (NETWORK_NONE_CHOICE[kind], *NETWORK_FORM_CHOICES)
+    return ("network", NETWORK_FORM_LABEL, default or ("tailnet" if required else NETWORK_NONE), choices)
+
+
+def network_value(values: Mapping[str, Any]) -> str | None:
+    """The form's network answer as ``--network`` takes it (None: none)."""
+
+    value = str(values.get("network") or "").strip()
+    return None if value in ("", NETWORK_NONE) else value
+
+
+def endpoint_form_fields(kind: str, *, network: str | None = None, network_required: bool = False):
+    """The form of your own Anthropic- or OpenAI-compatible endpoint; with
+    ``network`` (the private-network routes are open) an OpenAI-compatible
+    endpoint also chooses its network (``network_required``: a server on a
+    private network)."""
+
+    fields = [
         ("id", "Name for this provider (a–z, 0–9, -)", "", ()),
-        ("url", "Base URL from your vendor's documentation (https://…)", "", ()),
+        ("url", ("Server address (http://host:port/v1)" if network_required
+                 else "Base URL from your vendor's documentation (https://…)"), "", ()),
+    ]
+    if network is not None and kind in NETWORK_KINDS:
+        fields.append(network_field(kind, network, required=network_required))
+    fields += [
         ("auth", "How the key is sent", "header" if kind == "anthropic-compatible" else "bearer",
          endpoint_auth_choices(kind)),
         ("family", "Who makes the models (a family like deepseek; unknown if unsure)", "unknown", ()),
         ("listing", "Model list URL (optional)", "", ()),
-    )
+    ]
+    return tuple(fields)
 
 
-def provider_edit_form_fields(provider: Mapping[str, Any]):
+def provider_edit_form_fields(provider: Mapping[str, Any], *, network_offered: bool = False):
     """The edit form of a provider you added, prefilled from its
-    declaration (the id, the kind and the key name stay)."""
+    declaration (the id, the kind and the key name stay); an
+    OpenAI-compatible one chooses its private network too when those routes
+    are open (or when it already declares one)."""
 
     auth = provider.get("auth") if isinstance(provider.get("auth"), Mapping) else {}
     listing = provider.get("listing") if isinstance(provider.get("listing"), Mapping) else {}
@@ -2987,6 +3033,9 @@ def provider_edit_form_fields(provider: Mapping[str, Any]):
         ("display", "Display name", str(provider.get("display", "")), ()),
         ("url", "Base URL from your vendor's documentation", str(provider.get("base_url", "")), ()),
     ]
+    kind = str(provider.get("kind", ""))
+    if kind in NETWORK_KINDS and (network_offered or provider.get("network")):
+        fields.append(network_field(kind, str(provider.get("network") or NETWORK_NONE)))
     if auth.get("kind") in ("header", "bearer"):
         fields.append(("auth", "How the key is sent", str(auth["kind"]),
                        endpoint_auth_choices(provider.get("kind"))))
@@ -2997,28 +3046,41 @@ def provider_edit_form_fields(provider: Mapping[str, Any]):
     return tuple(fields)
 
 
-def lan_form_fields():
-    """The form of a server on your network (a preset; no key)."""
+def lan_form_fields(*, network_offered: bool = False):
+    """The form of a server on your network (a preset; no key), with its
+    private network when those routes are open."""
 
-    return (
+    fields = (
         ("id", "Name for this server", "lan", ()),
         ("url", "Server address (http://host:port/v1)", "", ()),
     )
+    if network_offered:
+        fields += (network_field("openai-compatible-lan"),)
+    return fields
 
 
 PRESET_ADDRESS_LABEL = "Address (https://…; Enter keeps the preset's)"
+PRESET_NETWORK_ADDRESS_LABEL = "Address (https://…, or http:// on a private network; Enter keeps the preset's)"
 
 
-def preset_form_fields(name: str, base_url: str = ""):
+def preset_form_fields(name: str, base_url: str = "", *, network_kind: str | None = None):
     """The form of a reviewed preset with an API key: its name (the
     preset's own by default) and its address (the preset's base URL by
     default; another address its vendor documents, such as a workspace
     endpoint, is checked like ``providers add --preset --base-url``);
-    everything else comes from the preset."""
+    everything else comes from the preset. ``network_kind``: the preset's
+    kind while the private-network routes are open; an OpenAI-compatible
+    preset then also chooses its network (none by default)."""
 
+    if network_kind not in NETWORK_KINDS:
+        return (
+            ("id", "Name for this provider (a–z, 0–9, -)", name, ()),
+            ("url", PRESET_ADDRESS_LABEL, base_url, ()),
+        )
     return (
         ("id", "Name for this provider (a–z, 0–9, -)", name, ()),
-        ("url", PRESET_ADDRESS_LABEL, base_url, ()),
+        ("url", PRESET_NETWORK_ADDRESS_LABEL, base_url, ()),
+        network_field(network_kind),
     )
 
 

@@ -14,8 +14,8 @@ connect probe its own seam), so tests never touch the host:
 * session liveness: one bounded ``ps -axww -o pid=,args=`` scan for the
   ``--session-id``/``--resume`` ids, and the parent walk from one
   ``ps -axo pid=,ppid=`` table;
-* owned-copy evidence: one bounded ``ps -axww -o comm=`` read of every
-  process's executable path (the copy pruning keeps);
+* owned-copy evidence: one bounded ``ps -axww -o pid=,comm=`` read of every
+  process's PID and executable path (the copy pruning keeps);
 * background (daemon) liveness: the pinned client derives its daemon root
   from a fixed ``/tmp/cc-daemon-<uid>`` on every POSIX system (only Termux
   differs), so the same layout reader applies.
@@ -245,6 +245,24 @@ def executable_paths(*, runner: Callable = subprocess.run, ps: str | None = None
     if text is None:
         return None
     return [line.strip() for line in text.splitlines() if line.strip().startswith("/")]
+
+
+def executable_processes(*, runner: Callable = subprocess.run, ps: str | None = None) -> list[tuple[int, str]] | None:
+    """Observed PIDs and executable paths, never arguments or process titles.
+
+    The same timeout and output bound as the path-only reader apply. An
+    unreadable per-process path supplies no evidence, just as on Linux.
+    """
+
+    text, _reason = _table(runner, ["-axww", "-o", "pid=,comm="], ps)
+    if text is None:
+        return None
+    found = []
+    for line in text.splitlines():
+        fields = line.strip().split(maxsplit=1)
+        if len(fields) == 2 and fields[0].isdecimal() and int(fields[0]) > 0 and fields[1].startswith("/"):
+            found.append((int(fields[0]), fields[1]))
+    return found
 
 
 def ancestor_pids(pid: int | None = None, *, runner: Callable = subprocess.run,

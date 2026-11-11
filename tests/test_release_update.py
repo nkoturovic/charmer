@@ -280,7 +280,7 @@ class TransactionTests(JourneyTestCase):
         def prune(bundle: Path, release: su.Release) -> list[str]:
             record = self.record()
             seen.append((record.owner, record.phase, record.purpose))
-            return ["Kept Claude Code copies in use: 2.1.100 — once no session runs them, `x` removes them."]
+            return ["Kept Claude Code copies in use: 2.1.100 — once no process uses them, `x` removes them."]
 
         code, out = self.run_journey(journey=self.journey(prune_copies=prune, acquire_pin=lambda *_a: None),
                                      from_dir=str(self.newer.dir), assume_yes=True)

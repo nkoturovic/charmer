@@ -443,59 +443,51 @@ class OnboardingActions:
         if outcome is not None:
             self.show(cli_text.KEY_MODAL_TITLE.format(display=provider_id), [outcome.text])
 
-    def new_provider(self, *, manual_only=False):
-        from charmer import catalog, operator
-        choices = ["manual", *sorted(operator.preset_paths(self.runtime.asset_root))]
-        choice = 0
-        if not manual_only:
-            choice = tui.SelectList("new provider — preset or manual", [tui.SelectItem(x) for x in choices],
-                                    footer=(("Enter", "choose"), ("?", "help"), ("Esc", "back"))).run(
-                self.win, self.palette, help_text=cli_text.PROVIDERS_HELP)
-        if choice is None:
-            return
-        audited = catalog.keyed_compat_audited(self.runtime.catalog.docs.get("gateway"))
-        if choice:
-            name = choices[choice]
-            fields = (("id", "Provider id", name, ()), ("url", "Base URL override (blank keeps preset)", "", ()))
-            values = tui.OnboardingForm("new provider — preset", fields, palette=self.palette,
-                                       help_text="Preset kinds stay authoritative. providers add --preset NAME").run(self.win)
-            if values is None:
-                return
-            argv = ["providers", "add", "--preset", name, "--as", values["id"]]
-            if values["url"]:
-                argv += ["--base-url", values["url"]]
-        else:
-            from charmer import secret_store
+    def new_provider(self):
+        """The manual form of a new provider (every field of ``providers
+        add``). Reviewed presets are picker entries of their own
+        (:meth:`ConnectActions.preset`)."""
 
-            help_text = cli_text.PROVIDERS_HELP if audited else (
-                cli_text.OPENAI_COMPAT_CLOSED_FORM_NOTE + "\n" + cli_text.PROVIDERS_HELP)
-            # The key's name is checked at its field and never drawn unless it
-            # reads as a name: a pasted key shows nowhere, not even in part.
-            values = _ProviderForm(
-                "new provider", views.provider_form_fields(keyed_audited=audited), palette=self.palette,
-                help_text=help_text,
-                checks={"secret": lambda text: secret_store.secret_name_problem(text.removeprefix("env:"))
-                        if text else None},
-                shown={"secret": secret_store.name_field_shown}).run(self.win)
-            if values is None:
+        from charmer import catalog, secret_store
+
+        audited = catalog.keyed_compat_audited(self.runtime.catalog.docs.get("gateway"))
+        # The private network a provider is on (OpenAI-compatible kinds),
+        # offered while those routes are open in this build.
+        network_offered = catalog.private_network_audited(self.runtime.catalog.docs.get("gateway"))
+        help_text = cli_text.PROVIDERS_HELP if audited else (
+            cli_text.OPENAI_COMPAT_CLOSED_FORM_NOTE + "\n" + cli_text.PROVIDERS_HELP)
+        if network_offered:
+            help_text += "\n" + cli_text.NETWORK_FORM_HELP
+        # The key's name is checked at its field and never drawn unless it
+        # reads as a name: a pasted key shows nowhere, not even in part.
+        values = _ProviderForm(
+            "new provider", views.provider_form_fields(keyed_audited=audited, network_offered=network_offered),
+            palette=self.palette,
+            help_text=help_text,
+            checks={"secret": lambda text: secret_store.secret_name_problem(text.removeprefix("env:"))
+                    if text else None},
+            shown={"secret": secret_store.name_field_shown}).run(self.win)
+        if values is None:
+            return
+        if values["auth"] != "none":
+            # Checked again before any command or preview is built.
+            problem = secret_store.secret_name_problem(values["secret"].removeprefix("env:"))
+            if problem is not None:
+                self.show(cli_text.PROVIDER_SECRET_NAME_TITLE, [problem, "", cli_text.PROVIDER_SECRET_NAME_HINT])
                 return
-            if values["auth"] != "none":
-                # Checked again before any command or preview is built.
-                problem = secret_store.secret_name_problem(values["secret"].removeprefix("env:"))
-                if problem is not None:
-                    self.show(cli_text.PROVIDER_SECRET_NAME_TITLE, [problem, "", cli_text.PROVIDER_SECRET_NAME_HINT])
-                    return
-            argv = ["providers", "add", values["id"], "--kind", values["kind"], "--base-url", values["url"],
-                    "--auth", values["auth"], "--family", values["family"]]
-            if values["auth"] != "none":
-                argv += ["--secret-ref", "env:" + values["secret"].removeprefix("env:")]
-            if values["auth"] == "header":
-                argv += ["--header", "x-api-key"]
-            if values["contracts"]:
-                argv += ["--contracts", values["contracts"]]
-            if values["listing"]:
-                argv += ["--listing-url", values["listing"], "--listing-shape", values["shape"],
-                         "--listing-auth", values["listing_auth"]]
+        argv = ["providers", "add", values["id"], "--kind", values["kind"], "--base-url", values["url"],
+                "--auth", values["auth"], "--family", values["family"]]
+        if views.network_value(values):
+            argv += ["--network", views.network_value(values)]
+        if values["auth"] != "none":
+            argv += ["--secret-ref", "env:" + values["secret"].removeprefix("env:")]
+        if values["auth"] == "header":
+            argv += ["--header", "x-api-key"]
+        if values["contracts"]:
+            argv += ["--contracts", values["contracts"]]
+        if values["listing"]:
+            argv += ["--listing-url", values["listing"], "--listing-shape", values["shape"],
+                     "--listing-auth", values["listing_auth"]]
         if self.preview("Declare this provider? No credentials are included.\n" + "\n".join(argv)):
             if self.invoke(argv) == 0:
                 self.offer_key(values["id"])
