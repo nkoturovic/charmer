@@ -439,6 +439,8 @@ class EssentialEvidencePrefixTests(unittest.TestCase):
                 "client check refusal-routing-controls: PASS ",
                 "client check refusal-routing-counter: PASS ",
                 "client check refusal-routing-uncountered: PASS ",
+                "client check refusal-routing-fable: PASS ",
+                "client check refusal-routing-fences: PASS ",
             ),
         )
         # A fail-closed or BOUNDARY print never matches a prefix.
@@ -688,7 +690,7 @@ class RunRepinTests(UpgradeTestCase):
         line start, a zero-exit suite refuses promotion and restores the
         checkout; another part's record never stands in."""
 
-        parts = ("lead", "shapes", "agents", "resume", "controls", "counter", "uncountered")
+        parts = ("lead", "shapes", "agents", "resume", "controls", "counter", "uncountered", "fable", "fences")
         records = [prefix for prefix in upgrade.ESSENTIAL_EVIDENCE_PREFIXES
                    if prefix.startswith("client check refusal-routing-")]
         self.assertEqual(records, [f"client check refusal-routing-{part}: PASS " for part in parts])

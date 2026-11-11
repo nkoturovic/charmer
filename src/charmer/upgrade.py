@@ -144,7 +144,10 @@ ESSENTIAL_EVIDENCE_PREFIXES = (
     # control and counter paths, and without the compiled capability table the
     # client still switches an unrecognized model (the counter's premise). A
     # part whose run touches the live daemon domain skips as BOUNDARY and one
-    # off its outcome prints FAIL; neither prints the record.
+    # off its outcome prints FAIL; neither prints the record. The fable part
+    # routes the newest Fable by its canonical selector; the fences part the
+    # managed deny list, older-only and target-less fences, the Opus family
+    # default, "Ask each time" on agents and a server-named target in auto mode.
     "client check refusal-routing-lead: PASS ",
     "client check refusal-routing-shapes: PASS ",
     "client check refusal-routing-agents: PASS ",
@@ -152,6 +155,8 @@ ESSENTIAL_EVIDENCE_PREFIXES = (
     "client check refusal-routing-controls: PASS ",
     "client check refusal-routing-counter: PASS ",
     "client check refusal-routing-uncountered: PASS ",
+    "client check refusal-routing-fable: PASS ",
+    "client check refusal-routing-fences: PASS ",
 )
 
 # Named alternative completion lines that satisfy an essential prefix. The
