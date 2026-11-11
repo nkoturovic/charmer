@@ -56,6 +56,7 @@ GATEWAY_CHECK_EXCLUSIONS = {
     "test_gateway_keyed_compat",  # the keyed core selected explicitly, full audit host-only
     "test_gateway_regressions",  # Observation-only, separately timed lane
     "test_gateway_v8_traffic",  # Host: exact native client plus bounded 12s/20s traffic lanes
+    "test_gateway_surfaces",  # Host: v8 traffic helpers and the fixture TLS Claude OAuth route
     # The lifecycle, its doctor facts and the service hand-off run against fake
     # worlds and stub managers in the main suite; they need no gateway binary.
     "test_gateway_lifecycle", "test_gateway_doctor", "test_gateway_service",
