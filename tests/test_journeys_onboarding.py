@@ -272,8 +272,10 @@ class JourneyPTY(PTYProcess):
         self.output.extend(chunk)
 
     def drawn(self) -> str:
+        # The child may still be writing the screen file: a character cut at
+        # the end of a read decodes as a replacement, never as an error.
         try:
-            return self.screen.read_text(encoding="utf-8")
+            return self.screen.read_bytes().decode("utf-8", "replace")
         except FileNotFoundError:
             return ""
 
