@@ -441,6 +441,7 @@ class EssentialEvidencePrefixTests(unittest.TestCase):
                 "client check refusal-routing-uncountered: PASS ",
                 "client check refusal-routing-fable: PASS ",
                 "client check refusal-routing-fences: PASS ",
+                "client check mod-authoring: PASS class=AP-closed ",
             ),
         )
         # A fail-closed or BOUNDARY print never matches a prefix.
@@ -731,6 +732,51 @@ class RunRepinTests(UpgradeTestCase):
                     self.assertIn(repr(required), str(raised.exception))
                     for path, data in before.items():
                         self.assertEqual(path.read_bytes(), data, path)
+
+    def test_mod_authoring_needs_its_closed_record(self) -> None:
+        """The mod-authoring lane's PASS record is required: omitted, replaced
+        by its BOUNDARY skip, an INCONCLUSIVE (a control that never loaded),
+        a FAIL with another class, a measured line, a lookalike class or a
+        record not at a line start, a zero-exit suite refuses promotion and
+        restores the checkout."""
+
+        required = "client check mod-authoring: PASS class=AP-closed "
+        self.assertIn(required, upgrade.ESSENTIAL_EVIDENCE_PREFIXES)
+        others = [prefix + "ok" for prefix in upgrade.ESSENTIAL_EVIDENCE_PREFIXES if prefix != required]
+        for label, lines in (
+            ("missing", ["Ran 42 tests", "OK"]),
+            ("boundary", [
+                "test_a_model_written_mod_waits_for_a_person (tests.test_client_mod_policy.AuthoringPathProbe) "
+                "... skipped 'BOUNDARY: live daemon-domain tripwire hit'",
+                "client check mod-authoring: BOUNDARY class=unavailable live daemon-domain tripwire hit",
+                "Ran 42 tests", "OK (skipped=1)"]),
+            ("inconclusive", ["client check mod-authoring: INCONCLUSIVE class=unavailable the control did not "
+                              "load the model's own mod at the next start", "Ran 42 tests", "OK"]),
+            ("fail", ["client check mod-authoring: FAIL class=AP-open-at-start-bypass-bash client=fixture",
+                      "Ran 42 tests", "OK"]),
+            ("measured", ["client check mod-authoring-program: MEASURED auto=refused client=fixture",
+                          "Ran 42 tests", "OK"]),
+            ("lookalike", ["client check mod-authoring: PASS class=AP-closed-ish client=fixture",
+                           "Ran 42 tests", "OK"]),
+            ("unanchored", [f"note {required}fixture", "Ran 42 tests", "OK"]),
+        ):
+            with self.subTest(case=label):
+                product = self._product_tree(f"repo-mod-authoring-{label}")
+                pinned = product / "tests" / "test_native_contract.py"
+                pinned.write_text('validated = "2.1.217"\n', encoding="utf-8")
+                before = {path: path.read_bytes() for path in (
+                    product / RESOURCES_RELATIVE / "catalog" / "native-contract.json",
+                    product / RESOURCES_RELATIVE / "version.json", pinned)}
+                with self.assertRaisesRegex(UpgradeError, "completion evidence is missing") as raised:
+                    self.repin(checkout_root=product, native_contract=self.contract, today="2026-07-24",
+                               runner=self._runner(0, "\n".join([*others, *lines]) + "\n"))
+                self.assertIn(repr(required), str(raised.exception))
+                for path, data in before.items():
+                    self.assertEqual(path.read_bytes(), data, path)
+        product = self._product_tree("repo-mod-authoring-pass")
+        outcome = self.repin(checkout_root=product, native_contract=self.contract, today="2026-07-24",
+                             runner=self._runner(0, "\n".join([*others, required + "client=fixture"]) + "\n"))
+        self.assertEqual(outcome.kind, "prepared")
 
     def test_nonzero_exit_rejects_even_with_all_completion_records(self) -> None:
         product = self._product_tree()
