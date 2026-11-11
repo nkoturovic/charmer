@@ -8,8 +8,11 @@ lead prompt or charmer's launch environment. The compiled flag settings turn
 the client's agent view off (``CLAUDE_CODE_DISABLE_AGENT_VIEW``: "agent
 view, ``--bg``, /background, the on-demand daemon"). With it off the client
 registers no ``/background`` and offers the fork-subagent ``/fork
-<directive>`` instead of the fleet ``/fork`` (the compiled fork deny covers
-that one).
+<directive>`` instead of the fleet ``/fork``. That one runs in the session's
+own process, not in the background service, so this check does not close it:
+a typed ``/fork <directive>`` starts a fork subagent on the lead's model,
+which neither the compiled ``Agent(fork)`` deny nor the fork-subagent switch
+stops (the fork lanes own it).
 
 Every run is the production compile of the balanced seed in a terminal, with
 the launch's lead-prompt file, inside a namespace whose ``/tmp`` is a private
