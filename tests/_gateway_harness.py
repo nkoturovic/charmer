@@ -139,9 +139,14 @@ PATCH_ROWS = {
     "cli-proxy-api-refresh-shutdown-join.patch": (
         "tests.test_gateway_patches.PatchOmissionProbeTests.test_refresh_shutdown",
     ),
+    # Since 8.0.67 upstream decodes Mistral's typed chunks itself; what the
+    # patch still decides is that a streamed content array with an unknown,
+    # mixed or malformed part keeps its legacy bytes instead of being re-read.
     "cli-proxy-api-openai-content-chunks.patch": (
-        "tests.test_gateway_patches.MistralContentChunkTests.test_streaming_content_chunks",
-        "tests.test_gateway_patches.MistralContentChunkTests.test_non_streaming_content_chunks",
+        "tests.test_gateway_patches.ContentChunkGoldenTests.test_streamed_unknown_part_keeps_legacy_bytes",
+        "tests.test_gateway_patches.ContentChunkGoldenTests.test_streamed_mixed_parts_keep_legacy_bytes",
+        "tests.test_gateway_patches.ContentChunkGoldenTests.test_streamed_malformed_part_keeps_legacy_bytes",
+        "tests.test_gateway_patches.ContentChunkGoldenTests.test_streamed_malformed_thinking_keeps_legacy_bytes",
     ),
     "cli-proxy-api-charmer-model-ids.patch": (
         "tests.test_gateway_patches.CharmerModelListingTests.test_both_listing_formats",
@@ -175,6 +180,9 @@ PATCH_ROWS = {
     "cli-proxy-api-codex-refresh-without-journal.patch": (
         "tests.test_gateway_patches.PatchOmissionProbeTests.test_codex_refresh_without_journal",
     ),
+    "cli-proxy-api-native-advisor-beta-order.patch": (
+        "tests.test_gateway_fable.NativeFingerprintTests.test_fa2_native_2_1_321_fingerprint_and_beta_order",
+    ),
 }
 
 
@@ -187,6 +195,8 @@ PATCH_CONTROL_ROWS = {
     "cli-proxy-api-openai-content-chunks.patch": (
         "tests.test_gateway_patches.ContentChunkGoldenTests.test_legacy_chat_bytes",
         "tests.test_gateway_patches.ContentChunkGoldenTests.test_native_route_bytes",
+        "tests.test_gateway_patches.MistralContentChunkTests.test_streaming_content_chunks",
+        "tests.test_gateway_patches.MistralContentChunkTests.test_non_streaming_content_chunks",
     ),
     "cli-proxy-api-tool-call-integrity.patch": (
         "tests.test_gateway_patches.ToolCallIntegrityTests.test_explicit_and_mixed_continuations_remain_one_call",

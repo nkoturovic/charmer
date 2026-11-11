@@ -38,7 +38,8 @@
       "cli-proxy-api-tool-call-integrity.patch",
       "cli-proxy-api-initial-registration.patch",
       "cli-proxy-api-terminal-rejection-reload.patch",
-      "cli-proxy-api-codex-refresh-without-journal.patch"
+      "cli-proxy-api-codex-refresh-without-journal.patch",
+      "cli-proxy-api-native-advisor-beta-order.patch"
     ],
     "model_discovery": "disabled",
     "renderer": "restricted-yaml-v1",

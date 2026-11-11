@@ -369,7 +369,10 @@ class NativeFingerprintTests(unittest.TestCase):
         # position 2. The capture shape with the advisor tool must reach the
         # upstream exactly as b4e7dbd2 records it (whether the managed client
         # offers that tool through the gateway is the client unit's
-        # measurement, not assumed here). Control: a client below the 2.1.321
+        # measurement, not assumed here); upstream's advisor helper would move
+        # the advisor beta behind thinking-token-count, which the
+        # native-advisor-beta-order patch prevents (its omission row). Control:
+        # a client below the 2.1.321
         # baseline is not native and receives the 2.1.321 baseline fingerprint
         # with the assembled 2.1.321 order.
         gateway = oauth_gateway(self, fable_pool(fable_docs()))
@@ -559,9 +562,14 @@ class KeyedProviderTests(unittest.TestCase):
         # Fable 5.2 under its OpenRouter id, anthropic/claude-fable-5.2) gets
         # none of the first-party-only additions: no header the client did not
         # send beyond transport and route auth, its own Anthropic-Beta (none
-        # added), no preserved-thinking binding, no thinking display, no
-        # context_management/diagnostics, no metadata, system or 1h cache TTL
-        # it did not send; count_tokens never leaves the gateway.
+        # added), no thinking display, no context_management/diagnostics, no
+        # metadata, system or 1h cache TTL it did not send; count_tokens never
+        # leaves the gateway. One upstream default is a known limit: a Fable
+        # 5.2 line of the operator's own on OpenRouter gets the preserved-
+        # thinking binding (thinking.block_binding drop_block on a history with
+        # signed thinking, plus the binding beta when the client did not send
+        # it). The shipped catalog renders no such route (test_registry
+        # KeyedFableRouteTests).
         gateway = harness.GatewayHarness(document_factory=keyed_document, upstream_factory=CapturingUpstream)
         self.addCleanup(gateway.close)
         check_version(self, gateway)
@@ -601,9 +609,18 @@ class KeyedProviderTests(unittest.TestCase):
                                  "ttl": sorted({ttl for ttl in ttl_values(sent) if ttl})}
                         rows.append({"provider": provider, "client": client, "stream": stream, **{
                             key: value for key, value in found.items() if value}})
-                        self.assertEqual(found, {"added_headers": [], "beta_added": False, "binding": False,
-                                                 "display": False, "first_party_fields": [], "metadata_changed": False,
-                                                 "system_changed": False, "ttl": []})
+                        expected = {"added_headers": [], "beta_added": False, "binding": False,
+                                    "display": False, "first_party_fields": [], "metadata_changed": False,
+                                    "system_changed": False, "ttl": []}
+                        if provider == "openrouter-fable":
+                            client_betas = betas(client_headers.get("anthropic-beta"))
+                            binding_beta = BINDING_BETA not in client_betas
+                            expected.update(binding=True, beta_added=binding_beta,
+                                            added_headers=["anthropic-beta"] if binding_beta and not client_betas else [])
+                            self.assertEqual(sent["thinking"]["block_binding"], {"prefix_mismatch_behavior": "drop_block"})
+                            self.assertEqual(betas(sent_headers.get("anthropic-beta")),
+                                             client_betas + ([BINDING_BETA] if binding_beta else []))
+                        self.assertEqual(found, expected)
             with case(self, tally, provider=provider, path="count_tokens"):
                 body = {"messages": [message for message in history() if message["role"] != "system"]}
                 _reply, captured = key_send(self, gateway, alias, body, count=True)

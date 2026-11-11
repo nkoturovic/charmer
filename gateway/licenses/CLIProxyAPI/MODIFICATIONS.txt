@@ -355,3 +355,10 @@ Before the modules are vendored, this patch updates the module requirements:
     sha256 53f48b53806db0bc6b2d411a32467dfaa9a365e552de9d6b50e6473ed282d78e
       modified  internal/auth/codex/openai_auth.go
       added     internal/runtime/executor/codex_refresh_without_journal_test.go
+
+29. cli-proxy-api-native-advisor-beta-order.patch
+    sha256 d4e9fc3ea76787cde7553c25a753e6888402bbac4d865788160a37303757f3fa
+      modified  internal/runtime/executor/claude_executor_beta_policy_test.go
+      modified  internal/runtime/executor/claude_executor_request.go
+      added     internal/runtime/executor/claude_native_advisor_beta.go
+      added     internal/runtime/executor/claude_native_advisor_beta_test.go
