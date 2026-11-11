@@ -21,4 +21,4 @@
   Switching a provider off narrows new sessions' fences only; credentialed
   providers stay rendered, so running sessions keep their routes.
 
-  Enter open · ? help · Esc back
+  Enter open · G providers · M models · ? help · Esc back

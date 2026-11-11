@@ -42,7 +42,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, Mapping
 
-from . import assets, catalog, custom, errors, paths, render, secret_store, state, strict_json
+from . import assets, catalog, custom, errors, netclass, paths, render, secret_store, state, strict_json
 from . import sessions as sessions_mod
 from . import validate as schema_validate
 from .platform import posix_fs
@@ -93,6 +93,29 @@ KINDS: Mapping[str, tuple[str, str]] = {
 LAN_KIND = "openai-compatible-lan"
 KEYED_KIND = "openai-compatible"
 KEYED_GATE_REMEDY = "use anthropic-compatible, or openai-compatible-lan for a keyless LAN server"
+# A provider declared on a private network (``network``) resolves only while
+# the trusted catalog's ``audits.private_network`` gate is open; a closed gate
+# refuses the declaration by metadata alone, before any store access. A
+# release without the field refuses it too, so the remedy says what to remove
+# before going back to one.
+PRIVATE_NETWORK_AUDIT = catalog.PRIVATE_NETWORK_AUDIT
+NETWORK_GATED = catalog.PRIVATE_NETWORK_CLOSED
+NETWORK_KINDS = frozenset({"openai-compatible", "openai-compatible-lan"})
+NETWORK_KIND_REFUSAL = "network applies to the OpenAI-compatible kinds"
+KEYED_HTTP_REFUSAL = ("a secret is sent only over https, or over http to a declared private network "
+                      "(--network loopback, lan or tailnet)")
+NETWORK_RESTART_PENDING = "private-network providers are served only after the gateway restarts: {restart}"
+# The refusals of a closed trusted gate (metadata only, never screened
+# against stored values): no authored text of the file is shown with them,
+# nor its line keys anywhere else (ledger copies included): fixed texts.
+GATED_CODES = frozenset({"kind-gated", "network-gated"})
+GATED_ADMITTED = ("{count} admitted line(s) of {file} are not named while a closed gate refuses that declaration "
+                  "— revoke each with charmer models revoke KEY (the keys are in {file}), or keep them for a release "
+                  "that serves it")
+GATED_CAPTURES_USED = ("{count} captured alias(es) of {file} are used by {users} and not named while a closed gate "
+                       "refuses that declaration — end those sessions; {remedy}")
+GATED_CAPTURES_UNUSED = ("{count} captured alias(es) of {file} are not named while a closed gate refuses that "
+                         "declaration (no running session uses them)")
 # The only static header the keyed kind accepts (canonical spelling).
 KEYED_HEADER = "X-Client"
 _VISIBLE_ASCII = re.compile(r"^[\x20-\x7e]{1,256}$")
@@ -128,6 +151,7 @@ METADATA_ADDRESSES = frozenset(
      ipaddress.ip_address("fd00:ec2::254")}
 )
 LAN_SUFFIXES = (".lan", ".local", ".home.arpa", ".internal")
+_IPV4_COMPATIBLE = ipaddress.ip_network("::/96")
 _DNS_NAME = re.compile(r"^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$")
 _DOTTED_QUAD = re.compile(r"^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3}$")
 _URL_CHARS = re.compile(r"^[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+$")
@@ -217,6 +241,8 @@ class ResolvedProvider:
     listing_origin: str | None
     headers: dict[str, str]
     route_digest: str
+    # The declared private network (loopback | lan | tailnet), or None.
+    network: str | None = None
 
 
 @dataclass(frozen=True)
@@ -485,7 +511,8 @@ def _scrub(problem: OperatorProblem, literals: Iterable[str] = ()) -> OperatorPr
 
 
 # ------------------------------------------------------------ endpoint policy
-def normalize_endpoint(url: Any, *, keyed: bool, lan: bool, gateway_ports: Iterable[int] = GATEWAY_PORTS) -> tuple[str, str]:
+def normalize_endpoint(url: Any, *, keyed: bool, lan: bool, network: str | None = None,
+                       gateway_ports: Iterable[int] = GATEWAY_PORTS, network_hint: bool = False) -> tuple[str, str]:
     """``(origin, normalized_url)`` or raise :class:`ValueError` naming the rule.
 
     HTTPS for keyed routes; keyless HTTP only on the reviewed LAN kind and
@@ -493,16 +520,28 @@ def normalize_endpoint(url: Any, *, keyed: bool, lan: bool, gateway_ports: Itera
     malformed or zero port, ambiguous numeric host spelling, non-ASCII host,
     metadata/link-local/unspecified/multicast address, or a gateway port on
     a loopback host. The default port is dropped; the host is lower-cased.
+
+    With ``network`` (a declared private network) http and https are both
+    allowed, keyed or not: an address literal must belong to that network
+    (written as IPv4 when it is IPv4, without a zone), a name passes by its
+    form alone (``localhost`` only on loopback), and a loopback network
+    refuses a gateway port for any host. The gateway checks every
+    connection's address against the network; this check is lexical.
+    ``network_hint`` names the option in a keyed http refusal.
     """
 
+    if network is not None and network not in netclass.NETWORKS:
+        raise ValueError(f"network must be one of {', '.join(netclass.NETWORKS)}")
     if not isinstance(url, str) or not url or len(url) > 256:
         raise ValueError("must be an absolute URL of at most 256 characters")
     if _CONTROL.search(url) or " " in url or not _URL_CHARS.fullmatch(url):
         raise ValueError("contains characters that are not allowed in a URL")
     parts = urllib.parse.urlsplit(url)
     scheme = parts.scheme.lower()
-    allowed = {"https"} if keyed or not lan else {"http", "https"}
+    allowed = {"https"} if (keyed or not lan) and network is None else {"http", "https"}
     if scheme not in allowed:
+        if keyed and scheme == "http" and network_hint:
+            raise ValueError(KEYED_HTTP_REFUSAL)
         raise ValueError("a secret is sent only over https" if keyed else f"scheme {scheme or '(none)'} is not allowed")
     if "@" in parts.netloc:
         raise ValueError("userinfo is not allowed in a provider URL")
@@ -520,10 +559,15 @@ def normalize_endpoint(url: Any, *, keyed: bool, lan: bool, gateway_ports: Itera
     bracketed = parts.netloc.split("@")[-1].startswith("[")
     address: ipaddress.IPv4Address | ipaddress.IPv6Address | None = None
     if bracketed:
+        if network is not None and "%" in host:
+            raise ValueError("an address with a zone is not allowed")
         try:
             address = ipaddress.IPv6Address(host)
         except ValueError as exc:
             raise ValueError("malformed IPv6 host") from exc
+        if network is not None and (address.ipv4_mapped is not None or (
+                address in _IPV4_COMPATIBLE and int(address) > 1)):
+            raise ValueError("write the IPv4 address, not its IPv6 form")
     elif re.fullmatch(r"[0-9.]+", host) or re.search(r"(^|\.)0x", host):
         if not _DOTTED_QUAD.fullmatch(host):
             raise ValueError("ambiguous numeric host spelling")
@@ -545,7 +589,20 @@ def normalize_endpoint(url: Any, *, keyed: bool, lan: bool, gateway_ports: Itera
     effective_port = port if port is not None else (443 if scheme == "https" else 80)
     if loopback and effective_port in set(gateway_ports):
         raise ValueError("the charmer gateway port is not a provider")
-    if lan:
+    if network is not None:
+        # Precedence: a never address, then the gateway port (any
+        # host form on loopback), then the address outside the network.
+        verdict = (netclass.allowed(address, network, gateway_ports, port=effective_port)
+                   if address is not None else None)
+        if verdict is not None and verdict.reason == netclass.NEVER_REASON:
+            raise ValueError(netclass.refusal(verdict))
+        if network == netclass.LOOPBACK and effective_port in set(gateway_ports):
+            raise ValueError("the charmer gateway port is not a provider")
+        if verdict is not None and not verdict.allowed:
+            raise ValueError(netclass.refusal(verdict))
+        if address is None and host == "localhost" and network != netclass.LOOPBACK:
+            raise ValueError(f"localhost is on the loopback network, not {network}")
+    elif lan:
         local = loopback or (address is not None and address.is_private) or (
             address is None and ("." not in host or host.endswith(LAN_SUFFIXES))
         )
@@ -638,34 +695,78 @@ def keyed_declaration(document: Any) -> bool:
     return isinstance(block, Mapping) and block.get("kind") == KEYED_KIND
 
 
-def keyed_preflight(docs: Mapping[str, Any], file_id: str, raw: bytes) -> OperatorProblem | None:
-    """Metadata-only preflight: the sanitized refusal of a keyed
-    declaration while the trusted audit gate is closed, or None.
+# The single trusted accessor lives with the keyed one.
+private_network_audited = catalog.private_network_audited
 
-    Bounded strict parse and the trusted accessor only: no secret store
+
+def credential_transport(provider: "ResolvedProvider") -> str | None:
+    """How the key travels to a provider declared on a private network, for
+    show and doctor (None for every other provider): ``bearer over plain
+    HTTP, private network (tailnet)``, ``plain HTTP, private network (lan)``."""
+
+    if provider.network is None:
+        return None
+    plain = provider.origin.startswith("http://")
+    if provider.auth_kind == "none":
+        how = "plain HTTP" if plain else "HTTPS"
+    else:
+        how = f"{provider.auth_kind} over {'plain HTTP' if plain else 'HTTPS'}"
+    return f"{how}, private network ({provider.network})"
+
+
+def network_declaration(document: Any) -> bool:
+    """Metadata only: a declaration whose provider block carries ``network``."""
+
+    block = document.get("provider") if isinstance(document, Mapping) else None
+    return isinstance(block, Mapping) and "network" in block
+
+
+def network_gate_remedy(file_id: str) -> str:
+    """What to remove before going back to a release without private-network
+    routes, as fixed text: the metadata-only refusal never scans stored
+    values, so no authored text of the file enters it (a line key could hold
+    a stored credential). ``file_id`` is the declaration's file name (it
+    matched ``FILE_NAME`` before the file was read), the same text the
+    problem's ``file`` field shows on this path; both pass ``_scrub``."""
+
+    return (f"before going back to a release without them: charmer providers rm {file_id} (it names any of its "
+            "lines to remove first); add the provider and its lines again after returning")
+
+
+def keyed_preflight(docs: Mapping[str, Any], file_id: str, raw: bytes) -> OperatorProblem | None:
+    """Metadata-only preflight: the sanitized refusal of a declaration a
+    closed trusted gate refuses — a keyed declaration while the keyed audit
+    gate is closed, a declaration with ``network`` while the private-network
+    gate is closed — or None.
+
+    Bounded strict parse and the trusted accessors only: no secret store
     (``get``/``is_set``/``scan_values``), no network, and no authored text
     in the refusal. A file this cannot parse is left to the ordinary
     validation (which may then screen it against stored literals).
     """
 
-    if catalog.keyed_compat_audited(docs.get("gateway")):
+    gateway = docs.get("gateway")
+    if catalog.keyed_compat_audited(gateway) and private_network_audited(gateway):
         return None
     try:
         document = strict_json.loads(raw, strict_json.JSONLimits(max_bytes=READ_LIMIT_BYTES, max_string=4096))
     except (strict_json.StrictJSONError, ValueError):
         return None
-    if not keyed_declaration(document):
-        return None
     # The metadata-only secret-shape scrub (no stored literals: the store is
     # never consulted here), as ordinary validation applies to the label.
-    return _scrub(_problem("kind-gated", file_label(file_id), "$.provider.kind", catalog.KEYED_AUDIT_CLOSED,
-                           KEYED_GATE_REMEDY))
+    if keyed_declaration(document) and not catalog.keyed_compat_audited(gateway):
+        return _scrub(_problem("kind-gated", file_label(file_id), "$.provider.kind", catalog.KEYED_AUDIT_CLOSED,
+                               KEYED_GATE_REMEDY))
+    if network_declaration(document) and not private_network_audited(gateway):
+        return _scrub(_problem("network-gated", file_label(file_id), "$.provider.network", NETWORK_GATED,
+                               network_gate_remedy(file_id)))
+    return None
 
 
 def store_scan_needed(docs: Mapping[str, Any], files: Mapping[str, bytes]) -> bool:
     """Whether a layer over ``files`` has an independently valid candidate
     contribution that keeps the defensive stored-literal scan: False
-    only when every file is a solely rejected closed-keyed declaration."""
+    only when every file is a declaration a closed gate solely rejects."""
 
     return any(keyed_preflight(docs, file_id, raw) is None for file_id, raw in files.items())
 
@@ -686,16 +787,18 @@ def _scan_values(secret_values: "frozenset[str] | Callable[[], Iterable[str] | N
 
 def route_digest(
     *, secret_ref: str | None, auth_kind: str, header: str | None, origin: str,
-    base_url: str, listing_origin: str | None, listing_auth: str | None,
+    base_url: str, listing_origin: str | None, listing_auth: str | None, network: str | None = None,
 ) -> str:
     """The credential-route identity an approval binds to.
 
     A path-only edit keeps a bearer route approved; a header-auth route binds
     the normalized full base URL (interim, until the redirect-refusal
-    gateway patch makes it unnecessary).
+    gateway patch makes it unnecessary). A declared private network is part
+    of the identity only when set, so every route without one keeps its
+    digest and approval, and changing the network needs a new approval.
     """
 
-    return _digest("operator-route", {
+    body: dict[str, Any] = {
         "secret_ref": secret_ref,
         "auth": auth_kind,
         "header": header,
@@ -703,7 +806,10 @@ def route_digest(
         "url": base_url if auth_kind == "header" else None,
         "listing_origin": listing_origin,
         "listing_auth": listing_auth,
-    })
+    }
+    if network is not None:
+        body["network"] = network
+    return _digest("operator-route", body)
 
 
 def catalog_route_digest(provider: Mapping[str, Any]) -> str:
@@ -1070,6 +1176,7 @@ def derive_core_entry(
 
 def _resolve_provider_block(
     file_id: str, block: Mapping[str, Any], file: str, *, ports: frozenset[int], audited: bool = False,
+    network_audited: bool = False,
 ) -> tuple[ResolvedProvider | None, list[OperatorProblem]]:
     problems: list[OperatorProblem] = []
     kind = block["kind"]
@@ -1078,6 +1185,13 @@ def _resolve_provider_block(
     if keyed_kind and not audited:
         # Defence in depth: validate_layer's metadata preflight refuses first.
         return None, [_problem("kind-gated", file, f"{path}.kind", catalog.KEYED_AUDIT_CLOSED, KEYED_GATE_REMEDY)]
+    network = block.get("network")
+    if network is not None and not network_audited:
+        # Defence in depth, as for the keyed gate.
+        return None, [_problem("network-gated", file, f"{path}.network", NETWORK_GATED,
+                               network_gate_remedy(file_id))]
+    if network is not None and kind not in NETWORK_KINDS:
+        return None, [_problem("network", file, f"{path}.network", NETWORK_KIND_REFUSAL)]
     adapter, transport_kind = KINDS[kind]
     lan = kind == LAN_KIND
     auth = block["auth"]
@@ -1110,7 +1224,8 @@ def _resolve_provider_block(
                                      "store the key under another name: charmer providers set-key"))
     keyed = auth_kind != "none"
     try:
-        origin, base_url = normalize_endpoint(block["base_url"], keyed=keyed, lan=lan, gateway_ports=ports)
+        origin, base_url = normalize_endpoint(block["base_url"], keyed=keyed, lan=lan, network=network,
+                                              gateway_ports=ports, network_hint=keyed_kind)
     except ValueError as exc:
         problems.append(_problem("endpoint", file, f"{path}.base_url", f"base_url refused: {exc}"))
         origin = base_url = ""
@@ -1138,7 +1253,8 @@ def _resolve_provider_block(
         if lan and listing["auth"] != "none":
             problems.append(_problem("listing", file, f"{path}.listing.auth", "a keyless LAN listing takes auth none"))
         try:
-            listing_origin, _url = normalize_endpoint(listing["url"], keyed=listing["auth"] != "none", lan=lan, gateway_ports=ports)
+            listing_origin, _url = normalize_endpoint(listing["url"], keyed=listing["auth"] != "none", lan=lan,
+                                                      network=network, gateway_ports=ports, network_hint=keyed_kind)
         except ValueError as exc:
             problems.append(_problem("listing", file, f"{path}.listing.url", f"listing url refused: {exc}"))
         if listing["auth"] != "none" and listing_origin is not None and origin and listing_origin != origin:
@@ -1172,19 +1288,23 @@ def _resolve_provider_block(
         "support": "operator-declared",
         "support_note": f"Operator-declared provider ({file}); not a reviewed catalog provider.",
         "adapter": adapter,
-        # A keyed route renders its normalized API base (scheme,
-        # host and default port canonical, path kept, no trailing slash).
-        "transport": {"kind": transport_kind, "base_url": base_url if keyed_kind else block["base_url"],
+        # A keyed route, and any route on a declared private network,
+        # renders its normalized API base (scheme, host and default port
+        # canonical, path kept, no trailing slash).
+        "transport": {"kind": transport_kind,
+                      "base_url": base_url if keyed_kind or network is not None else block["base_url"],
                       "auth": auth_entry},
         "passthrough_routes": [],
         "payload_contracts": contracts,
         "origin": "operator",
     }
+    if network is not None:
+        entry["transport"]["network"] = network
     rd = route_digest(secret_ref=secret_ref, auth_kind=auth_kind, header=header, origin=origin,
                       base_url=base_url, listing_origin=listing_origin,
-                      listing_auth=listing["auth"] if listing else None)
+                      listing_auth=listing["auth"] if listing else None, network=network)
     return ResolvedProvider(file_id, file, entry, kind, origin, base_url, secret_name, auth_kind, header,
-                            dict(listing) if listing else None, listing_origin, headers, rd), []
+                            dict(listing) if listing else None, listing_origin, headers, rd, network), []
 
 
 def t1_families(docs: Mapping[str, Any]) -> frozenset[str]:
@@ -1493,7 +1613,8 @@ def validate_layer(
                              "migrate it: charmer providers migrate-custom"))
                 continue
             resolved_provider, provider_problems = _resolve_provider_block(
-                file_id, block, file, ports=ports, audited=catalog.keyed_compat_audited(docs["gateway"]))
+                file_id, block, file, ports=ports, audited=catalog.keyed_compat_audited(docs["gateway"]),
+                network_audited=private_network_audited(docs["gateway"]))
             if resolved_provider is None:
                 for problem in provider_problems:
                     add(problem)
@@ -2314,11 +2435,11 @@ def load_preset(name: str, asset_root: Path | str | None = None) -> bytes:
     return raw
 
 
-def preset_document(raw: bytes, *, base_url: str | None = None) -> dict[str, Any]:
+def preset_document(raw: bytes, *, base_url: str | None = None, network: str | None = None) -> dict[str, Any]:
     """A preset as a new declaration, without its review block; ``base_url``
-    retargets its endpoint (and a listing URL under the same base).
-    Validation happens after, on the whole proposed layer, exactly as for a
-    hand-written file."""
+    retargets its endpoint (and a listing URL under the same base) and
+    ``network`` declares the private network it is on. Validation happens
+    after, on the whole proposed layer, exactly as for a hand-written file."""
 
     try:
         document = strict_json.loads(raw)
@@ -2338,6 +2459,11 @@ def preset_document(raw: bytes, *, base_url: str | None = None) -> dict[str, Any
         if isinstance(listing, dict) and isinstance(listing.get("url"), str) and old \
                 and listing["url"].startswith(old):
             listing["url"] = base_url.rstrip("/") + listing["url"][len(old):]
+    if network is not None:
+        block = document.get("provider")
+        if not isinstance(block, dict):
+            raise OperatorError("--network applies to a preset with a provider block only")
+        block["network"] = network
     return document
 
 
@@ -3295,6 +3421,27 @@ def line_file_ids(read: ProvidersRead | None, layer: OperatorLayer) -> dict[str,
     return found
 
 
+def gated_file_ids(layer: OperatorLayer) -> frozenset[str]:
+    """The declarations a closed trusted gate refuses (``GATED_CODES``).
+
+    That refusal is metadata only: the file is never screened against stored
+    values, so its line keys serve the dependency checks (admissions,
+    bindings, liveness) but never enter a blocker or diagnostic text."""
+
+    prefix = f"{PROVIDERS_DIRNAME}/"
+    return frozenset(label.removeprefix(prefix).removesuffix(".json")
+                     for label, problems in layer.problems_by_file.items()
+                     if any(problem.code in GATED_CODES for problem in problems))
+
+
+def gated_line_keys(read: ProvidersRead | None, layer: OperatorLayer) -> dict[str, str]:
+    """line key -> file id of the lines of :func:`gated_file_ids` (internal
+    only: never shown)."""
+
+    gated = gated_file_ids(layer)
+    return {key: file_id for key, file_id in line_file_ids(read, layer).items() if file_id in gated}
+
+
 def proposed_layer(
     docs: Mapping[str, Any], read: ProvidersRead, changes: Mapping[str, bytes | None], *,
     schemas: OperatorSchemas, ledger: OperatorLedger | None, legacy: Mapping[str, Any] | None = None,
@@ -4073,6 +4220,8 @@ def doctor_findings(
     current_bases = {base for line in layer.lines.values() for base in line_aliases(line.core_entry)}
     catalog_bases = catalog_alias_lines(docs)
     unused_aliases: list[UnusedAlias] = []
+    gated_files = gated_file_ids(layer)
+    gated_captures: dict[str, tuple[int, set[str]]] = {}
     for alias in sorted(captures):
         if alias in current_bases:
             continue
@@ -4080,6 +4229,12 @@ def doctor_findings(
         pid = capture["provider"]
         key = capture["source"].removeprefix("operator:")
         users = holders((alias,))
+        if pid in gated_files:
+            # Captured from a declaration a closed gate now refuses: its
+            # aliases carry its line keys, so they are counted, never named.
+            count, holders_of = gated_captures.get(pid, (0, set()))
+            gated_captures[pid] = (count + 1, holders_of | set(users))
+            continue
         catalog_served = catalog_bases.get(alias, ())
         rendered = bool(catalog_served) or (plan is not None and alias in plan.captures)
         if not users:
@@ -4088,10 +4243,22 @@ def doctor_findings(
             blocks.append(f"alias {alias} (provider {pid} not rendered) is used by {_ids8(users)} — "
                           f"restore {file_label(pid)} or end the session; "
                           f"{sessions_mod.mark_ended_remedy(users)}")
+    for pid, (count, users) in sorted(gated_captures.items()):
+        if users:
+            blocks.append(GATED_CAPTURES_USED.format(count=count, file=file_label(pid), users=_ids8(users),
+                                                     remedy=sessions_mod.mark_ended_remedy(users)))
+        else:
+            info.append(GATED_CAPTURES_UNUSED.format(count=count, file=file_label(pid)))
 
+    gated_keys = gated_line_keys(snapshot.read, layer)
+    gated_admitted: dict[str, int] = {}
     for key in sorted(ledger.admissions if ledger is not None else {}):
         grant = ledger.admissions[key]
         line = layer.lines.get(key)
+        if line is None and key in gated_keys:
+            # A line of a declaration a closed gate refuses: never named.
+            gated_admitted[gated_keys[key]] = gated_admitted.get(gated_keys[key], 0) + 1
+            continue
         if line is None:
             if key not in layer.pending and key not in layer.displaced:
                 attention.append(f"{key} is admitted but no valid declaration serves it (invalid or removed) — fix its "
@@ -4114,6 +4281,8 @@ def doctor_findings(
                 attention.append(f"{key}: {count}/{len(aliases)} aliases served — charmer providers apply")
         if grant.get("via") == "migrate" and not smoke_current(evidence, key, line.definition_digest):
             info.append(f"{key}: migrated admission is unverified (no smoke yet) — charmer models qualify {key}")
+    for file_id, count in sorted(gated_admitted.items()):
+        attention.append(GATED_ADMITTED.format(count=count, file=file_label(file_id)))
 
     try:
         rows = displaced_lines(docs, layer, ledger)

@@ -578,8 +578,91 @@ class ListingFailure(ProxyError):
             "connection": f"connection error{': ' + detail if detail else ''}",
             "scheme": "only http and https URLs are listed",
             "protocol": "malformed HTTP response",
+            "network": f"address refused: outside the provider's private network ({detail})",
         }.get(kind, kind)
         super().__init__(text)
+
+
+class _OutsideNetwork(OSError):
+    """A connection a declared private network does not allow (value-free)."""
+
+
+# What a private-network provider's host resolves to now: shown at route
+# approval, never a reason to send anything. One bounded resolution on a
+# daemon thread (getaddrinfo has no timeout of its own); an address literal
+# is classified without a lookup. It never holds a key: the gateway, and the
+# listing transport above, check every connection themselves.
+RESOLVE_TIMEOUT = 1.5
+
+
+@dataclass(frozen=True)
+class HostResolution:
+    """``state``: resolved | none | unknown; ``answers``: ``(address, class)``."""
+
+    host: str
+    state: str
+    answers: tuple[tuple[str, str], ...] = ()
+    reason: str | None = None
+
+    def outside(self, network: str) -> tuple[tuple[str, str], ...]:
+        """The answers a connection on ``network`` would refuse."""
+
+        return tuple(answer for answer in self.answers if answer[1] != network)
+
+    def text(self) -> str:
+        if self.state == "resolved":
+            return ", ".join(f"{address} ({cls})" for address, cls in self.answers)
+        if self.state == "none":
+            return f"nothing — {self.host} does not resolve from here"
+        return "not checked"
+
+
+def resolve_host(url: str, *, timeout: float = RESOLVE_TIMEOUT,
+                 resolve: Callable[[str, int], Any] | None = None, lookup: bool = True) -> HostResolution:
+    """What ``url``'s host resolves to now (a literal: itself, no lookup).
+    ``resolve`` replaces getaddrinfo; ``lookup=False`` classifies a literal
+    and leaves a name ``unknown``."""
+
+    import socket
+    import threading
+    import urllib.parse
+
+    from charmer import netclass
+
+    parts = urllib.parse.urlsplit(url)
+    host = parts.hostname or ""
+    try:
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+    except ValueError:
+        return HostResolution(host or url, "unknown", reason="malformed port")
+    if not host:
+        return HostResolution(url, "unknown", reason="no host")
+    literal = netclass.answers((host,))
+    if literal:
+        return HostResolution(host, "resolved", literal)
+    if not lookup:
+        return HostResolution(host, "unknown", reason="not looked up")
+    resolver = resolve or (lambda name, number: socket.getaddrinfo(name, number, type=socket.SOCK_STREAM))
+    result: dict[str, Any] = {}
+
+    def run() -> None:
+        try:
+            result["addresses"] = resolver(host, port)
+        except BaseException as exc:  # handed to the caller below
+            result["error"] = exc
+
+    worker = threading.Thread(target=run, name="charmer-resolve", daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        return HostResolution(host, "none", reason="timeout")
+    if "error" in result:
+        return HostResolution(host, "none", reason="nxdomain" if isinstance(result["error"], socket.gaierror)
+                              else "unreachable")
+    entries = [entry[4] for entry in result.get("addresses") or []
+               if isinstance(entry, tuple) and len(entry) == 5 and isinstance(entry[4], tuple)]
+    answers = netclass.answers(entries)
+    return HostResolution(host, "resolved", answers) if answers else HostResolution(host, "none", reason="nxdomain")
 
 
 class ListingShapeError(ProxyError):
@@ -645,11 +728,25 @@ class _ListingDeadline:
     A timer shuts down every socket the request opened when the deadline
     passes; resolution runs in a helper thread the request stops waiting
     for, so a stalled resolver can never lead to a later connect or send.
+
+    With ``network`` (a provider declared on a private network) the host
+    is resolved once, only the answers in that network are dialled, by
+    address (no second lookup), and the connected socket's remote address
+    is checked again; on ``tailnet`` its local address must be a tailnet
+    address too. Every refusal is :class:`_OutsideNetwork`, before a byte
+    is written. ``resolver`` (getaddrinfo's shape) and ``connector``
+    ``(getaddrinfo entry, timeout) -> socket`` are the test seams.
     """
 
-    def __init__(self, seconds: float, clock: Callable[[], float]):
+    def __init__(self, seconds: float, clock: Callable[[], float], *, network: str | None = None,
+                 gateway_ports: Iterable[int] = (), resolver: Callable[[str, int], Any] | None = None,
+                 connector: Callable[[Any, float], Any] | None = None):
         import threading
 
+        self._network = network
+        self._gateway_ports = frozenset(gateway_ports)
+        self._resolver = resolver
+        self._connector = connector
         self._seconds = seconds
         self._clock = clock
         self._start = clock()
@@ -701,10 +798,11 @@ class _ListingDeadline:
         import threading
 
         outcome: dict[str, Any] = {}
+        resolver = self._resolver or (lambda name, number: socket.getaddrinfo(name, number, 0, socket.SOCK_STREAM))
 
         def work() -> None:
             try:
-                outcome["infos"] = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
+                outcome["infos"] = list(resolver(host, port))
             except OSError as exc:
                 outcome["error"] = type(exc)
 
@@ -721,23 +819,57 @@ class _ListingDeadline:
     def connect(self, address: tuple[str, int]) -> Any:
         import socket
 
+        from charmer import netclass
+
         host, port = address
         failure: type[OSError] | None = None
-        for family, kind, proto, _canonical, target in self.resolve(host, port):
+        infos = self.resolve(host, port)
+        if self._network is not None:
+            infos = [info for info in infos if self._allowed(info[4])]
+            if not infos:
+                raise _OutsideNetwork("outside the provider's private network")
+        for info in infos:
+            family, kind, proto, _canonical, target = info
             self.check()
-            sock = socket.socket(family, kind, proto)
-            self.register(sock)
-            try:
-                sock.settimeout(self.timeout())
-                sock.connect(target)
-            except OSError as exc:
-                failure = type(exc)
-                sock.close()
-                continue
+            if self._connector is not None:
+                try:
+                    sock = self._connector(info, self.timeout())
+                except OSError as exc:
+                    failure = type(exc)
+                    continue
+                self.register(sock)
+            else:
+                sock = socket.socket(family, kind, proto)
+                self.register(sock)
+                try:
+                    sock.settimeout(self.timeout())
+                    sock.connect(target)
+                except OSError as exc:
+                    failure = type(exc)
+                    sock.close()
+                    continue
+            if self._network is not None:
+                # The socket's own view, before any byte is written.
+                try:
+                    peer_ok = self._allowed(sock.getpeername())
+                    local_ok = netclass.local_allowed(sock.getsockname(), self._network).allowed
+                except (OSError, ValueError):
+                    peer_ok = local_ok = False
+                if not (peer_ok and local_ok):
+                    sock.close()
+                    raise _OutsideNetwork("outside the provider's private network")
             self.check()
             return sock
         self.check()
         raise (failure or OSError)("connection failed")
+
+    def _allowed(self, address: Any) -> bool:
+        from charmer import netclass
+
+        try:
+            return netclass.allowed(address, self._network, self._gateway_ports).allowed
+        except ValueError:
+            return False
 
 
 def _bounded_http_classes(deadline: _ListingDeadline) -> tuple[Any, Any]:
@@ -769,7 +901,11 @@ def _bounded_http_classes(deadline: _ListingDeadline) -> tuple[Any, Any]:
     return Plain, Secure
 
 
-def _bounded_opener(deadline: _ListingDeadline) -> Any:
+def _bounded_opener(deadline: _ListingDeadline, *, direct: bool = False) -> Any:
+    """The listing opener: no redirects; ``direct`` also ignores every proxy
+    the environment names (a provider declared on a private network is
+    reached only by its own checked connection)."""
+
     plain, secure = _bounded_http_classes(deadline)
 
     class PlainHandler(urllib.request.HTTPHandler):
@@ -782,19 +918,30 @@ def _bounded_opener(deadline: _ListingDeadline) -> Any:
 
     from charmer import tls
 
-    return urllib.request.build_opener(_NoRedirect(), PlainHandler(), SecureHandler(context=tls.context()))
+    handlers = [_NoRedirect(), PlainHandler(), SecureHandler(context=tls.context())]
+    if direct:
+        handlers.insert(0, urllib.request.ProxyHandler({}))
+    return urllib.request.build_opener(*handlers)
 
 
 def bounded_get(
     url: str, headers: Mapping[str, str], *,
     deadline: float = LISTING_DEADLINE_SECONDS, max_bytes: int = LISTING_MAX_BYTES,
     clock: Callable[[], float] = time.monotonic,
+    network: str | None = None, gateway_ports: Iterable[int] = (),
+    resolver: Callable[[str, int], Any] | None = None, connector: Callable[[Any, float], Any] | None = None,
 ) -> bytes:
     """One bounded GET; raises :class:`ListingFailure` on any failure.
 
     Every failure is a fixed, value-free :class:`ListingFailure` raised
     without exception context: a malformed status line or chunk header can
     echo request data, so neither its text nor its traceback may surface.
+
+    ``network`` (the provider's declared private network) makes the request
+    direct — no proxy from the environment — and checks every connection
+    against the network (:class:`_ListingDeadline`); a refused address is
+    ``ListingFailure("network")``. There is no fallback to an unchecked
+    connection.
     """
 
     import http.client
@@ -804,19 +951,24 @@ def bounded_get(
 
     if urllib.parse.urlsplit(url).scheme not in ("http", "https"):
         raise ListingFailure("scheme")
-    bound = _ListingDeadline(deadline, clock)
+    bound = _ListingDeadline(deadline, clock, network=network, gateway_ports=gateway_ports, resolver=resolver,
+                             connector=connector)
     response = None
     try:
         failure: ListingFailure | None = None
         try:
             request = urllib.request.Request(url, headers=dict(headers), method="GET")
-            response = _bounded_opener(bound).open(request, timeout=bound.timeout())
+            response = _bounded_opener(bound, direct=network is not None).open(request, timeout=bound.timeout())
         except urllib.error.HTTPError as exc:
             code = exc.code
             exc.close()
             failure = ListingFailure("redirect" if 300 <= code < 400 else "http", code)
+        except _OutsideNetwork:
+            failure = ListingFailure("network", detail=network)
         except urllib.error.URLError as exc:
-            if isinstance(exc.reason, (socket.timeout, TimeoutError)) or bound.over():
+            if isinstance(exc.reason, _OutsideNetwork):
+                failure = ListingFailure("network", detail=network)
+            elif isinstance(exc.reason, (socket.timeout, TimeoutError)) or bound.over():
                 failure = ListingFailure("timeout")
             else:
                 failure = ListingFailure("connection", detail=type(exc.reason).__name__)
@@ -1989,6 +2141,32 @@ def published_identity(home: Path) -> PublishedIdentity:
     return PublishedIdentity(routes, None, served_plan_mod.gateway_label(document))
 
 
+PRIVATE_NETWORK_KEY = render_mod.PRIVATE_NETWORK_KEY
+
+
+def private_network_selectors(document: Mapping[str, Any]) -> frozenset[str]:
+    """The selectors of the ``openai-compatibility`` entries a render puts on
+    a private network (the entries a gateway without that support drops)."""
+
+    return frozenset(render_mod.rendered_private_network_selectors(document))
+
+
+def published_private_network_selectors(home: Path, sentinel: str | None = None) -> frozenset[str]:
+    """:func:`private_network_selectors` of the published ``config.yaml``
+    (none when it is missing, not in the rendered form, or, with
+    ``sentinel``, another render's: that sentinel is then never served)."""
+
+    try:
+        raw = state.read_private(config_dir(home) / "config.yaml")
+        document = served_plan_mod.parse_restricted_yaml(raw.decode("utf-8"))
+        if sentinel is not None and render_mod.document_sentinel(document) != sentinel:
+            return frozenset()
+        return private_network_selectors(document)
+    except (state.StateError, OSError, served_plan_mod.PlanParseError, UnicodeDecodeError, ValueError, TypeError,
+            KeyError, IndexError):
+        return frozenset()
+
+
 def candidate_document(
     home: Path,
     *,
@@ -2215,11 +2393,15 @@ def await_sentinel(
     mode: str = "reload",
     oauth_aliases: Sequence[str] | frozenset[str] = (),
     owner_check: Callable[[str], service.OwnerVerdict] | None = None,
+    private_aliases: Sequence[str] | frozenset[str] = (),
 ) -> ReloadResult:
     """Poll only the loopback registry, with a bounded deadline and test seams.
 
     ``mode="reload"`` (hot reload, config-only init): at most 2 s whatever
-    ``timeout`` says; the sentinel alone is proof. A 401 may be the short
+    ``timeout`` says; the sentinel alone is proof, except that the render's
+    ``private_aliases`` (its private-network selectors, which a gateway
+    without that support drops while still loading the rest) must be served
+    too, otherwise a restart is required. A 401 may be the short
     interval before the new render applies; retry it until the deadline. Only
     connection refusal is informational (``down``); timeouts, resets and
     malformed responses retry within the deadline, then require a restart.
@@ -2241,6 +2423,7 @@ def await_sentinel(
         raise ValueError(f"unknown readiness mode: {mode!r}")
     start = mode == "start"
     required = frozenset(oauth_aliases) - {sentinel}
+    private = frozenset(private_aliases) - {sentinel}
 
     # Recheck before every authenticated poll: a listener can change during
     # reload. Report each unconfirmed-owner warning only once per wait.
@@ -2282,9 +2465,11 @@ def await_sentinel(
             raise  # do not hide test isolation trips in the retry loop
         except Exception:
             status, ids, failed, last = None, set(), True, "failed"
-        if status == 200 and sentinel in ids:
-            if not start:
+        if status == 200 and sentinel in ids and not start:
+            if not private - set(ids):
                 return ReloadResult("reloaded", f"gateway: reloaded (sentinel {sentinel})")
+            last = "no-private"
+        elif status == 200 and sentinel in ids:
             served = sorted(required & ids)
             if served:
                 return ReloadResult(
@@ -2304,6 +2489,12 @@ def await_sentinel(
             f"gateway: not ready {budget:g} s after a (re)start: "
             + _start_missing(last, status, sentinel, required),
         )
+    if last == "no-private" and not failed:
+        missing = sorted(private - set(ids))
+        shown = ", ".join(missing[:3]) + ("…" if len(missing) > 3 else "")
+        return ReloadResult("restart_required", f"gateway reloaded without the private-network selector(s) {shown}: "
+                                                "the running gateway predates them — restart required: "
+                                                + service.hint("restart"))
     if failed:
         return ReloadResult("restart_required", restart_required() + " (models check failed)")
     if status == 401:
@@ -2411,6 +2602,7 @@ def rotate_token(
         outcome = await_sentinel(
             gateway, token, result.sentinel, models_get=models_get, clock=clock, sleep=sleep,
             owner_check=instance_listener(home, own_root, environ, gateway),
+            private_aliases=result.private_aliases,
         )
         if outcome.status != "reloaded":
             message = restart_required() if outcome.status == "down" else outcome.message
@@ -2431,6 +2623,7 @@ def rotate_token(
             outcome = await_sentinel(
                 gateway, token, result.sentinel, models_get=models_get, clock=clock, sleep=sleep,
                 owner_check=instance_listener(home, own_root, environ, gateway),
+                private_aliases=result.private_aliases,
             )
             if outcome.status != "reloaded":
                 raise ProxyError("gateway reload still unverified; rotation paused (patched watcher required)")
@@ -2673,10 +2866,27 @@ def _plan_alias_prune(
         )
     current = {base for line in snapshot.layer.lines.values()
                for base in operator_mod.line_aliases(line.core_entry)}
+    # Captures of a declaration a closed gate refuses carry its line keys:
+    # kept and never named (counted per file).
+    import dataclasses
+
+    gated = operator_mod.gated_file_ids(snapshot.layer)
+    hidden: dict[str, int] = {}
+    for capture in captures.values():
+        if capture["provider"] in gated:
+            hidden[capture["provider"]] = hidden.get(capture["provider"], 0) + 1
+    ledger = snapshot.ledger
+    if hidden and ledger is not None:
+        ledger = dataclasses.replace(ledger, aliases={alias: capture for alias, capture in ledger.aliases.items()
+                                                      if capture["provider"] not in gated})
+        wanted_captures = frozenset(wanted_captures & set(ledger.aliases))
+    for pid, count in sorted(hidden.items()):
+        lines.append(f"kept: {count} captured alias(es) of {operator_mod.file_label(pid)} — not named while a "
+                     "closed gate refuses that declaration")
     capture_plan = None
     if captures and (names is None or wanted_captures):
         capture_plan = operator_mod.plan_capture_prune(
-            snapshot.ledger, current, scan.refs, scan.live, wanted_captures or None,
+            ledger, current, scan.refs, scan.live, wanted_captures or None,
         )
     refusals = [p.refusal for p in (continuity_plan, capture_plan) if p is not None and p.refusal]
     if refusals:
@@ -2909,6 +3119,7 @@ def prune_aliases(
             gateway, gateway_api_keys(home)[-1], result.sentinel,
             models_get=models_get, clock=clock, sleep=sleep,
             owner_check=instance_listener(home, state_root, environ, gateway),
+            private_aliases=result.private_aliases,
         )
         lines.append(outcome.message)
         return PruneOutcome(0, tuple(lines))
@@ -3541,6 +3752,7 @@ def cmd_init(
             gateway, gateway_api_keys(home)[-1], result.sentinel,
             models_get=models_get, clock=clock, sleep=sleep,
             owner_check=instance_listener(home, state_root, environ, gateway),
+            private_aliases=result.private_aliases,
         )
         status = outcome.status
         print(outcome.message, file=sys.stdout if status in ("reloaded", "down") else sys.stderr)

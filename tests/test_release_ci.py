@@ -262,10 +262,10 @@ class WorkflowTests(unittest.TestCase):
         tables = _pin_tables(PINS.read_text())
         tools = {row[0]: row[1] for row in tables["Tools (pinned by version)"]}
         self.assertEqual({name: tools[name] for name in ("setuptools", "zizmor", "govulncheck")},
-                         {"setuptools": "84.2.1", "zizmor": "1.31.1", "govulncheck": "v1.9.0"})
+                         {"setuptools": "84.2.1", "zizmor": "1.32.0", "govulncheck": "v1.9.0"})
         actions = {row[0]: row[1] for row in tables["Actions (pinned by commit)"]}
         for action, tag in {"actions/upload-artifact": "v7.0.2", "actions/download-artifact": "v8.0.2",
-                            "actions/setup-python": "v7.1.0", "cachix/install-nix-action": "31.11.3"}.items():
+                            "actions/setup-python": "v7.1.0", "cachix/install-nix-action": "v31.11.4"}.items():
             self.assertEqual(actions[action], tag)
         script = (SCRIPTS / "ci_tools.sh").read_text()
         for row in tables["Tool artifacts (pinned by sha256)"]:
@@ -291,6 +291,30 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("distribution: [Ubuntu-24.04, Ubuntu-26.04]", windows)
         self.assertIn("WSL_DISTRIBUTION: ${{ matrix.distribution }}", windows)
         self.assertNotRegex("\n".join(_commands(windows)), r"Ubuntu-(24|26)\.04")
+
+    def test_runtime_pins_match_the_reviewed_inputs(self) -> None:
+        tables = _pin_tables(PINS.read_text())
+        runtimes = json.loads((REPO_ROOT / "packaging/python-runtimes.json").read_text())
+        inventory = json.loads((REPO_ROOT / "packaging/licenses/python/inventory.json").read_text())
+        self.assertEqual(runtimes["release"], "20261110")
+        self.assertEqual(inventory["release"], runtimes["release"])
+        expected = {entry["filename"]: entry["sha256"] for entry in runtimes["targets"].values()}
+        expected.update({entry["full_archive"]["filename"]: entry["full_archive"]["sha256"]
+                         for entry in inventory["targets"].values()})
+        rows = tables["Runtime and workflow refresh"]
+        self.assertEqual(len(rows), 8)
+        self.assertEqual({row[0]: row[1] for row in rows}, expected)
+        self.assertEqual({row[2] for row in rows}, {"2026-11-11"})
+
+    def test_nix_pins_match_the_reviewed_inputs(self) -> None:
+        tables = _pin_tables(PINS.read_text())
+        locked = json.loads((REPO_ROOT / "flake.lock").read_text())["nodes"]["nixpkgs"]["locked"]
+        self.assertEqual(locked["rev"], "f4a03c008967841f2a0b3cb7c436fc6fc31671f6")
+        self.assertEqual(locked["narHash"], "sha256-ziZn2PvCJE5JEEpqTdxXwJpPB+L3YqoCpTAMCzyaP3U=")
+        nix_rows = {row[0]: row for row in tables["Nix inputs (flake.lock)"]}
+        for package, version in (("python3", "3.14.10"), ("bubblewrap", "0.13.1")):
+            self.assertEqual(nix_rows[package][1], version)
+            self.assertNotIn("channel hold", nix_rows[package][3])
 
     def test_checkout_drops_credentials(self) -> None:
         for name, text in self.texts.items():
@@ -1757,17 +1781,28 @@ cat "$STUB/text"; exit "$(cat "$STUB/text.exit")"
             return (stamp.pid, True) if stamp.binary == os.path.realpath(sys.executable) else (None, None)
 
         known = observation.BackgroundLiveness(True, frozenset())
-        variants = {"macOS answers": ([sys.executable], owner, None),
-                    "ps shows a short name": (["python3"], owner, "ps does not report the executable path"),
-                    "lsof misses the listener": ([sys.executable],
+        # Each row set is built from the child's PID, which the parent walk sees first.
+        variants = {"macOS answers": (lambda child: [(child, sys.executable)], owner, None),
+                    "ps shows a short name": (lambda child: [(child, "python3")], owner,
+                                              "ps does not report the executable path"),
+                    "the path belongs to another process": (lambda child: [(1, sys.executable)], owner,
+                                                            "ps does not report the executable path"),
+                    "lsof misses the listener": (lambda child: [(child, sys.executable)],
                                                  lambda base, *, pid: observation.OwnerVerdict("none", "nothing"),
                                                  "expected ours, unknown, none")}
-        for name, (paths_seen, listener, problem) in variants.items():
+        for name, (rows_for, listener, problem) in variants.items():
+            walked: list[int] = []
+
+            def ancestors(pid: int) -> frozenset[int]:
+                walked.append(pid)
+                return frozenset({pid, os.getpid(), 1})
+
             with self.subTest(name), \
                     mock.patch.object(darwin_process, "listener_owner", listener), \
                     mock.patch.object(darwin_process, "gateway_pid", identity), \
-                    mock.patch.object(darwin_process, "executable_paths", lambda: paths_seen), \
-                    mock.patch.object(darwin_process, "ancestor_pids", lambda pid: frozenset({pid, os.getpid(), 1})), \
+                    mock.patch.object(darwin_process, "executable_processes",
+                                      lambda rows_for=rows_for, walked=walked: rows_for(walked[-1])), \
+                    mock.patch.object(darwin_process, "ancestor_pids", ancestors), \
                     mock.patch.object(darwin_process, "background_liveness", lambda root=None: known):
                 if problem is None:
                     lines = tool.native_checks("darwin", self.tmp)
@@ -4165,10 +4200,16 @@ class VulnerabilityWatchTests(unittest.TestCase):
         reviews = self.watch.cpython_reviews(SCRIPTS.parent / "vulnerability-watch-reviewed.json")
         version = json.loads((REPO_ROOT / "packaging/python-runtimes.json").read_text())["python"]
         self.assertEqual(version, "3.15.2")
-        # The watch scans the newest published release, whose bundles carry 3.15.2, and OSV
-        # lists no advisory for v3.15.2's commit (2026-10-27): no review remains, and none is
-        # kept for a runtime (3.15.1, 3.14.8) that no scanned release carries.
-        self.assertEqual(reviews, [])
+        # This is a bounded non-use review, not a claim that CPython is fixed.
+        # The watch's published runtime is the same version as the bundled pin.
+        self.assertEqual([{key: review[key] for key in ("id", "aliases", "modified", "version", "re_review")}
+                          for review in reviews], [{
+            "id": "CVE-2026-124249", "aliases": [],
+            "modified": "2026-11-11T10:47:25.104930807Z", "version": version, "re_review": "2026-12-01",
+        }])
+        self.assertIn("http.cookiejar", reviews[0]["reason"])
+        self.assertIn("HTTPCookieProcessor", reviews[0]["reason"])
+        self.assertIn("not a CPython fix", reviews[0]["reason"])
 
     def test_watch_applies_explicit_cpython_reviews(self) -> None:
         cpython = {"version": "3.14.8", "commit": "a" * 40}

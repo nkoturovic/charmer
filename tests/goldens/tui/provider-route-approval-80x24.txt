@@ -21,4 +21,4 @@
 
 
 
-  y proceed · Esc cancel
+  y proceed · N decline · Enter decline · Esc cancel

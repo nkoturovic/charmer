@@ -2,7 +2,7 @@
   declare model
   ─────────────────────────────────────────────────────────────────────────────
 
-  Step 11/12 — Recommended uses (bindings may override)
+  Step 11/12 — Recommended uses (bindings may override) (↑↓ chooses)
 
     lead recommended
   > lead + agents recommended
@@ -21,4 +21,4 @@
   Draft only — nothing written before declaration preview.
 
 
-  Enter next · Backspace previous · ? help · Esc cancel
+  Enter next · Backspace previous · ↑↓ choose · ? help · Esc cancel

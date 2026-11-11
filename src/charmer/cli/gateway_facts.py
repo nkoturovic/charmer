@@ -16,6 +16,7 @@ from charmer import paths
 from charmer import errors as cli_errors
 from charmer import launch
 from charmer import gateway_events
+from charmer import netclass
 from charmer import proxy as proxy_mod
 from charmer import quota
 from charmer import render
@@ -299,6 +300,13 @@ def _provider_facts(runtime: runtime_mod.Runtime) -> ProviderFacts:
         fact["transport_label"] = (f"transport: {selection.choice}" if selection else f"transport: {kind}")
         if selection is not None and selection.problem:
             fact["transport_label"] += f" — {selection.problem}"
+        declared = operator_layer.providers.get(provider_id) if origin == "operator" else None
+        network_text = operator_mod.credential_transport(declared) if declared is not None else None
+        if network_text is not None and selection is None:
+            # A provider on a private network: how the key travels, the
+            # network and the key's state (never its value).
+            key_state = credential if fact["auth"] != "none" else "no key"
+            fact["transport_label"] = f"transport: {network_text} · {key_state}"
         if origin == "operator":
             fact["route"] = operator_layer.route_status.get(provider_id, "unapproved")
         if origin == "operator" or operator_lines:
@@ -855,17 +863,23 @@ _LAN_REASONS = {
     "refused": "refused the connection",
     "timeout": "did not answer in time",
     "unreachable": "is unreachable",
+    "outside": "resolves only to addresses outside its network",
+    "local": "is reached only from a local address outside the tailnet",
 }
 
 
 @dataclass(frozen=True)
 class LanReachability:
     """``state``: reachable | unreachable | unknown; ``reason`` names why
-    (nxdomain, refused, timeout, unreachable) or why it was not checked."""
+    (nxdomain, refused, timeout, unreachable, outside) or why it was not
+    checked. For a provider declared on a private network ``answers`` holds
+    every resolved address with its class (only addresses in the network
+    were tried)."""
 
     state: str
     host: str
     reason: str | None = None
+    answers: tuple[tuple[str, str], ...] = ()
 
     def text(self) -> str:
         """The exact network-scoped message (Info, or a fast launch refusal)."""
@@ -892,6 +906,7 @@ def probe_lan(
     url: str, *, timeout: float = LAN_PROBE_TIMEOUT,
     resolve: "Callable[[str, int], Any] | None" = None,
     connect: "Callable[[Any, float], Any] | None" = None,
+    network: str | None = None, gateway_ports: Iterable[int] = (),
 ) -> LanReachability:
     """One bounded reachability probe of ``url``'s host and port.
 
@@ -905,6 +920,10 @@ def probe_lan(
     address's turn. The host is unreachable only when every candidate
     failed. ``connect`` receives one ``getaddrinfo`` entry and its share in
     seconds. Nothing is sent: the socket closes right after the connect.
+
+    With ``network`` (a provider declared on a private network) every
+    answer is classified and recorded, and only addresses in that network
+    are tried, as the gateway would: no answer in it is ``outside``.
     """
 
     import socket
@@ -950,6 +969,12 @@ def probe_lan(
             candidates.append(entry)
     if not candidates:
         return LanReachability("unreachable", host, "nxdomain")
+    answers: tuple[tuple[str, str], ...] = ()
+    if network is not None:
+        answers = netclass.answers(entry[4] for entry in candidates)
+        candidates = [entry for entry in candidates if netclass.in_network(entry[4], network, gateway_ports)]
+        if not candidates:
+            return LanReachability("unreachable", host, "outside", answers)
     def open_address(entry: Any, seconds: float) -> Any:
         """Connect to one ``getaddrinfo`` entry (its family, type, protocol
         and socket address), bounded by ``seconds``; the caller closes it."""
@@ -963,6 +988,18 @@ def probe_lan(
             sock.close()
             raise
         return sock
+
+    def policy_refusal(sock: Any) -> str | None:
+        """The gateway's connect-time check on a network-scoped probe: the
+        connected socket's peer in the network and, on the tailnet, its local
+        address a tailnet address too (None: the gateway would use it)."""
+
+        try:
+            peer_ok = netclass.in_network(sock.getpeername(), network, gateway_ports)
+            local_ok = netclass.local_allowed(sock.getsockname(), network).allowed
+        except (AttributeError, OSError, ValueError):
+            return "unreachable"
+        return None if peer_ok and local_ok else ("outside" if not peer_ok else "local")
 
     opener = connect or open_address
     reasons: list[str] = []
@@ -987,26 +1024,38 @@ def probe_lan(
             reasons.append("unreachable")
             continue
         try:
-            close = getattr(sock, "close", None)
-            if close is not None:
-                close()
-        except OSError:
-            pass
-        return LanReachability("reachable", host)
+            refusal = policy_refusal(sock) if network is not None else None
+        finally:
+            try:
+                close = getattr(sock, "close", None)
+                if close is not None:
+                    close()
+            except OSError:
+                pass
+        if refusal is not None:
+            reasons.append(refusal)
+            continue
+        return LanReachability("reachable", host, None, answers)
     # Every candidate failed: the most specific reason one of them gave.
-    reason = next((r for r in ("refused", "timeout") if r in reasons), "unreachable")
-    return LanReachability("unreachable", host, reason)
+    reason = next((r for r in ("local", "refused", "timeout", "outside") if r in reasons), "unreachable")
+    return LanReachability("unreachable", host, reason, answers)
 
 
-def lan_reachability(runtime: runtime_mod.Runtime, url: str) -> LanReachability:
+def lan_reachability(runtime: runtime_mod.Runtime, url: str, network: str | None = None) -> LanReachability:
     """The Runtime seam: an injected ``lan_probe``; with the gateway test
-    seams injected and no probe, ``unknown`` (no test ever dials out)."""
+    seams injected and no probe, ``unknown`` (no test ever dials out). A
+    provider declared on a private network is probed through the
+    ``host_resolver`` seam when one is injected, connecting only to its
+    network's addresses."""
 
     if runtime.lan_probe is not None:
         return runtime.lan_probe(url)
     if runtime.health_get is not None or runtime.served_models_callback is not None:
         return LanReachability("unknown", lan_host(url), "seam")
-    return probe_lan(url)
+    if network is None:
+        return probe_lan(url)
+    return probe_lan(url, resolve=runtime.host_resolver, network=network,
+                     gateway_ports=operator_mod.gateway_ports(runtime.catalog.docs))
 
 
 # ------------------------------------------------------------------ discovery adapters
@@ -1250,6 +1299,7 @@ GATEWAY_NOT_SET_UP = ("Gateway: not set up yet in this home — no port is recor
                       "the packaged port (charmer setup prepares it)")
 
 
+
 def gateway_runtime_report(runtime: runtime_mod.Runtime) -> tuple[list[str], list[str]]:
     """Doctor's gateway facts: ``(attention, info)``.
 
@@ -1299,7 +1349,14 @@ def gateway_runtime_report(runtime: runtime_mod.Runtime) -> tuple[list[str], lis
         info.append(f"Gateway instance lock: {lock}{instance} ({seen.state}: {seen.detail})")
         drift = gateway.binary_drift(seen)
         if drift is not None:
-            (attention if getattr(drift, "restart_pending", True) else info).append(drift)
+            pending = getattr(drift, "restart_pending", True)
+            (attention if pending else info).append(drift)
+            # A gateway without private-network support drops those
+            # providers until it restarts.
+            declared = getattr(runtime, "declares_private_network", None)
+            if pending and declared is not None and declared():
+                attention.append(operator_mod.NETWORK_RESTART_PENDING.format(
+                    restart=service.hint_code("restart", backend=gateway.remedy_backend)))
     starts = len(gateway.recent_starts())
     window = int(gateway_lifecycle.CRASH_WINDOW.total_seconds() // 60)
     if starts >= gateway_lifecycle.CRASH_LIMIT and gateway.backend == endpoint_mod.ON_DEMAND:

@@ -1,0 +1,24 @@
+
+  edit profile — general
+  ─────────────────────────────────────────────────────────────────────────────
+  name                  [balanced                                      ]
+  description           [a mirroring the shipped seed's slot families. ]
+  primary provider      none                                           [Enter]
+  lead providers        any                                            [Enter]
+  compaction override   [      ]  empty = Settings (90 %) · 60–95
+
+  [ Apply ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+  Enter change · ^S apply · F1 help · Esc cancel

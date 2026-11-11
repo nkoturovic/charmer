@@ -2,7 +2,7 @@
   change lineup — "api design" (unknown)
   ─────────────────────────────────────────────────────────────────────────────
   from  balanced (gen 1)
-  to    [direct ▾]   per-agent edit ▸   direct (no agents)   keep current   fa…
+  to    [direct ▾]   per-agent ▸   direct   keep   fallback [anthropic ▾]
   diff  explorer             GPT-5.6 Sol · high → (unbound)
         analyst              GPT-5.6 Sol · high → (unbound)
         analyst-strong       Opus 5.5 · 1M selector · xhigh → (unbound)

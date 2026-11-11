@@ -340,6 +340,14 @@ class SeedLoadTests(unittest.TestCase):
             {legacy.LEGACY_SELECTOR_PREFIX + "qwen38-max[1m]": "reasoning-effort-xhigh"},
         )
 
+    def test_deepseek_pro_removal_does_not_claim_an_upstream_redirect(self) -> None:
+        bundle = catalog.load_catalog(CATALOG_ROOT)
+        retired = bundle.retired["deepseek-pro"]
+        self.assertIsNone(retired["successor"])
+        self.assertEqual(retired["last_wire"], "deepseek-v4-pro")
+        self.assertEqual(retired["reason"], "Removed from the selectable catalog; no successor. DeepSeek documents "
+                         "continued V4 Pro service, not a redirect to Flash.")
+
     def test_opus_line_serves_every_role(self) -> None:
         # The opus line serves every role, lead-capable.
         bundle = catalog.load_catalog(CATALOG_ROOT)
@@ -2194,15 +2202,15 @@ class DeepSeekProductionModelsTests(unittest.TestCase):
         self.assertIn("K2.8 Preview on 2026-10-27", kimi["routing_note"])
 
     def test_pro_is_retired_without_successor(self) -> None:
-        # Since 2026-09-14 deepseek-v4-pro serves V4.1-Flash, which the
-        # deepseek-flash line carries; the Pro selectors stay continuity.
+        # The Pro line is not selectable; its selectors stay continuity.
+        # This catalog decision does not assert an upstream redirect.
         bundle = catalog.load_catalog(CATALOG_ROOT)
         self.assertNotIn("deepseek-pro", bundle.lines)
         pro = bundle.retired["deepseek-pro"]
         self.assertIsNone(pro["successor"])
         self.assertEqual(pro["last_wire"], "deepseek-v4-pro")
         self.assertEqual(pro["display"], "DeepSeek V4 Pro")
-        self.assertIn("2026-09-14", pro["reason"])
+        self.assertIn("no successor", pro["reason"])
         self.assertEqual(
             pro["selectors"],
             {

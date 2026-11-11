@@ -66,6 +66,9 @@
       "discovery": {
         "enabled": false
       },
+      "kv-store": {
+        "disabled": true
+      },
       "commercial-mode": true,
       "logging-to-file": false,
       "usage-statistics-enabled": false,

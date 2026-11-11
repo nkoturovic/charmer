@@ -188,7 +188,7 @@ jobs:
           # zizmor by the hash of its manylinux x86_64 wheel (.github/PINS.md),
           # the file the local lint ran. The wheel ships an executable, not a
           # Python module.
-          printf '%s\n' 'zizmor==1.31.1 --hash=sha256:58e878eb2dbd2c6183c105e1ac28c14f7dd1eca44a783f1fe2a69647d012c410' >"$RUNNER_TEMP/zizmor.txt"
+          printf '%s\n' 'zizmor==1.32.0 --hash=sha256:84a6acb975accc13408786a2bd274b572537ca19c933ebbc13e78f3988562071' >"$RUNNER_TEMP/zizmor.txt"
           python3 -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes --target "$RUNNER_TEMP/zizmor" -r "$RUNNER_TEMP/zizmor.txt"
           "$RUNNER_TEMP/zizmor/bin/zizmor" --version
           "$RUNNER_TEMP/bin/actionlint"
@@ -379,7 +379,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # 31.11.3
+      - uses: cachix/install-nix-action@91f6a0f59e94dfb2cfed0f4000f36a68ead1d20c # v31.11.4
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"

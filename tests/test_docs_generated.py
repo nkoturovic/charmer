@@ -215,6 +215,8 @@ class CoverageTests(unittest.TestCase):
         for screen, rows in actions.ACTIONS.items():
             row = next(line for line in keys.splitlines() if line.startswith(f"| {docs_gen.SCREEN_TITLES[screen]} |"))
             for action in rows:
+                if action.silent:
+                    continue
                 with self.subTest(action.id):
                     self.assertIn(f"**{docs_gen._prose(action.key)}** {docs_gen._prose(action.does)}", row)
 

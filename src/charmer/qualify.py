@@ -348,9 +348,12 @@ def route_text(provider_id: str, provider: Mapping[str, Any], *, t2: Any = None,
                 f"(value not shown)", host.lower())
     if t2 is not None:
         host = urllib.parse.urlsplit(t2.origin).hostname or "unknown"
+        network = getattr(t2, "network", None)
+        # A private network is named: the gateway sends only to its addresses.
+        suffix = f"; private network ({network})" if network is not None else ""
         if t2.auth_kind == "none":
-            return f"{t2.origin}; auth none (keyless)", host.lower()
-        return f"{t2.origin}; auth {t2.auth_kind} from {t2.secret_name} (value not shown)", host.lower()
+            return f"{t2.origin}; auth none (keyless){suffix}", host.lower()
+        return f"{t2.origin}; auth {t2.auth_kind} from {t2.secret_name} (value not shown){suffix}", host.lower()
     spec = provider["transport"]
     if spec["kind"] == "oauth-pool":
         return (f"the {spec['pool']} OAuth pool; auth an OAuth pool credential held by the gateway (not shown)",

@@ -317,6 +317,42 @@ class GoldenTests(unittest.TestCase):
                 gateway["gateway"]["cliproxy_static"][key] = bad
                 self.assertTrue(validate.validate(gateway, raw["schemas"]["gateway"], "$"))
 
+    def test_shipped_render_states_kv_store_off(self) -> None:
+        # The gateway's local key-value store (a database file in the auth
+        # directory) is on when its key is unset; the shipped catalog states
+        # it off and the schema admits only that. The frozen fixture predates
+        # the key, so its render (and the goldens) carries none.
+        bundle = catalog.load_catalog(SHIPPED_ROOT)
+        document = render.build_config_document(
+            bundle.docs["gateway"], bundle.providers, bundle.lines,
+            home=Path("/home/test"), gateway_tokens=("a" * 64,),
+            resolve_secret=lambda _: "dummy-secret", continuity={},
+        )[0]
+        self.assertEqual(document["kv-store"], {"disabled": True})
+        yaml = render.render_config(
+            bundle.docs["gateway"], bundle.docs["providers"]["providers"], bundle.lines,
+            home=Path("/home/test"), gateway_token="a" * 64, resolve_secret=lambda _: "dummy-secret",
+            continuity={},
+        ).yaml
+        self.assertIn("discovery:\n  enabled: false\nkv-store:\n  disabled: true\ncommercial-mode: true\n", yaml)
+        fixture = render.build_config_document(
+            catalog.load_catalog(CATALOG_ROOT).docs["gateway"], catalog.load_catalog(CATALOG_ROOT).providers,
+            catalog.load_catalog(CATALOG_ROOT).lines, home=Path("/home/test"), gateway_tokens=("a" * 64,),
+            resolve_secret=lambda _: "dummy-kimi-key", continuity=_seed(),
+        )[0]
+        self.assertNotIn("kv-store", fixture)
+        for root in (SHIPPED_ROOT, CATALOG_ROOT):
+            raw = catalog.load_raw(root)
+            schema = raw["schemas"]["gateway"]
+            for bad in ({"disabled": False}, {}, {"disabled": True, "path": "kv.db"}, {"disabled": "true"}):
+                with self.subTest(root=str(root), bad=bad):
+                    gateway = copy.deepcopy(raw["docs"]["gateway"])
+                    gateway["gateway"]["cliproxy_static"]["kv-store"] = bad
+                    self.assertTrue(validate.validate(gateway, schema, "$"))
+            gateway = copy.deepcopy(raw["docs"]["gateway"])
+            gateway["gateway"]["cliproxy_static"]["kv-store"] = {"disabled": True}
+            self.assertEqual(validate.validate(gateway, schema, "$"), [])
+
     def test_retained_and_removed_aliases(self) -> None:
         yaml = _render().yaml
         for retained in (
@@ -394,6 +430,26 @@ class ManagementRenderPinTests(unittest.TestCase):
                     errors = validate.validate(doc, schema, "$")
                     self.assertTrue(errors)
                     self.assertTrue(any(field in error and "must equal" in error for error in errors), errors)
+
+    def test_schema_admits_the_private_network_audit_gate(self):
+        # audits.private_network is an optional, closed boolean like
+        # audits.openai_compat_keyed; any other value or spelling is refused.
+        for root in (FIXTURE_ROOT, SHIPPED_ROOT):
+            raw = catalog.load_raw(root)
+            schema = raw["schemas"]["gateway"]
+            for value in (True, False):
+                with self.subTest(root=str(root), value=value):
+                    doc = copy.deepcopy(raw["docs"]["gateway"])
+                    doc.setdefault("audits", {})["private_network"] = value
+                    self.assertEqual(validate.validate(doc, schema, "$"), [])
+                    doc["audits"] = {"private_network": value}
+                    self.assertEqual(validate.validate(doc, schema, "$"), [])
+            for audits in ({"private_network": "true"}, {"private_network": 1}, {"private_network": None},
+                           {"private-network": True}, {"privatenetwork": True}):
+                with self.subTest(root=str(root), audits=audits):
+                    doc = copy.deepcopy(raw["docs"]["gateway"])
+                    doc["audits"] = audits
+                    self.assertTrue(validate.validate(doc, schema, "$"))
 
     def test_runtime_render_never_reads_any_management_slot(self):
         with tempfile.TemporaryDirectory(prefix="cm-management-render-") as tmp:

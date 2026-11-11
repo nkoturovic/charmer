@@ -29,8 +29,8 @@ Those references follow the repository's default branch. To select the
 2.4.0 release instead, use its tag:
 
 ```bash
-nix run github:nkoturovic/charmer/v2.4.0
-nix profile install github:nkoturovic/charmer/v2.4.0
+nix run github:nkoturovic/charmer/v2.5.0
+nix profile install github:nkoturovic/charmer/v2.5.0
 ```
 
 The package puts `charmer` and `charmer-proxy` in `bin/`, the
@@ -67,12 +67,14 @@ back does not roll the state back; see [update.md](../update.md#state-only-moves
 
 ## Runtime limits
 
-The pinned Nix package uses Python 3.14.8, not the release bundle's CPython
-3.15.2. It lacks Python 3.14.10's eMudhra certificate distrust and tar-filter
-fix. The development shell keeps GnuPG 2.4.9 from the FreePG recipe;
-applicability of the format-string and out-of-bounds fixes in GnuPG
-2.5.23–2.5.24 to that recipe is not established. These are recorded holds,
-not claims that those fixes are present.
+The pinned Nix package uses Python 3.14.10, not the release bundle's CPython
+3.15.2; it includes the eMudhra certificate distrust and the tar-filter fix.
+Both interpreters contain the `http.cookiejar` code of CVE-2026-124249;
+charmer never imports that module or installs a cookie handler (a recorded,
+dated non-use review, not a fix). The development shell keeps GnuPG 2.4.9
+from the FreePG recipe; applicability of the format-string and out-of-bounds
+fixes in GnuPG 2.5.23–2.5.24 to that recipe is not established. That is a
+recorded hold, not a claim that those fixes are present.
 
 ## Next
 

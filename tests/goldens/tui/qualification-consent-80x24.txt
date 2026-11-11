@@ -21,4 +21,4 @@
   No retries. max_tokens is sent but is not a reliable cost bound.
   Qualification records evidence only; it does not admit or enable agents.
 
-  y proceed · Esc cancel
+  y proceed · N decline · Enter decline · Esc cancel

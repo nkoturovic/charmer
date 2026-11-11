@@ -184,6 +184,16 @@ BLOCKER = {
              "charmer sessions stop {id8}"),
     "unknown-liveness": ("session {id8} may still be running (◐) — S shows it; end it where it runs",
                          "charmer sessions mark-ended {id8}"),
+    # A declaration a closed gate refuses: its lines are never named (they
+    # were not screened against stored values); the keys are in its file.
+    "gated-admitted": ("{count} of its lines are admitted and not named while a closed gate refuses {file} — "
+                       "revoke each in a terminal: charmer models revoke KEY (the keys are in {file})",
+                       "revoke its {count} admitted line(s), not named while a closed gate refuses {file}: "
+                       "charmer models revoke KEY for each (the keys are in {file})"),
+    "gated-bound-profile": ("profile {p} ({slots}) uses one of its lines — P, select {p}, E rebinds",
+                            "charmer profile edit {p} (it uses one of its lines)"),
+    "gated-bound-binding": ("named binding {b} uses one of its lines — E (edit profile) → N",
+                            "rebind named binding {b} in the profile editor (it uses one of its lines)"),
 }
 REMOVE_PROVIDER_BODY = ("Deletes your declaration {file} and withdraws its route approval; the gateway "
                         "reloads. Running sessions are not affected.")
@@ -217,6 +227,11 @@ ENDPOINT_PREVIEW = ("{id}: {kind_label} at {base_url}\nThe key {secret_name} is 
 ENDPOINT_ADDED = "Added {id} — {reload}"
 LAN_PREVIEW = ("{id}: OpenAI-compatible server at {base_url} (no key). Its models are lead-only in this "
                "release: agents need a reviewed route. Nothing is sent now.")
+NETWORK_PREVIEW = ("{id}: OpenAI-compatible server at {base_url} (no key), private network ({network}): the "
+                   "gateway connects only to addresses in that network. Nothing is sent now.")
+# The last line of a private-network route approval (as the command line's).
+NETWORK_SCOPE = ("The key is sent only to this origin, and only to addresses in that network (checked at every "
+                 "connection).")
 KIND_LABELS = {"anthropic-compatible": "Anthropic-compatible, API key",
                "openai-compatible": "OpenAI-compatible, API key",
                "openai-compatible-lan": "server on your network"}
@@ -239,6 +254,7 @@ PICKER_LABELS = {
     "own": "{display} — {kind_label}",
     "other:anthropic-compatible": "Anthropic-compatible endpoint (your vendor, with an API key)",
     "other:openai-compatible": "OpenAI-compatible endpoint (with an API key)",
+    "other:network": "A server on your network — with an API key",
     "other:lan": "Server on your network (OpenAI-compatible, no key)",
     "preset:lan": "{display} server (OpenAI-compatible, no key)",
     "preset": "{display} API key — {kind}",

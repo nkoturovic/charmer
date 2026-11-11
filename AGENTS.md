@@ -95,7 +95,7 @@ installation (a source tree, or the prefix of an installed package: its
                                  # charmer-gateway.service by default)
 ```
 
-Release: 2.4.0 (catalog 43; `version.json` is the packaged identity).
+Release: 2.5.0 (catalog 44; `version.json` is the packaged identity).
 Current default: the **`balanced` seed profile**
 (`catalog/profiles/balanced.json`): Opus 5.5 lead at ultracode, Sol high
 explorer/xhigh analyst, Opus analyst-strong, Luna max / Sol xhigh / Sol max
@@ -2502,10 +2502,11 @@ the operator's approval. Doctor never retires backups.
   the client applies its own retry rules. Since 8.0.45 a Codex capacity 429
   reaches the client with the provider's `Retry-After` on both OpenAI routes
   (`docs/troubleshooting.md`).
-- **Nix runtime holds:** the Nix package keeps Python 3.14.8; release bundles
-  ship CPython 3.15.2. The development shell keeps GnuPG 2.4.9 FreePG;
-  applicability of the newer upstream fixes is not established. See
-  `docs/install/nix.md` for the missing Python fixes and the GnuPG limit.
+- **Nix runtime holds:** the Nix package uses Python 3.14.10; release
+  bundles ship CPython 3.15.2 (both carry CVE-2026-124249's `http.cookiejar`
+  code, covered by a dated non-use review). The development shell keeps GnuPG
+  2.4.9 FreePG; applicability of the newer upstream fixes is not established.
+  See `docs/install/nix.md` for the GnuPG limit.
 - **Native journey limits:** interactive onboarding, the dedicated
   Windows-drive state refusal, Intel macOS, stopping a real background
   daemon session, another user's listener, log rotation and locking, and

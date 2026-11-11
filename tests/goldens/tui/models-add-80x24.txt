@@ -1,0 +1,24 @@
+  add model — choose a provider
+
+  > Anthropic (anthropic)
+    DeepSeek (deepseek)
+    Kimi (kimi)
+    Local LLM (llm-local)
+    Meta (meta)
+    OpenAI (openai)
+    OpenRouter (openrouter)
+    Qwen (qwen)
+
+
+
+
+
+
+
+
+
+
+
+
+
+  Enter choose · ? help · Esc back

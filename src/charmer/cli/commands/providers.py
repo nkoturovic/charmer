@@ -36,6 +36,7 @@ from charmer import continuity as continuity_mod
 from charmer import custom
 from charmer import errors
 from charmer import errors as cli_errors
+from charmer import netclass
 from charmer import operator as operator_mod
 from charmer import profile as profile_mod
 from charmer import proxy as proxy_mod
@@ -198,6 +199,54 @@ def keyed_gate_refusal(runtime: runtime_mod.Runtime, kind: str | None) -> str | 
     if kind == operator_mod.KEYED_KIND and not catalog.keyed_compat_audited(runtime.catalog.docs.get("gateway")):
         return catalog.KEYED_AUDIT_CLOSED
     return None
+
+
+def network_gate_refusal(runtime: runtime_mod.Runtime, kind: str | None, network: str | None) -> str | None:
+    """A declared private network, before ``operator_context``: the closed
+    trusted gate, the kinds that take one and its vocabulary (the layer
+    checks the same again)."""
+
+    if network is None:
+        return None
+    if not operator_mod.private_network_audited(runtime.catalog.docs.get("gateway")):
+        return operator_mod.NETWORK_GATED
+    if network not in netclass.NETWORKS:
+        raise OperatorUsageError(f"--network takes {', '.join(netclass.NETWORKS)}")
+    if kind is not None and kind not in operator_mod.NETWORK_KINDS:
+        return operator_mod.NETWORK_KIND_REFUSAL
+    return None
+
+
+# ------------------------------------------------------------ private networks
+# What plain HTTP means on each network, said at route approval.
+NETWORK_RISK = {
+    netclass.TAILNET: ("plain HTTP: the key is encrypted only while the connection runs through your tailnet; "
+                       "on a carrier-grade NAT network these addresses are not yours"),
+    netclass.LAN: "plain HTTP: anyone on this network can read the key and your prompts",
+    netclass.LOOPBACK: "plain HTTP on this computer: any local program can listen on that port",
+}
+
+
+credential_transport = operator_mod.credential_transport
+
+
+def network_approval(runtime: runtime_mod.Runtime, provider: operator_mod.ResolvedProvider,
+                     verb: str, outcome: str) -> tuple[str, ...]:
+    """The approval's network lines: the network, what plain HTTP means on
+    it and what the host resolves to now (one bounded, injectable lookup,
+    with no lock held; it never reads or sends a key). An answer outside
+    the network refuses: ``verb: <host> resolves to <address> (<class>),
+    outside network <network> — <outcome>``."""
+
+    network = provider.network
+    if network is None:
+        return ()
+    found = runtime.resolve_provider_host(provider.base_url)
+    for address, cls in found.outside(network):
+        raise OperatorCommandError(f"{verb}: {found.host} resolves to {address} ({cls}), outside network "
+                                   f"{network} — {outcome}")
+    risk = NETWORK_RISK[network] if provider.origin.startswith("http://") else "HTTPS"
+    return (f"  network: {netclass.describe(network)} — {risk}", f"  now resolves to: {found.text()}")
 
 
 def require_ledger(ctx: OperatorContext, verb: str) -> None:
@@ -738,8 +787,11 @@ def providers_list_document(runtime: runtime_mod.Runtime) -> dict[str, Any]:
             "models": int(fact.get("models", 0)) if fact is not None else None,
             "served": conn.served if conn is not None else "unknown",
             "route": layer.route_status.get(provider_id) if declared is not None else None,
-            "lines": [{"key": key, "status": line_status(key, ctx, admitted)}
-                      for key in sorted(by_file.get(provider_id, []))],
+            # A declaration a closed trusted gate refuses was never screened
+            # against stored values (metadata only): its line keys are not shown.
+            "lines": [] if _gated(layer, provider_id) else [
+                {"key": key, "status": line_status(key, ctx, admitted)}
+                for key in sorted(by_file.get(provider_id, []))],
             "problems": len(layer.problems_by_file.get(operator_mod.file_label(provider_id), ())),
         })
     legacy = ctx.legacy
@@ -747,6 +799,11 @@ def providers_list_document(runtime: runtime_mod.Runtime) -> dict[str, Any]:
                      if (legacy.get("providers") or legacy.get("models")) and not layer.marker else None)
     return {"schema_version": PROVIDERS_LIST_SCHEMA, "list": "providers", "providers": entries,
             "unavailable": unavailable, "legacy_registry": legacy_counts}
+
+
+def _gated(layer: operator_mod.OperatorLayer, provider_id: str) -> bool:
+    return any(problem.code in operator_mod.GATED_CODES
+               for problem in layer.problems_by_file.get(operator_mod.file_label(provider_id), ()))
 
 
 def _provider_head(entry: Mapping[str, Any], layer: operator_mod.OperatorLayer) -> str:
@@ -814,7 +871,9 @@ def _resolved_provider(ctx: OperatorContext, provider_id: str) -> dict[str, Any]
     source = ctx.docs["models-v2"] if "models-v2" in ctx.docs else ctx.docs["models"]
     catalog_lines = {key: dict(entry) for key, entry in sorted(source["models"].items())
                      if isinstance(entry, Mapping) and entry.get("provider") == provider_id}
+    transport = credential_transport(provider) if provider is not None else None
     return {
+        **({"credential_transport": transport} if transport is not None else {}),
         "provider": provider.entry if provider is not None else catalog_provider,
         "provider_origin": "operator" if provider is not None else "catalog",
         "catalog_lines": catalog_lines,
@@ -847,8 +906,9 @@ def _providers_show(runtime: runtime_mod.Runtime, provider_id: str, resolved: bo
     provider = ctx.layer.providers.get(provider_id)
     if provider is not None:
         auth = "none (keyless)" if provider.auth_kind == "none" else f"{provider.auth_kind} env:{provider.secret_name}"
+        transport = credential_transport(provider)
         report(output_stream, f"provider {provider_id}: {provider.kind} · {provider.origin} · auth {auth} · "
-                              f"route {document['route']}")
+                              + (f"{transport} · " if transport is not None else "") + f"route {document['route']}")
     elif shipped is not None and declared:
         report(output_stream, f"provider {provider_id}: catalog provider (this file declares lines only)")
     elif shipped is not None:
@@ -919,24 +979,34 @@ def _providers_validate(runtime: runtime_mod.Runtime, candidate: str | None, out
     return 0
 
 
-def _providers_template(runtime: runtime_mod.Runtime, kind: str, output_stream: TextIO) -> int:
-    refusal = keyed_gate_refusal(runtime, kind)
+def _providers_template(runtime: runtime_mod.Runtime, kind: str, output_stream: TextIO,
+                        network: str | None = None) -> int:
+    refusal = keyed_gate_refusal(runtime, kind) or network_gate_refusal(runtime, kind, network)
     if refusal is not None:
         return fail(f"providers template --kind {kind}: {refusal}")
-    output_stream.write(strict_json.pretty_file_bytes(TEMPLATES[kind]).decode("utf-8"))
+    template = TEMPLATES[kind]
+    if network is not None:
+        # The example host is a name, so it passes for every network.
+        template = copy.deepcopy(template)
+        template["provider"]["base_url"] = "http://box.example.invalid:8000/v1"
+        template["provider"]["network"] = network
+    output_stream.write(strict_json.pretty_file_bytes(template).decode("utf-8"))
     return 0
 
 
-def _approval_text(provider: operator_mod.ResolvedProvider, present: bool) -> str:
+def _approval_text(provider: operator_mod.ResolvedProvider, present: bool, network: Iterable[str] = ()) -> str:
     base = f" (header auth binds the full base URL {provider.base_url})" if provider.auth_kind == "header" else ""
     header = f" header {provider.header}" if provider.header else ""
+    lines = "".join(f"{line}\n" for line in network)
+    scope = (" The key is sent only to this origin, and only to addresses in that network (checked at every "
+             "connection).") if provider.network is not None else " The key is sent only to this origin."
     return (
         f"approve the credential route of provider {provider.provider_id}:\n"
         f"  origin: {provider.origin}{base}\n"
         f"  auth: {provider.auth_kind}{header} from {provider.secret_name} "
         f"(value not shown; {'present' if present else 'not set yet'})\n"
         f"  listing: {provider.listing_origin or 'none'}\n"
-        "The key is sent only to this origin. Approve this route? [y/N] "
+        f"{lines}{scope[1:]} Approve this route? [y/N] "
     )
 
 
@@ -984,7 +1054,8 @@ def _providers_add(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, in
     if missing:
         raise OperatorUsageError(f"{', '.join(missing)} required (or declare from a reviewed --preset)")
     provider_id = args.provider_id
-    refusal = keyed_gate_refusal(runtime, args.kind)
+    network = getattr(args, "network", None)
+    refusal = keyed_gate_refusal(runtime, args.kind) or network_gate_refusal(runtime, args.kind, network)
     if refusal is not None:
         return fail(f"providers add {provider_id}: {refusal}")
     if args.auth == "header" and args.header != operator_mod.MIGRATION_HEADER:
@@ -1020,6 +1091,8 @@ def _providers_add(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, in
         auth["header"] = args.header
     block: dict[str, Any] = {"display": args.display or provider_id, "kind": args.kind, "base_url": args.base_url,
                              "auth": auth, "independence_family": args.family}
+    if network is not None:
+        block["network"] = network
     if args.contracts:
         block["payload_contracts"] = [item.strip() for item in args.contracts.split(",") if item.strip()]
     if args.listing_url is not None:
@@ -1039,7 +1112,8 @@ def _providers_add(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, in
     )
     if approve:
         present = secret_store.default_store(ctx.env).is_set(resolved.secret_name or "")
-        if not consent.confirm(_approval_text(resolved, present), input_stream=input_stream):
+        lines = network_approval(runtime, resolved, f"providers add {provider_id}", "nothing written")
+        if not consent.confirm(_approval_text(resolved, present, lines), input_stream=input_stream):
             return fail(f"providers add {provider_id}: route not approved — nothing written "
                         "(declare only with --declare-only)")
     with operator_write(runtime, preflight=preflight):
@@ -1061,6 +1135,8 @@ def _providers_add(runtime: runtime_mod.Runtime, args: argparse.Namespace, *, in
     elif keyed:
         report(output_stream, f"declared provider {provider_id} — route unapproved; not rendered")
         report(output_stream, f"next: charmer providers approve {provider_id}")
+    elif network is not None:
+        report(output_stream, f"declared provider {provider_id} — keyless route, private network ({network})")
     else:
         report(output_stream, f"declared provider {provider_id} — keyless LAN route")
     if keyed and not secret_store.default_store(ctx.env).is_set(resolved.secret_name or ""):
@@ -1104,14 +1180,18 @@ def _providers_add_preset(runtime: runtime_mod.Runtime, args: argparse.Namespace
     key_use = (setup_providers.KEY_REUSE if reuse_key else setup_providers.KEY_REPLACE if replace_key
                else setup_providers.KEY_OWN)
     name = args.preset
+    network = getattr(args, "network", None)
     try:
         raw_preset = operator_mod.load_preset(name, runtime.asset_root)
-        document = operator_mod.preset_document(raw_preset, base_url=args.base_url)
+        document = operator_mod.preset_document(raw_preset, base_url=args.base_url, network=network)
     except operator_mod.OperatorError as exc:
         return fail(f"providers add --preset {name}: {exc}")
     provider_id = args.as_id or name
     verb = f"providers add --preset {name}"
     block = document.get("provider")
+    refusal = network_gate_refusal(runtime, block.get("kind") if isinstance(block, Mapping) else None, network)
+    if refusal is not None:
+        return fail(f"{verb}: {refusal}")
     auth = block.get("auth") if isinstance(block, Mapping) else None
     keyed = isinstance(auth, Mapping) and auth.get("kind") != "none"
     approve = keyed and not args.declare_only
@@ -1173,7 +1253,8 @@ def _providers_add_preset(runtime: runtime_mod.Runtime, args: argparse.Namespace
     )
     if approve and resolved is not None:
         present = secret_value is not None or store.is_set(resolved.secret_name or "")
-        if not consent.confirm(_approval_text(resolved, present), input_stream=input_stream):
+        lines = network_approval(runtime, resolved, verb, "nothing written")
+        if not consent.confirm(_approval_text(resolved, present, lines), input_stream=input_stream):
             return fail(f"{verb}: route not approved — nothing written (declare only with --declare-only)")
     if key_use == setup_providers.KEY_REPLACE and resolved is not None:
         if not consent.confirm(setup_texts.PRESET_KEY_REPLACE_QUESTION.format(
@@ -1208,6 +1289,9 @@ def _providers_add_preset(runtime: runtime_mod.Runtime, args: argparse.Namespace
         report(output_stream, f"declared provider {provider_id} from preset {name}{lines_note} — "
                               "route unapproved; not rendered")
         report(output_stream, f"next: charmer providers approve {provider_id}")
+    elif network is not None:
+        report(output_stream, f"declared provider {provider_id} from preset {name}{lines_note} — keyless route, "
+                              f"private network ({network})")
     else:
         report(output_stream, f"declared provider {provider_id} from preset {name}{lines_note} — keyless LAN route")
     if key_line:
@@ -1369,9 +1453,9 @@ def edit_target(runtime: runtime_mod.Runtime, provider_id: str) -> bytes | int:
 
 def edited_declaration(previous: bytes, values: Mapping[str, str]) -> bytes:
     """``previous`` with the edit form's answers applied: the display name,
-    the base URL, how the key is sent, the model family and the model list
-    URL (blank removes it). The id, the kind and the key name stay; every
-    other field is kept as it was."""
+    the base URL, how the key is sent, the private network (none removes
+    it), the model family and the model list URL (blank removes it). The id,
+    the kind and the key name stay; every other field is kept as it was."""
 
     document = strict_json.loads(previous)
     block = document["provider"]
@@ -1388,6 +1472,13 @@ def edited_declaration(previous: bytes, values: Mapping[str, str]) -> bytes:
             auth.pop("header", None)
     if "family" in values:
         block["independence_family"] = values["family"].strip() or "unknown"
+    if "network" in values:
+        # Another network is another route: it is approved again before use.
+        network = values["network"].strip()
+        if network in ("", "none"):
+            block.pop("network", None)
+        else:
+            block["network"] = network
     if "listing" in values:
         listing = values["listing"].strip()
         if not listing:
@@ -1483,7 +1574,8 @@ def _providers_approve(runtime: runtime_mod.Runtime, provider_id: str, *, input_
         return 0
     present = secret_store.default_store(ctx.env).is_set(provider.secret_name or "")
     preflight = served_preflight(runtime, verb, ledger_edit=_route_edit(provider))
-    if not consent.confirm(_approval_text(provider, present), input_stream=input_stream):
+    lines = network_approval(runtime, provider, verb, "nothing approved")
+    if not consent.confirm(_approval_text(provider, present, lines), input_stream=input_stream):
         return fail(f"{verb}: not approved — nothing changed")
     with operator_write(runtime, preflight=preflight):
         fresh = operator_context(runtime)
@@ -1839,7 +1931,7 @@ def _providers_command(
         if command == "validate":
             return _providers_validate(runtime, args.file, output_stream)
         if command == "template":
-            return _providers_template(runtime, args.kind, output_stream)
+            return _providers_template(runtime, args.kind, output_stream, getattr(args, "network", None))
         if command == "add":
             return _providers_add(runtime, args, input_stream=input_stream, output_stream=output_stream)
         if command == "edit":

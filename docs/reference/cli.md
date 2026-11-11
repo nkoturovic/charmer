@@ -98,7 +98,7 @@ charmer direct [--model <model>] [--no-subagents] [--force] [--print-launch] [-c
 
 ### charmer doctor
 
-Check this installation and its sessions. The verdict is Ready, Attention or BLOCKED; each finding names one fix. Plain doctor is read-only and does not fetch release metadata; use doctor --json for a read-only report. --repair, --prune and --rotate-token act.
+Check this installation and its sessions. The verdict is Ready, Attention or BLOCKED; each finding names one fix. Plain doctor makes no repairs and fetches no release metadata; launcher initialization may refresh shared helpers. Use charmer doctor --json for a report that does not write local state. --repair, --prune and --rotate-token act.
 
 ```text
 charmer doctor [--json | --repair <id> | --repair-all | --prune | --rotate-token | --prune-aliases [<alias>…]] [-v] [--first-run] [--preview] [--include-live]
@@ -533,19 +533,20 @@ charmer providers validate [<file>]
 Print a providers.d template for a reviewed kind.
 
 ```text
-charmer providers template [--kind anthropic-compatible|openai-compatible-lan|openai-compatible]
+charmer providers template [--kind anthropic-compatible|openai-compatible-lan|openai-compatible] [--network loopback|lan|tailnet]
 ```
 
 | Argument | What it does |
 | --- | --- |
 | `--kind anthropic-compatible\|openai-compatible-lan\|openai-compatible` | reviewed provider kind (default anthropic-compatible) |
+| `--network loopback\|lan\|tailnet` | the private network the base URL is on: allows http with a key; the gateway checks every connection |
 
 #### charmer providers add
 
 Declare a new provider, by hand or from a reviewed --preset (route approval follows unless --declare-only).
 
 ```text
-charmer providers add [<provider>] [--preset <preset>] [--as <provider>] [--secret-file <file>] [--reuse-key | --replace-key] [--kind anthropic-compatible|openai-compatible-lan|openai-compatible] [--base-url <url>] [--auth bearer|header|none] [--header <header>] [--secret-ref <secret-ref>] [--family <family>] [--display <text>] [--contracts <contracts>] [--listing-url <url>] [--listing-auth provider|none] [--listing-shape anthropic|openai] [--declare-only]
+charmer providers add [<provider>] [--preset <preset>] [--as <provider>] [--secret-file <file>] [--reuse-key | --replace-key] [--kind anthropic-compatible|openai-compatible-lan|openai-compatible] [--base-url <url>] [--network loopback|lan|tailnet] [--auth bearer|header|none] [--header <header>] [--secret-ref <secret-ref>] [--family <family>] [--display <text>] [--contracts <contracts>] [--listing-url <url>] [--listing-auth provider|none] [--listing-shape anthropic|openai] [--declare-only]
 ```
 
 | Argument | What it does |
@@ -557,7 +558,8 @@ charmer providers add [<provider>] [--preset <preset>] [--as <provider>] [--secr
 | `--reuse-key` | for --preset when another provider already uses its API key: share that saved key (none is imported; by default the new provider gets its own key name) |
 | `--replace-key` | for --preset when another provider already uses its API key: replace that shared key with --secret-file (asks first, naming every provider using it) |
 | `--kind anthropic-compatible\|openai-compatible-lan\|openai-compatible` | generation protocol (default: anthropic-compatible, recommended for documented Messages endpoints; explicit preset kind wins) |
-| `--base-url <url>` | provider base URL (https when keyed) |
+| `--base-url <url>` | provider base URL (https when keyed, unless --network) |
+| `--network loopback\|lan\|tailnet` | the private network the base URL is on: allows http with a key; the gateway checks every connection |
 | `--auth bearer\|header\|none` | credential transport |
 | `--header <header>` | header name for --auth header (x-api-key only) |
 | `--secret-ref <secret-ref>` | logical credential reference in the secret store (never the value) |

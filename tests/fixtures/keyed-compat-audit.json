@@ -1,18 +1,18 @@
 {
   "client": {
-    "native_contract_file_sha256": "fe131cc935d305d6df04d2e120bccbee4c60a3b64fe5bbb1dd18c491f9e34787",
-    "sha256": "4f4178ce41d83e23341ebfbaecdbcf8ea6bf7baea0690025abe49eeec3a5d01d",
-    "version": "2.1.312"
+    "native_contract_file_sha256": "9fb6c56ea034fda7e187057883ab5796f38477dac2f72d5e6c6a1f8c2210325e",
+    "sha256": "bfb3703ad5380242328459bc62ada4bde8ae7ba57c6e1eeadb9c00e08874c478",
+    "version": "2.1.322"
   },
   "evidence": {
     "directory": "tests/fixtures",
     "files": {
       "inventory.json": {
         "document": {
-          "client_sha256": "4f4178ce41d83e23341ebfbaecdbcf8ea6bf7baea0690025abe49eeec3a5d01d",
+          "client_sha256": "bfb3703ad5380242328459bc62ada4bde8ae7ba57c6e1eeadb9c00e08874c478",
           "errors": 0,
           "failures": 0,
-          "head": "68dd1d6f6e96a5806e2ae0c4e70710f25cc4adce",
+          "head": "66ab6bea42132133c15b84e7f42a3418e7e9412b",
           "inventory": {
             "J1": {
               "count": 9,
@@ -79,11 +79,11 @@
           },
           "journey_tests": 9,
           "keyed_client_budget_seconds": 900,
-          "keyed_client_seconds": 11.825,
+          "keyed_client_seconds": 26.123,
           "keyed_client_tests": 10,
           "keyed_identity": {
-            "client_contract_sha256": "fe131cc935d305d6df04d2e120bccbee4c60a3b64fe5bbb1dd18c491f9e34787",
-            "gateway": "/nix/store/v5rnr89l0qz0dbps9zrd3w60736r3irl-cli-proxy-api-linux-amd64-8.0.45/bin/cli-proxy-api",
+            "client_contract_sha256": "9fb6c56ea034fda7e187057883ab5796f38477dac2f72d5e6c6a1f8c2210325e",
+            "gateway": "/nix/store/agl03997sa2c8n5bkzg77s5xsm91gd00-cli-proxy-api-linux-amd64-8.0.45/bin/cli-proxy-api",
             "gateway_patch_names": [
               "cli-proxy-api-loopback-oauth.patch",
               "cli-proxy-api-kimi-claude-compat.patch",
@@ -115,22 +115,22 @@
             ],
             "gateway_sha256": "092bb347b763d00fc58e8b18ba4199b8deadfe68d3dc36793d1c58068af991d6",
             "sources": {
-              "schemas/gateway.schema.json": "9594426ed4b821ffd25c3001cb398438bcb20f4da3590a783284fb4a66caf14e",
+              "schemas/gateway.schema.json": "809ec57eb3ef6dc75e742f6fbbacf2837e1a616adb63789b653b505318e78295",
               "schemas/models.schema.json": "1d6f195db3b0aec05fda7164a241c1941ed5c9ff9c53aaa957159811c83639d6",
               "schemas/operator-ledger.schema.json": "19e3b4b472ea01ec4110bdcb4be3667e7c2b078dd22f09566cbe6f137aa652e2",
-              "schemas/operator-provider.schema.json": "bab1eb96832c3e06789a5bf9d566749b733056a53aadceb1aefac444f0c9f972",
+              "schemas/operator-provider.schema.json": "1b54587dbf65a92cb71e5cfea6ad38b8fe54de571379dda2328d2a356e61fcbb",
               "schemas/providers.schema.json": "c13f85f84a1d2de669d930b81f26815c96295d55ee19ca5339cb802dbd5e5ff4",
-              "src/charmer/catalog.py": "149bd81919d9d3bd3bf3bde9f9f8bbf7ba34ae0f5d394cd2cea0de31baa8558d",
+              "src/charmer/catalog.py": "2a4a7527df16ad3c14d3842f1e293ea06a69190b0bc2c03c9a9f406b97345ab0",
               "src/charmer/cli/commands/models.py": "51e78f92b36883c4c0b04cbfc9857dadf0e62bb3dac3dccc161c9cd73d19d3b8",
-              "src/charmer/cli/commands/providers.py": "c5be73ab0afaedba9ee2af274c76a037e6621046a2b35fced122e542ba6d4e75",
-              "src/charmer/compiler.py": "69ece44dad47e74c3d9cc2c3ca59380c9eb821ad6bfa397f117ace521611f825",
-              "src/charmer/discovery.py": "03100aa536d6359cf245c060ad57df8a3433f709a9a94d4b9b4aba74b25a6d8a",
-              "src/charmer/operator.py": "4f1b5f5cd83c970686f3e840ccb483a050821fb7f21be916b66ea25b80eb50ad",
+              "src/charmer/cli/commands/providers.py": "1566f30504e23cfdf824efc2fe978d2da9caaa2c7d7cf4f859e321db2c8d6d80",
+              "src/charmer/compiler.py": "bbcf55c4602b2d68f42837a2c36dc979727e514482ae7d19d37d1074c06e6320",
+              "src/charmer/discovery.py": "dcee867df7f0fba1b91cfa3574cbab779413134cd4faf0e22230783801a0fa75",
+              "src/charmer/operator.py": "d6c593fbe6d8a19e47e16dc5d835198765a55ccd75a8e0b5fe3ab8ffb7e55d66",
               "src/charmer/profile.py": "ee3d108ef215e55f59b11578bd44626e8eae64399858aba41a037ece59d39db3",
-              "src/charmer/qualify.py": "a46f185c2291caf842dca4c01c2c08dbc287bd84b68d9d5c3cc3d82fc1b92064",
-              "src/charmer/render.py": "a2dfe2108d9b63c32ed10ea941488f93e8f545c2b5ec76c187c79a1817add0a0",
-              "src/charmer/scope.py": "f614db7b0fc45b00e875dabd536997536b208442001c9a4d4914efcb7acd6932",
-              "src/charmer/served_plan.py": "e405412ce4904340af3c9547a68ce820fd8b114d5691ccf0be6b8e60a56df4b9"
+              "src/charmer/qualify.py": "0df154501c552f188057d0fc62547a9929ebb59b93fc47279ae2b709f112f437",
+              "src/charmer/render.py": "cdf34a341b54958f6aa4e22f294c769f210b2281a543671943d60ee281b26d43",
+              "src/charmer/scope.py": "60f0b12daff4aa86ad38e689590dd96a88c41e5dc896c02d32f97d85b7420cf7",
+              "src/charmer/served_plan.py": "24ba98e3d813a803d90a807f84942fde8077237dfa0d51c8928cb0e82e39feb8"
             }
           },
           "not_a_gate_receipt": true,
@@ -138,27 +138,27 @@
           "relevant_sources": [
             {
               "path": "src/charmer/catalog.py",
-              "sha256": "149bd81919d9d3bd3bf3bde9f9f8bbf7ba34ae0f5d394cd2cea0de31baa8558d"
+              "sha256": "2a4a7527df16ad3c14d3842f1e293ea06a69190b0bc2c03c9a9f406b97345ab0"
             },
             {
               "path": "src/charmer/operator.py",
-              "sha256": "4f1b5f5cd83c970686f3e840ccb483a050821fb7f21be916b66ea25b80eb50ad"
+              "sha256": "d6c593fbe6d8a19e47e16dc5d835198765a55ccd75a8e0b5fe3ab8ffb7e55d66"
             },
             {
               "path": "src/charmer/render.py",
-              "sha256": "a2dfe2108d9b63c32ed10ea941488f93e8f545c2b5ec76c187c79a1817add0a0"
+              "sha256": "cdf34a341b54958f6aa4e22f294c769f210b2281a543671943d60ee281b26d43"
             },
             {
               "path": "src/charmer/served_plan.py",
-              "sha256": "e405412ce4904340af3c9547a68ce820fd8b114d5691ccf0be6b8e60a56df4b9"
+              "sha256": "24ba98e3d813a803d90a807f84942fde8077237dfa0d51c8928cb0e82e39feb8"
             },
             {
               "path": "src/charmer/qualify.py",
-              "sha256": "a46f185c2291caf842dca4c01c2c08dbc287bd84b68d9d5c3cc3d82fc1b92064"
+              "sha256": "0df154501c552f188057d0fc62547a9929ebb59b93fc47279ae2b709f112f437"
             },
             {
               "path": "src/charmer/discovery.py",
-              "sha256": "03100aa536d6359cf245c060ad57df8a3433f709a9a94d4b9b4aba74b25a6d8a"
+              "sha256": "dcee867df7f0fba1b91cfa3574cbab779413134cd4faf0e22230783801a0fa75"
             },
             {
               "path": "src/charmer/profile.py",
@@ -166,11 +166,11 @@
             },
             {
               "path": "src/charmer/compiler.py",
-              "sha256": "69ece44dad47e74c3d9cc2c3ca59380c9eb821ad6bfa397f117ace521611f825"
+              "sha256": "bbcf55c4602b2d68f42837a2c36dc979727e514482ae7d19d37d1074c06e6320"
             },
             {
               "path": "src/charmer/scope.py",
-              "sha256": "f614db7b0fc45b00e875dabd536997536b208442001c9a4d4914efcb7acd6932"
+              "sha256": "60f0b12daff4aa86ad38e689590dd96a88c41e5dc896c02d32f97d85b7420cf7"
             },
             {
               "path": "src/charmer/cli/commands/models.py",
@@ -178,11 +178,11 @@
             },
             {
               "path": "src/charmer/cli/commands/providers.py",
-              "sha256": "c5be73ab0afaedba9ee2af274c76a037e6621046a2b35fced122e542ba6d4e75"
+              "sha256": "1566f30504e23cfdf824efc2fe978d2da9caaa2c7d7cf4f859e321db2c8d6d80"
             },
             {
               "path": "src/charmer/data/schemas/gateway.schema.json",
-              "sha256": "9594426ed4b821ffd25c3001cb398438bcb20f4da3590a783284fb4a66caf14e"
+              "sha256": "809ec57eb3ef6dc75e742f6fbbacf2837e1a616adb63789b653b505318e78295"
             },
             {
               "path": "src/charmer/data/schemas/providers.schema.json",
@@ -190,7 +190,7 @@
             },
             {
               "path": "src/charmer/data/schemas/operator-provider.schema.json",
-              "sha256": "bab1eb96832c3e06789a5bf9d566749b733056a53aadceb1aefac444f0c9f972"
+              "sha256": "1b54587dbf65a92cb71e5cfea6ad38b8fe54de571379dda2328d2a356e61fcbb"
             },
             {
               "path": "src/charmer/data/schemas/operator-ledger.schema.json",
@@ -205,12 +205,12 @@
           "skipped": 0,
           "status": "passed"
         },
-        "sha256": "971063011f48edf4e3503156de065b352e078a09ab436f0f6f66b84e07e644bd"
+        "sha256": "c6e51c2e3a599b8f9db290b86ca3e60a8ddf55a9a99928a2fe09ece875361294"
       },
       "tests.keyed_journeys.json": {
         "document": {
           "binary": {
-            "realpath": "/nix/store/v5rnr89l0qz0dbps9zrd3w60736r3irl-cli-proxy-api-linux-amd64-8.0.45/bin/cli-proxy-api",
+            "realpath": "/nix/store/agl03997sa2c8n5bkzg77s5xsm91gd00-cli-proxy-api-linux-amd64-8.0.45/bin/cli-proxy-api",
             "version": "8.0.45"
           },
           "module": "tests.keyed_journeys",
@@ -222,64 +222,64 @@
           "tables": {
             "J1": [
               {
-                "head": "68dd1d6f6e96a5806e2ae0c4e70710f25cc4adce",
+                "head": "66ab6bea42132133c15b84e7f42a3418e7e9412b",
                 "row": "tests.test_onboarding_isolation.KeyedJourneyTests.test_keyed_cli_changes_and_failed_qualification_remain_selectable_with_warnings",
                 "status": "passed"
               },
               {
-                "head": "68dd1d6f6e96a5806e2ae0c4e70710f25cc4adce",
+                "head": "66ab6bea42132133c15b84e7f42a3418e7e9412b",
                 "row": "tests.test_onboarding_isolation.KeyedJourneyTests.test_keyed_cli_declare_approve_apply_admit_qualify_bind",
                 "status": "passed"
               },
               {
-                "head": "68dd1d6f6e96a5806e2ae0c4e70710f25cc4adce",
+                "head": "66ab6bea42132133c15b84e7f42a3418e7e9412b",
                 "row": "tests.test_packaging.PackageSourceTests.test_package_payload_excludes_operator_credentials_and_grants",
                 "status": "passed"
               },
               {
-                "head": "68dd1d6f6e96a5806e2ae0c4e70710f25cc4adce",
+                "head": "66ab6bea42132133c15b84e7f42a3418e7e9412b",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_closed_target_refuses_audit",
                 "status": "passed"
               },
               {
-                "head": "68dd1d6f6e96a5806e2ae0c4e70710f25cc4adce",
+                "head": "66ab6bea42132133c15b84e7f42a3418e7e9412b",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_open_target_requires_local_route_and_key_not_admission",
                 "status": "passed"
               },
               {
-                "head": "68dd1d6f6e96a5806e2ae0c4e70710f25cc4adce",
+                "head": "66ab6bea42132133c15b84e7f42a3418e7e9412b",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_rechecks_headers_origins_collisions",
                 "status": "passed"
               },
               {
-                "head": "68dd1d6f6e96a5806e2ae0c4e70710f25cc4adce",
+                "head": "66ab6bea42132133c15b84e7f42a3418e7e9412b",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_uses_existing_single_commit_barrier",
                 "status": "passed"
               },
               {
-                "head": "68dd1d6f6e96a5806e2ae0c4e70710f25cc4adce",
+                "head": "66ab6bea42132133c15b84e7f42a3418e7e9412b",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_json_export_has_logical_refs_and_no_store_reads",
                 "status": "passed"
               },
               {
-                "head": "68dd1d6f6e96a5806e2ae0c4e70710f25cc4adce",
+                "head": "66ab6bea42132133c15b84e7f42a3418e7e9412b",
                 "row": "tests.test_tui_pty.KeyedJourneyPTYTests.test_keyed_tui_optional_admission_qualification_and_binding",
                 "status": "passed"
               }
             ]
           }
         },
-        "sha256": "d3204f871077d8dd4ed6cecb31029ce8478df69865c270ed1e12a893f192d977"
+        "sha256": "dd57faa9f348dc6917fcf88a6895ecca6bf6d8ed37a741ccda75b089b8bfb847"
       },
       "tests.test_gateway_keyed_compat.json": {
         "document": {
           "binary": {
-            "realpath": "/nix/store/v5rnr89l0qz0dbps9zrd3w60736r3irl-cli-proxy-api-linux-amd64-8.0.45/bin/cli-proxy-api",
+            "realpath": "/nix/store/agl03997sa2c8n5bkzg77s5xsm91gd00-cli-proxy-api-linux-amd64-8.0.45/bin/cli-proxy-api",
             "version": "8.0.45"
           },
           "keyed_identity": {
-            "client_contract_sha256": "fe131cc935d305d6df04d2e120bccbee4c60a3b64fe5bbb1dd18c491f9e34787",
-            "gateway": "/nix/store/v5rnr89l0qz0dbps9zrd3w60736r3irl-cli-proxy-api-linux-amd64-8.0.45/bin/cli-proxy-api",
+            "client_contract_sha256": "9fb6c56ea034fda7e187057883ab5796f38477dac2f72d5e6c6a1f8c2210325e",
+            "gateway": "/nix/store/agl03997sa2c8n5bkzg77s5xsm91gd00-cli-proxy-api-linux-amd64-8.0.45/bin/cli-proxy-api",
             "gateway_patch_names": [
               "cli-proxy-api-loopback-oauth.patch",
               "cli-proxy-api-kimi-claude-compat.patch",
@@ -311,22 +311,22 @@
             ],
             "gateway_sha256": "092bb347b763d00fc58e8b18ba4199b8deadfe68d3dc36793d1c58068af991d6",
             "sources": {
-              "schemas/gateway.schema.json": "9594426ed4b821ffd25c3001cb398438bcb20f4da3590a783284fb4a66caf14e",
+              "schemas/gateway.schema.json": "809ec57eb3ef6dc75e742f6fbbacf2837e1a616adb63789b653b505318e78295",
               "schemas/models.schema.json": "1d6f195db3b0aec05fda7164a241c1941ed5c9ff9c53aaa957159811c83639d6",
               "schemas/operator-ledger.schema.json": "19e3b4b472ea01ec4110bdcb4be3667e7c2b078dd22f09566cbe6f137aa652e2",
-              "schemas/operator-provider.schema.json": "bab1eb96832c3e06789a5bf9d566749b733056a53aadceb1aefac444f0c9f972",
+              "schemas/operator-provider.schema.json": "1b54587dbf65a92cb71e5cfea6ad38b8fe54de571379dda2328d2a356e61fcbb",
               "schemas/providers.schema.json": "c13f85f84a1d2de669d930b81f26815c96295d55ee19ca5339cb802dbd5e5ff4",
-              "src/charmer/catalog.py": "149bd81919d9d3bd3bf3bde9f9f8bbf7ba34ae0f5d394cd2cea0de31baa8558d",
+              "src/charmer/catalog.py": "2a4a7527df16ad3c14d3842f1e293ea06a69190b0bc2c03c9a9f406b97345ab0",
               "src/charmer/cli/commands/models.py": "51e78f92b36883c4c0b04cbfc9857dadf0e62bb3dac3dccc161c9cd73d19d3b8",
-              "src/charmer/cli/commands/providers.py": "c5be73ab0afaedba9ee2af274c76a037e6621046a2b35fced122e542ba6d4e75",
-              "src/charmer/compiler.py": "69ece44dad47e74c3d9cc2c3ca59380c9eb821ad6bfa397f117ace521611f825",
-              "src/charmer/discovery.py": "03100aa536d6359cf245c060ad57df8a3433f709a9a94d4b9b4aba74b25a6d8a",
-              "src/charmer/operator.py": "4f1b5f5cd83c970686f3e840ccb483a050821fb7f21be916b66ea25b80eb50ad",
+              "src/charmer/cli/commands/providers.py": "1566f30504e23cfdf824efc2fe978d2da9caaa2c7d7cf4f859e321db2c8d6d80",
+              "src/charmer/compiler.py": "bbcf55c4602b2d68f42837a2c36dc979727e514482ae7d19d37d1074c06e6320",
+              "src/charmer/discovery.py": "dcee867df7f0fba1b91cfa3574cbab779413134cd4faf0e22230783801a0fa75",
+              "src/charmer/operator.py": "d6c593fbe6d8a19e47e16dc5d835198765a55ccd75a8e0b5fe3ab8ffb7e55d66",
               "src/charmer/profile.py": "ee3d108ef215e55f59b11578bd44626e8eae64399858aba41a037ece59d39db3",
-              "src/charmer/qualify.py": "a46f185c2291caf842dca4c01c2c08dbc287bd84b68d9d5c3cc3d82fc1b92064",
-              "src/charmer/render.py": "a2dfe2108d9b63c32ed10ea941488f93e8f545c2b5ec76c187c79a1817add0a0",
-              "src/charmer/scope.py": "f614db7b0fc45b00e875dabd536997536b208442001c9a4d4914efcb7acd6932",
-              "src/charmer/served_plan.py": "e405412ce4904340af3c9547a68ce820fd8b114d5691ccf0be6b8e60a56df4b9"
+              "src/charmer/qualify.py": "0df154501c552f188057d0fc62547a9929ebb59b93fc47279ae2b709f112f437",
+              "src/charmer/render.py": "cdf34a341b54958f6aa4e22f294c769f210b2281a543671943d60ee281b26d43",
+              "src/charmer/scope.py": "60f0b12daff4aa86ad38e689590dd96a88c41e5dc896c02d32f97d85b7420cf7",
+              "src/charmer/served_plan.py": "24ba98e3d813a803d90a807f84942fde8077237dfa0d51c8928cb0e82e39feb8"
             }
           },
           "module": "tests.test_gateway_keyed_compat",
@@ -480,17 +480,17 @@
             ]
           }
         },
-        "sha256": "d352e8930a2f8d5f6d189f5bee84c37e21c7e2c1d1cd15c2b71e33ae0fcd0b0c"
+        "sha256": "6d98b09f0de1ba072c6002f3202ada4170cac005974999a052b17e6eba64eade"
       },
       "tests.test_keyed_compat_client.json": {
         "document": {
           "binary": {
-            "realpath": "/nix/store/v5rnr89l0qz0dbps9zrd3w60736r3irl-cli-proxy-api-linux-amd64-8.0.45/bin/cli-proxy-api",
+            "realpath": "/nix/store/agl03997sa2c8n5bkzg77s5xsm91gd00-cli-proxy-api-linux-amd64-8.0.45/bin/cli-proxy-api",
             "version": "8.0.45"
           },
           "keyed_identity": {
-            "client_contract_sha256": "fe131cc935d305d6df04d2e120bccbee4c60a3b64fe5bbb1dd18c491f9e34787",
-            "gateway": "/nix/store/v5rnr89l0qz0dbps9zrd3w60736r3irl-cli-proxy-api-linux-amd64-8.0.45/bin/cli-proxy-api",
+            "client_contract_sha256": "9fb6c56ea034fda7e187057883ab5796f38477dac2f72d5e6c6a1f8c2210325e",
+            "gateway": "/nix/store/agl03997sa2c8n5bkzg77s5xsm91gd00-cli-proxy-api-linux-amd64-8.0.45/bin/cli-proxy-api",
             "gateway_patch_names": [
               "cli-proxy-api-loopback-oauth.patch",
               "cli-proxy-api-kimi-claude-compat.patch",
@@ -522,22 +522,22 @@
             ],
             "gateway_sha256": "092bb347b763d00fc58e8b18ba4199b8deadfe68d3dc36793d1c58068af991d6",
             "sources": {
-              "schemas/gateway.schema.json": "9594426ed4b821ffd25c3001cb398438bcb20f4da3590a783284fb4a66caf14e",
+              "schemas/gateway.schema.json": "809ec57eb3ef6dc75e742f6fbbacf2837e1a616adb63789b653b505318e78295",
               "schemas/models.schema.json": "1d6f195db3b0aec05fda7164a241c1941ed5c9ff9c53aaa957159811c83639d6",
               "schemas/operator-ledger.schema.json": "19e3b4b472ea01ec4110bdcb4be3667e7c2b078dd22f09566cbe6f137aa652e2",
-              "schemas/operator-provider.schema.json": "bab1eb96832c3e06789a5bf9d566749b733056a53aadceb1aefac444f0c9f972",
+              "schemas/operator-provider.schema.json": "1b54587dbf65a92cb71e5cfea6ad38b8fe54de571379dda2328d2a356e61fcbb",
               "schemas/providers.schema.json": "c13f85f84a1d2de669d930b81f26815c96295d55ee19ca5339cb802dbd5e5ff4",
-              "src/charmer/catalog.py": "149bd81919d9d3bd3bf3bde9f9f8bbf7ba34ae0f5d394cd2cea0de31baa8558d",
+              "src/charmer/catalog.py": "2a4a7527df16ad3c14d3842f1e293ea06a69190b0bc2c03c9a9f406b97345ab0",
               "src/charmer/cli/commands/models.py": "51e78f92b36883c4c0b04cbfc9857dadf0e62bb3dac3dccc161c9cd73d19d3b8",
-              "src/charmer/cli/commands/providers.py": "c5be73ab0afaedba9ee2af274c76a037e6621046a2b35fced122e542ba6d4e75",
-              "src/charmer/compiler.py": "69ece44dad47e74c3d9cc2c3ca59380c9eb821ad6bfa397f117ace521611f825",
-              "src/charmer/discovery.py": "03100aa536d6359cf245c060ad57df8a3433f709a9a94d4b9b4aba74b25a6d8a",
-              "src/charmer/operator.py": "4f1b5f5cd83c970686f3e840ccb483a050821fb7f21be916b66ea25b80eb50ad",
+              "src/charmer/cli/commands/providers.py": "1566f30504e23cfdf824efc2fe978d2da9caaa2c7d7cf4f859e321db2c8d6d80",
+              "src/charmer/compiler.py": "bbcf55c4602b2d68f42837a2c36dc979727e514482ae7d19d37d1074c06e6320",
+              "src/charmer/discovery.py": "dcee867df7f0fba1b91cfa3574cbab779413134cd4faf0e22230783801a0fa75",
+              "src/charmer/operator.py": "d6c593fbe6d8a19e47e16dc5d835198765a55ccd75a8e0b5fe3ab8ffb7e55d66",
               "src/charmer/profile.py": "ee3d108ef215e55f59b11578bd44626e8eae64399858aba41a037ece59d39db3",
-              "src/charmer/qualify.py": "a46f185c2291caf842dca4c01c2c08dbc287bd84b68d9d5c3cc3d82fc1b92064",
-              "src/charmer/render.py": "a2dfe2108d9b63c32ed10ea941488f93e8f545c2b5ec76c187c79a1817add0a0",
-              "src/charmer/scope.py": "f614db7b0fc45b00e875dabd536997536b208442001c9a4d4914efcb7acd6932",
-              "src/charmer/served_plan.py": "e405412ce4904340af3c9547a68ce820fd8b114d5691ccf0be6b8e60a56df4b9"
+              "src/charmer/qualify.py": "0df154501c552f188057d0fc62547a9929ebb59b93fc47279ae2b709f112f437",
+              "src/charmer/render.py": "cdf34a341b54958f6aa4e22f294c769f210b2281a543671943d60ee281b26d43",
+              "src/charmer/scope.py": "60f0b12daff4aa86ad38e689590dd96a88c41e5dc896c02d32f97d85b7420cf7",
+              "src/charmer/served_plan.py": "24ba98e3d813a803d90a807f84942fde8077237dfa0d51c8928cb0e82e39feb8"
             }
           },
           "module": "tests.test_keyed_compat_client",
@@ -552,7 +552,7 @@
           "tables": {
             "client": [
               {
-                "client_sha256": "4f4178ce41d83e23341ebfbaecdbcf8ea6bf7baea0690025abe49eeec3a5d01d",
+                "client_sha256": "bfb3703ad5380242328459bc62ada4bde8ae7ba57c6e1eeadb9c00e08874c478",
                 "compact_events": 1,
                 "count_tokens_ingress": 0,
                 "genuine_compact_image_sdk_hits": 0,
@@ -563,7 +563,7 @@
                 "transport_requests": 1
               },
               {
-                "client_sha256": "4f4178ce41d83e23341ebfbaecdbcf8ea6bf7baea0690025abe49eeec3a5d01d",
+                "client_sha256": "bfb3703ad5380242328459bc62ada4bde8ae7ba57c6e1eeadb9c00e08874c478",
                 "distinct_wire": true,
                 "intended_effort": "max",
                 "requests": 4,
@@ -572,7 +572,7 @@
                 "thinking_type_present": true
               },
               {
-                "client_sha256": "4f4178ce41d83e23341ebfbaecdbcf8ea6bf7baea0690025abe49eeec3a5d01d",
+                "client_sha256": "bfb3703ad5380242328459bc62ada4bde8ae7ba57c6e1eeadb9c00e08874c478",
                 "default_child_dispatched": true,
                 "explicit_auto_child_hits": 0,
                 "requests": 12,
@@ -581,7 +581,7 @@
                 "thinking_type_present": true
               },
               {
-                "client_sha256": "4f4178ce41d83e23341ebfbaecdbcf8ea6bf7baea0690025abe49eeec3a5d01d",
+                "client_sha256": "bfb3703ad5380242328459bc62ada4bde8ae7ba57c6e1eeadb9c00e08874c478",
                 "requests": 2,
                 "row": "C1-lead",
                 "status": "passed",
@@ -589,7 +589,7 @@
                 "tool_continuation": true
               },
               {
-                "client_sha256": "4f4178ce41d83e23341ebfbaecdbcf8ea6bf7baea0690025abe49eeec3a5d01d",
+                "client_sha256": "bfb3703ad5380242328459bc62ada4bde8ae7ba57c6e1eeadb9c00e08874c478",
                 "requests": 2,
                 "returned_thinking_history": true,
                 "returned_tool_history": true,
@@ -598,7 +598,7 @@
                 "thinking_type_present": true
               },
               {
-                "client_sha256": "4f4178ce41d83e23341ebfbaecdbcf8ea6bf7baea0690025abe49eeec3a5d01d",
+                "client_sha256": "bfb3703ad5380242328459bc62ada4bde8ae7ba57c6e1eeadb9c00e08874c478",
                 "fast_speed": false,
                 "requests": 2,
                 "row": "C1-policy",
@@ -607,7 +607,7 @@
                 "thinking_type_present": true
               },
               {
-                "client_sha256": "4f4178ce41d83e23341ebfbaecdbcf8ea6bf7baea0690025abe49eeec3a5d01d",
+                "client_sha256": "bfb3703ad5380242328459bc62ada4bde8ae7ba57c6e1eeadb9c00e08874c478",
                 "intended_effort": "high",
                 "requests": 4,
                 "row": "C1-workflow",
@@ -616,7 +616,7 @@
                 "workflow_distinct_wire": true
               },
               {
-                "client_sha256": "4f4178ce41d83e23341ebfbaecdbcf8ea6bf7baea0690025abe49eeec3a5d01d",
+                "client_sha256": "bfb3703ad5380242328459bc62ada4bde8ae7ba57c6e1eeadb9c00e08874c478",
                 "forbidden_wire_hits": 0,
                 "lead_wire_child_hits": 0,
                 "permission_modes": 2,
@@ -627,7 +627,7 @@
                 "workflow_default_child_hits": 1
               },
               {
-                "client_sha256": "4f4178ce41d83e23341ebfbaecdbcf8ea6bf7baea0690025abe49eeec3a5d01d",
+                "client_sha256": "bfb3703ad5380242328459bc62ada4bde8ae7ba57c6e1eeadb9c00e08874c478",
                 "compact_events": 1,
                 "count_tokens_ingress": 0,
                 "genuine_compact_image_sdk_hits": 0,
@@ -640,7 +640,7 @@
             ]
           }
         },
-        "sha256": "d669e93e0ebc52595b6b9267d840491de509316e70c76a19c3967118ce5b4d4d"
+        "sha256": "b004a849b6930e55cc9ebb012293193e8898931493598fda4a50812d7e31343a"
       }
     },
     "validated_exit": 0
@@ -657,11 +657,11 @@
       "nodes": {
         "nixpkgs": {
           "locked": {
-            "lastModified": 1793110635,
-            "narHash": "sha256-dhoW6VgFWlaodSY5jrBn+CF2FLmaUvDVgM7+C7T2+NM=",
+            "lastModified": 1794042290,
+            "narHash": "sha256-ziZn2PvCJE5JEEpqTdxXwJpPB+L3YqoCpTAMCzyaP3U=",
             "owner": "nixos",
             "repo": "nixpkgs",
-            "rev": "31ecbaca1bdefa45dffc409f0250bd8039ea0010",
+            "rev": "f4a03c008967841f2a0b3cb7c436fc6fc31671f6",
             "type": "github"
           },
           "original": {
@@ -681,17 +681,17 @@
       "version": 7
     },
     "binary_sha256": {
-      "/nix/store/bjvkqc0rzl5adfz469hl0kmnb9hacsp2-gwtest-startup-probe-8.0.45/bin/gwtest-executor-probe": "311fa6d12c70dd5dff223847b42a2f9a3a4f23df80bd9f46b066c698d301d3f0",
-      "/nix/store/bjvkqc0rzl5adfz469hl0kmnb9hacsp2-gwtest-startup-probe-8.0.45/bin/gwtest-handlers-probe": "8a115b17bc689579479fbe95244fda613571a91da71f4305a55c0cedcc6e94dd",
-      "/nix/store/bjvkqc0rzl5adfz469hl0kmnb9hacsp2-gwtest-startup-probe-8.0.45/bin/gwtest-startup-probe": "fa0547b316ea8be7f655b6fb0f4eb55790645459030776393eac6a8e28c73a0c",
-      "/nix/store/v5rnr89l0qz0dbps9zrd3w60736r3irl-cli-proxy-api-linux-amd64-8.0.45/bin/cli-proxy-api": "092bb347b763d00fc58e8b18ba4199b8deadfe68d3dc36793d1c58068af991d6"
+      "/nix/store/agl03997sa2c8n5bkzg77s5xsm91gd00-cli-proxy-api-linux-amd64-8.0.45/bin/cli-proxy-api": "092bb347b763d00fc58e8b18ba4199b8deadfe68d3dc36793d1c58068af991d6",
+      "/nix/store/dk0mqz4qxzfpgzrv6ab97bzs354210ma-gwtest-startup-probe-8.0.45/bin/gwtest-executor-probe": "2c1c182ce0b7d09b7820eac740318646acce1168fdb09928ba174c6b6bdb929d",
+      "/nix/store/dk0mqz4qxzfpgzrv6ab97bzs354210ma-gwtest-startup-probe-8.0.45/bin/gwtest-handlers-probe": "2b189cf93c5a2db1b40c9213209d403d87309ca0f5c146037e586228e4c423b5",
+      "/nix/store/dk0mqz4qxzfpgzrv6ab97bzs354210ma-gwtest-startup-probe-8.0.45/bin/gwtest-startup-probe": "fa0547b316ea8be7f655b6fb0f4eb55790645459030776393eac6a8e28c73a0c"
     },
     "build_definition_sha256": "7c365b0fdd3608bafec49c3076900e9447153f333ee32c0faff870d170ac3cb6",
     "consumed_go_modules": "/nix/store/qpg3khndfvxsnsl9cbivl4hfz4yg959r-cli-proxy-api-8.0.45-go-modules",
-    "derivation": "/nix/store/vfivvlpz529vqmkpg6pqcx5wwni8g8wr-cli-proxy-api-linux-amd64-8.0.45.drv",
-    "executor_omission": "/nix/store/bjvkqc0rzl5adfz469hl0kmnb9hacsp2-gwtest-startup-probe-8.0.45/bin/gwtest-executor-probe",
-    "gateway": "/nix/store/v5rnr89l0qz0dbps9zrd3w60736r3irl-cli-proxy-api-linux-amd64-8.0.45/bin/cli-proxy-api",
-    "handlers_omission": "/nix/store/bjvkqc0rzl5adfz469hl0kmnb9hacsp2-gwtest-startup-probe-8.0.45/bin/gwtest-handlers-probe",
+    "derivation": "/nix/store/04ksh9m3mxzrjmd990p07g6djr2y0q6h-cli-proxy-api-linux-amd64-8.0.45.drv",
+    "executor_omission": "/nix/store/dk0mqz4qxzfpgzrv6ab97bzs354210ma-gwtest-startup-probe-8.0.45/bin/gwtest-executor-probe",
+    "gateway": "/nix/store/agl03997sa2c8n5bkzg77s5xsm91gd00-cli-proxy-api-linux-amd64-8.0.45/bin/cli-proxy-api",
+    "handlers_omission": "/nix/store/dk0mqz4qxzfpgzrv6ab97bzs354210ma-gwtest-startup-probe-8.0.45/bin/gwtest-handlers-probe",
     "numbered_to_shipped": [
       {
         "identity": "cli-proxy-api-loopback-oauth.patch@244e68528cbc72a636d112d4350c9e2e9aeb0c4b55c9097e08ee42a201fa22f4",
@@ -846,7 +846,7 @@
     },
     "source_hash": "sha256-SXTU9blCCVLDKCP84/giO01m+DCI5ab2EgOKK9AdLwk=",
     "source_tag": "v8.0.45",
-    "startup": "/nix/store/bjvkqc0rzl5adfz469hl0kmnb9hacsp2-gwtest-startup-probe-8.0.45/bin/gwtest-startup-probe",
+    "startup": "/nix/store/dk0mqz4qxzfpgzrv6ab97bzs354210ma-gwtest-startup-probe-8.0.45/bin/gwtest-startup-probe",
     "upstream_version": "8.0.45",
     "vendor_hash": "sha256-iBD25GOoCTy7qdlay0YevhoxK6ObhpyJUg0NDxy4rcA="
   },
@@ -883,31 +883,31 @@
   "source_report": {
     "document": {
       "evidence_dir": "tests/fixtures",
-      "head": "68dd1d6f6e96a5806e2ae0c4e70710f25cc4adce",
+      "head": "66ab6bea42132133c15b84e7f42a3418e7e9412b",
       "relevant_sources": [
         {
           "path": "src/charmer/catalog.py",
-          "sha256": "149bd81919d9d3bd3bf3bde9f9f8bbf7ba34ae0f5d394cd2cea0de31baa8558d"
+          "sha256": "2a4a7527df16ad3c14d3842f1e293ea06a69190b0bc2c03c9a9f406b97345ab0"
         },
         {
           "path": "src/charmer/operator.py",
-          "sha256": "4f1b5f5cd83c970686f3e840ccb483a050821fb7f21be916b66ea25b80eb50ad"
+          "sha256": "d6c593fbe6d8a19e47e16dc5d835198765a55ccd75a8e0b5fe3ab8ffb7e55d66"
         },
         {
           "path": "src/charmer/render.py",
-          "sha256": "a2dfe2108d9b63c32ed10ea941488f93e8f545c2b5ec76c187c79a1817add0a0"
+          "sha256": "cdf34a341b54958f6aa4e22f294c769f210b2281a543671943d60ee281b26d43"
         },
         {
           "path": "src/charmer/served_plan.py",
-          "sha256": "e405412ce4904340af3c9547a68ce820fd8b114d5691ccf0be6b8e60a56df4b9"
+          "sha256": "24ba98e3d813a803d90a807f84942fde8077237dfa0d51c8928cb0e82e39feb8"
         },
         {
           "path": "src/charmer/qualify.py",
-          "sha256": "a46f185c2291caf842dca4c01c2c08dbc287bd84b68d9d5c3cc3d82fc1b92064"
+          "sha256": "0df154501c552f188057d0fc62547a9929ebb59b93fc47279ae2b709f112f437"
         },
         {
           "path": "src/charmer/discovery.py",
-          "sha256": "03100aa536d6359cf245c060ad57df8a3433f709a9a94d4b9b4aba74b25a6d8a"
+          "sha256": "dcee867df7f0fba1b91cfa3574cbab779413134cd4faf0e22230783801a0fa75"
         },
         {
           "path": "src/charmer/profile.py",
@@ -915,11 +915,11 @@
         },
         {
           "path": "src/charmer/compiler.py",
-          "sha256": "69ece44dad47e74c3d9cc2c3ca59380c9eb821ad6bfa397f117ace521611f825"
+          "sha256": "bbcf55c4602b2d68f42837a2c36dc979727e514482ae7d19d37d1074c06e6320"
         },
         {
           "path": "src/charmer/scope.py",
-          "sha256": "f614db7b0fc45b00e875dabd536997536b208442001c9a4d4914efcb7acd6932"
+          "sha256": "60f0b12daff4aa86ad38e689590dd96a88c41e5dc896c02d32f97d85b7420cf7"
         },
         {
           "path": "src/charmer/cli/commands/models.py",
@@ -927,11 +927,11 @@
         },
         {
           "path": "src/charmer/cli/commands/providers.py",
-          "sha256": "c5be73ab0afaedba9ee2af274c76a037e6621046a2b35fced122e542ba6d4e75"
+          "sha256": "1566f30504e23cfdf824efc2fe978d2da9caaa2c7d7cf4f859e321db2c8d6d80"
         },
         {
           "path": "src/charmer/data/schemas/gateway.schema.json",
-          "sha256": "9594426ed4b821ffd25c3001cb398438bcb20f4da3590a783284fb4a66caf14e"
+          "sha256": "809ec57eb3ef6dc75e742f6fbbacf2837e1a616adb63789b653b505318e78295"
         },
         {
           "path": "src/charmer/data/schemas/providers.schema.json",
@@ -939,7 +939,7 @@
         },
         {
           "path": "src/charmer/data/schemas/operator-provider.schema.json",
-          "sha256": "bab1eb96832c3e06789a5bf9d566749b733056a53aadceb1aefac444f0c9f972"
+          "sha256": "1b54587dbf65a92cb71e5cfea6ad38b8fe54de571379dda2328d2a356e61fcbb"
         },
         {
           "path": "src/charmer/data/schemas/operator-ledger.schema.json",
@@ -951,7 +951,7 @@
         }
       ]
     },
-    "sha256": "29fd65d74c8d4c9f3dbecba7937f7d65529511850586164b8e3f64ebd785d890"
+    "sha256": "06e9558d8365e0193ea392bf832c7ff9de941c65ee1a8e6fb084c360a4f8b61b"
   },
   "version": 1
 }

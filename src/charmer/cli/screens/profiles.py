@@ -25,10 +25,13 @@ from charmer import readiness
 from charmer import state as state_mod
 from charmer import tui
 from charmer import views
+import charmer.cli.screens.actions as screen_actions
 import charmer.cli.screens.common as screens_common
 import charmer.cli.screens.profile_editor as screens_profile_editor
 import charmer.cli.screens.propagation as screens_propagation
 import charmer.cli.text as cli_text
+
+HELP = screen_actions.help_text("profiles", cli_text.PROFILES_HELP)
 
 MIN_ROWS = 18
 MIN_COLS = 60
@@ -86,25 +89,29 @@ def header_text(widths: tuple[int, int, int, int]) -> str:
 
 
 def keybar(row: Any, *, fallback_only: bool) -> tuple[tuple[str, str], ...]:
-    """The bar for the selected row (yours, a shipped profile, or a file
-    that cannot be loaded); F reads ``all profiles`` while the filter is on."""
+    return tuple(tui.KeyBar(_ranked_keybar(row, fallback_only=fallback_only)).bindings)
 
-    if row is None:
-        bindings = [("N", "new"), ("F", "fallback only"), ("B", "bindings"), ("W", "get started"), ("?", "help"),
-                    ("Esc", "back")]
-    elif not row.loadable:
-        bindings = list(cli_text.PROFILES_KEYBAR_UNLOADABLE)
-        if row.origin == "seed":
-            bindings = [cli_text.PROFILES_RESTORE_BINDING if key == "X" else (key, label)
-                        for key, label in bindings]
-    elif row.origin == "seed":
-        bindings = [(key, label) for key, label in cli_text.PROFILES_KEYBAR_SEED
-                    if key != "U" or row.seed_state != "current"]
-    else:
-        bindings = list(cli_text.PROFILES_KEYBAR_YOURS)
-    if fallback_only:
-        bindings = [(key, cli_text.PROFILES_FILTER_OFF_LABEL if key == "F" else label) for key, label in bindings]
-    return tuple(bindings)
+
+def _ranked_keybar(row: Any, *, fallback_only: bool) -> tuple[tuple[str, str, int], ...]:
+    """Selected-row actions; navigation remains available even on an unreadable row."""
+
+    ids = {"new", "fallback", "bindings", "get-started", "help", "back"}
+    labels = {"fallback": cli_text.PROFILES_FILTER_OFF_LABEL} if fallback_only else {}
+    if row is not None:
+        ids.add("edit")
+        if not row.loadable:
+            labels["edit"] = "edit file"
+            ids.add("reseed" if row.origin == "seed" else "delete")
+            if row.origin == "seed":
+                labels["reseed"] = "restore"
+        else:
+            ids.update(("use", "copy", "default"))
+            if row.origin == "seed":
+                if row.seed_state != "current":
+                    ids.add("reseed")
+            else:
+                ids.update(("rename", "delete"))
+    return screen_actions.bar("profiles", ids, labels=labels)
 
 
 class _ProfilesScreen:
@@ -158,7 +165,7 @@ class _ProfilesScreen:
         return MIN_ROWS, MIN_COLS
 
     def _keybar(self) -> tui.KeyBar:
-        return tui.KeyBar(keybar(self.selected, fallback_only=self.fallback_only))
+        return tui.KeyBar(_ranked_keybar(self.selected, fallback_only=self.fallback_only))
 
     def _draw(self, win: Any) -> None:
         palette = self.palette
@@ -171,7 +178,8 @@ class _ProfilesScreen:
         bar = self._keybar()
         bar_rows = bar.rows(width)
         message_row = height - bar_rows - 1
-        separator = message_row - 3
+        self._message_detail_rows = tui.message_detail_rows(self.message, width, 2, message_row - 5 - min(3, len(self.rows)))
+        separator = message_row - self._message_detail_rows - 1
         title = cli_text.PROFILES_TITLE_FALLBACK if self.fallback_only else cli_text.PROFILES_TITLE
         tui.safe_add(win, 1, 2, views.clip(title, width - 3), palette.attr("accent") | tui.curses.A_BOLD)
         tui.safe_add(win, 2, 2, views.rule(width), palette.attr("dim"))
@@ -202,8 +210,7 @@ class _ProfilesScreen:
             tui.safe_add(win, separator + 1, 2, views.clip(first, width - 3), palette.attr("dim"))
             role = "normal" if row.ready else "warn"
             tui.safe_add(win, separator + 2, 2, views.clip(row.reason_line, width - 3), palette.attr(role))
-        if self.message:
-            tui.safe_add(win, message_row, 2, views.clip(self.message, width - 3), palette.attr(self.message_role))
+        tui.draw_message(win, self.message, palette, self.message_role, message_row, detail_rows=self._message_detail_rows)
         bar.draw(win, height - 1, palette)
         win.refresh()
 
@@ -640,7 +647,7 @@ class _ProfilesScreen:
     def _help(self, win: Any) -> None:
         wrap = max(20, min(100, win.getmaxyx()[1] - 8))
         screens_common._ScrollModal(cli_text.PROFILES_HELP_TITLE,
-                                    screens_common._wrap_help_lines(cli_text.PROFILES_HELP, wrap)).run(
+                                    screens_common._wrap_help_lines(HELP, wrap)).run(
             win, self.palette, background=self._draw)
 
     # -- the loop ----------------------------------------------------------------
@@ -653,6 +660,8 @@ class _ProfilesScreen:
         }
         while True:
             self._draw(win)
+            if tui.message_modal(win, self):
+                continue
             key = tui.read_key(win)
             if key.kind == "resize":
                 continue

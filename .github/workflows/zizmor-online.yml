@@ -40,7 +40,7 @@ jobs:
       - name: zizmor by the hash of its wheel (.github/PINS.md)
         run: |
           umask 077
-          printf '%s\n' 'zizmor==1.31.1 --hash=sha256:58e878eb2dbd2c6183c105e1ac28c14f7dd1eca44a783f1fe2a69647d012c410' >"$RUNNER_TEMP/zizmor.txt"
+          printf '%s\n' 'zizmor==1.32.0 --hash=sha256:84a6acb975accc13408786a2bd274b572537ca19c933ebbc13e78f3988562071' >"$RUNNER_TEMP/zizmor.txt"
           python3 -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes --target "$RUNNER_TEMP/zizmor" -r "$RUNNER_TEMP/zizmor.txt"
           "$RUNNER_TEMP/zizmor/bin/zizmor" --version
       - name: Online audit, default and pedantic personas

@@ -135,7 +135,7 @@
       "display": "DeepSeek V4 Pro",
       "last_wire": "deepseek-v4-pro",
       "provider": "deepseek",
-      "reason": "Removed: since 2026-09-14 the wire serves V4.1-Flash, which the deepseek-flash line already carries. No successor.",
+      "reason": "Removed from the selectable catalog; no successor. DeepSeek documents continued V4 Pro service, not a redirect to Flash.",
       "roles": "all",
       "selectors": {
         "claude-multi-deepseek-pro-high[1m]": "output-config-high",

@@ -115,6 +115,16 @@ def is_lan(provider: Mapping[str, Any]) -> bool:
     return isinstance(auth, Mapping) and auth.get("kind") == "none"
 
 
+def probes_reachability(provider: Mapping[str, Any]) -> bool:
+    """A provider whose reachability is a network-scoped observation: a
+    keyless LAN route, or a ``direct-openai`` route declared on a private
+    network (keyed or not)."""
+
+    transport = provider.get("transport") if isinstance(provider, Mapping) else None
+    return is_lan(provider) or (isinstance(transport, Mapping) and transport.get("kind") == "direct-openai"
+                                and isinstance(transport.get("network"), str))
+
+
 def slot_readiness(
     slot: str,
     binding: profile.ResolvedBinding | None,
@@ -139,7 +149,7 @@ def slot_readiness(
             reasons.append(Reason("oauth-records", f"{pool} credential records not observed", login, blocking=False))
         elif observations.oauth_records.get(pool, 0) <= 0:
             reasons.append(Reason("oauth-records", f"no {pool} OAuth credential record", login))
-    if is_lan(provider):
+    if probes_reachability(provider):
         state, text = observations.lan.get(binding.provider, ("unknown", ""))
         if state == "unreachable":
             reasons.append(Reason("lan", text, LAN_UNREACHABLE_REMEDY))

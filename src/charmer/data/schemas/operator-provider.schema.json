@@ -118,6 +118,13 @@
             "maxLength": 256
           }
         },
+        "network": {
+          "enum": [
+            "loopback",
+            "lan",
+            "tailnet"
+          ]
+        },
         "notes": {
           "type": "string",
           "minLength": 1,

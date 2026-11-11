@@ -76,7 +76,7 @@ def proxy_inventory(commands=None) -> dict[str, tuple[str, ...]]:
 
 
 def tui_inventory(actions=None) -> list[str]:
-    return [row.id for rows in (actions or tui_actions.ACTIONS).values() for row in rows]
+    return [row.id for rows in (actions or tui_actions.ACTIONS).values() for row in rows if not row.silent]
 
 
 @functools.lru_cache(maxsize=None)
@@ -187,6 +187,14 @@ SCREEN_ENTRY_POINTS: dict[str, frozenset[str]] = {
     "editor": frozenset({"ProfileEditorScreen", "run_profile_editor", "_run_profile_editor"}),
     "binding-picker": frozenset({"BindingPicker"}),
     "named-bindings": frozenset({"NamedBindingsScreen", "run_named_bindings"}),
+    "propagation": frozenset({"_PropagationScreen", "run_propagation_screen"}),
+    "lineup-per-agent": frozenset({"_PerAgentScreen"}),
+    "provider-picker": frozenset({"_ProviderPicker", "run_picker"}),
+    "form": frozenset({"_GeneralForm"}),
+    "native-form": frozenset({"_NativeForm"}),
+    "routing": frozenset({"RoutingPreviewScreen"}),
+    "transition": frozenset({"_TransitionScreen"}),
+    "onboarding-form": frozenset({"OnboardingForm"}),
 }
 
 
