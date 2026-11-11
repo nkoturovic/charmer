@@ -787,8 +787,11 @@ def providers_list_document(runtime: runtime_mod.Runtime) -> dict[str, Any]:
             "models": int(fact.get("models", 0)) if fact is not None else None,
             "served": conn.served if conn is not None else "unknown",
             "route": layer.route_status.get(provider_id) if declared is not None else None,
-            "lines": [{"key": key, "status": line_status(key, ctx, admitted)}
-                      for key in sorted(by_file.get(provider_id, []))],
+            # A declaration a closed trusted gate refuses was never screened
+            # against stored values (metadata only): its line keys are not shown.
+            "lines": [] if _gated(layer, provider_id) else [
+                {"key": key, "status": line_status(key, ctx, admitted)}
+                for key in sorted(by_file.get(provider_id, []))],
             "problems": len(layer.problems_by_file.get(operator_mod.file_label(provider_id), ())),
         })
     legacy = ctx.legacy
@@ -796,6 +799,11 @@ def providers_list_document(runtime: runtime_mod.Runtime) -> dict[str, Any]:
                      if (legacy.get("providers") or legacy.get("models")) and not layer.marker else None)
     return {"schema_version": PROVIDERS_LIST_SCHEMA, "list": "providers", "providers": entries,
             "unavailable": unavailable, "legacy_registry": legacy_counts}
+
+
+def _gated(layer: operator_mod.OperatorLayer, provider_id: str) -> bool:
+    return any(problem.code in operator_mod.GATED_CODES
+               for problem in layer.problems_by_file.get(operator_mod.file_label(provider_id), ()))
 
 
 def _provider_head(entry: Mapping[str, Any], layer: operator_mod.OperatorLayer) -> str:
