@@ -105,6 +105,11 @@ ACTIONS: dict[str, tuple[Action, ...]] = {
     "sessions": _rows(
         "sessions",
         ("resume", "Enter", "resume the selected session", "charmer -r <session>", "resume", 1),
+        ("fork", "N", "start a new managed session from a copy of the session's conversation",
+         "charmer -r <session> --fork", "fork", 1,
+         "N — fork: start a new managed session from a copy of this session's conversation (its own record and "
+         "scope; the lineup this session would get at its next resume); the original is not changed and may keep "
+         "running."),
         ("lineup", "T", "change the session's lineup, with its effect first", "charmer lineup --session <session>", "lineup", 1),
         ("details", "V", "identity, directory, lineup, pending change, drift and usage", "charmer sessions show <session>", "details", 1),
         ("follow", "F", "follow the session's profile or pin its lineup", "charmer lineup --session <session> follow", "follow/pin", 1),

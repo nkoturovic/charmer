@@ -21,6 +21,7 @@ import charmer.cli.gateway_facts as gateway_facts
 import charmer.cli.screens.common as screens_common
 import charmer.cli.screens.launch_sessions as launch_sessions
 import charmer.cli.screens.transition as screens_transition
+import charmer.cli.resume_checks as resume_checks
 import charmer.cli.selection as selection
 import charmer.cli.session_facts as session_facts
 import charmer.cli.streams as streams
@@ -49,8 +50,15 @@ def _perform_card_result(runtime: runtime_mod.Runtime, result: tuple, *, force: 
     """Perform a card/screen ``("perform", prepared[, decision])`` after teardown (§4.13)."""
 
     decision = result[2] if len(result) > 2 else None
-    _skill_policy_notices(result[1])
-    return runtime.perform(result[1], resume_decision=decision or ("force" if force else None))
+    prepared = result[1]
+    _skill_policy_notices(prepared)
+    if getattr(prepared, "fork_parent", None) is not None:
+        # A fork from the sessions screen (N) names both sessions, as the CLI does.
+        sys.stderr.write(FORK_EXEC_LINE.format(
+            m8=prepared.fork_parent[:8], n8=sessions.managed_id(prepared.record)[:8],
+            profile=termtext.visible_text(session_facts._record_target_label(prepared.record))))
+        sys.stderr.flush()
+    return runtime.perform(prepared, resume_decision=decision or ("force" if force else None))
 
 
 def _transition_preflight_problems(runtime: runtime_mod.Runtime) -> list[str]:
@@ -618,8 +626,7 @@ FORK_NEEDS_SESSION = ("--fork needs the session to fork: charmer -r SESSION --fo
 FORK_WITH_CONTINUE = "--fork works with -r SESSION only"
 FORK_WITH_PROFILE = ("--fork starts with the lineup the session would get at its next resume; after the fork "
                      "starts, change it with /cm profile NAME (or T on its row)")
-FORK_INSIDE_SESSION = ("charmer -r SESSION --fork starts a new interactive session: run it in another "
-                       "terminal (in a session, /cm fork prints the command)")
+FORK_INSIDE_SESSION = resume_checks.FORK_INSIDE_SESSION
 FORK_EXEC_LINE = ("charmer: forking session {m8} into new session {n8} ({profile}); the original is not "
                   "changed.\n")
 
@@ -643,19 +650,21 @@ def _fork_notes(prepared: cli_types.PreparedLaunch, parent_m8: str, stream: Text
 
 def _fork_preflight(*, session: str | None, continue_session: bool, profile: bool,
                     environ: Any) -> None:
-    """The argument refusals of ``--fork``, before anything is read: nothing
-    is written and the exit is non-zero (``CLIError``)."""
-
-    import charmer.cli.consent as consent  # read-only: the in-session marker
+    """The refusals of ``--fork`` that need only the command line and the
+    environment, before anything is read: nothing is written. A command
+    line ``--fork`` cannot use exits 2 (``UsageError``); a run inside a
+    managed session exits 1 (``resume_checks.fork_session_refusal``, the
+    guard every fork surface shares)."""
 
     if continue_session:
-        raise cli_errors.CLIError(FORK_WITH_CONTINUE)
+        raise cli_types.UsageError(FORK_WITH_CONTINUE)
     if not session:
-        raise cli_errors.CLIError(FORK_NEEDS_SESSION)
+        raise cli_types.UsageError(FORK_NEEDS_SESSION)
     if profile:
-        raise cli_errors.CLIError(FORK_WITH_PROFILE)
-    if consent.session_marker(environ) is not None:
-        raise cli_errors.CLIError(FORK_INSIDE_SESSION)
+        raise cli_types.UsageError(FORK_WITH_PROFILE)
+    refusal = resume_checks.fork_session_refusal(environ)
+    if refusal is not None:
+        raise cli_errors.CLIError(refusal)
 
 
 def _fork_flow(
@@ -679,8 +688,6 @@ def _fork_flow(
     ``--print-launch`` shows the fork's plan and writes nothing; an
     interactive run with a lineup difference, notices or key problems
     confirms on the line; the line before exec names both sessions."""
-
-    import charmer.cli.resume_checks as resume_checks
 
     record = runtime.session_store.resolve(session_id)
     mid = sessions.managed_id(record)

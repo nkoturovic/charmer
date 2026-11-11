@@ -1,8 +1,8 @@
 diff --git a/cmd/server/main.go b/cmd/server/main.go
-index 960d5e53..a1cf06cc 100644
+index 047fea26..ba675971 100644
 --- a/cmd/server/main.go
 +++ b/cmd/server/main.go
-@@ -192,8 +192,12 @@ func main() {
+@@ -194,8 +194,12 @@ func main() {
  	}
  
  	pluginHost := pluginhost.New()
@@ -16,7 +16,7 @@ index 960d5e53..a1cf06cc 100644
  			pluginHost.ApplyConfig(context.Background(), bootstrapCfg)
  			pluginHost.RegisterCommandLineFlags(context.Background(), flag.CommandLine)
  		}
-@@ -586,7 +590,7 @@ func main() {
+@@ -588,7 +592,7 @@ func main() {
  		}
  	} else if configPath != "" {
  		configFilePath = configPath
@@ -25,7 +25,7 @@ index 960d5e53..a1cf06cc 100644
  	} else {
  		wd, err = os.Getwd()
  		if err != nil {
-@@ -594,7 +598,7 @@ func main() {
+@@ -596,7 +600,7 @@ func main() {
  			return
  		}
  		configFilePath = filepath.Join(wd, "config.yaml")
@@ -34,7 +34,7 @@ index 960d5e53..a1cf06cc 100644
  	}
  	if err != nil {
  		log.Errorf("failed to load config: %v", err)
-@@ -902,8 +906,40 @@ func defaultPluginBootstrapConfigPath(defaultPath string) string {
+@@ -905,8 +909,40 @@ func defaultPluginBootstrapConfigPath(defaultPath string) string {
  	return filepath.Join(wd, "config.yaml")
  }
  
@@ -183,10 +183,10 @@ index 00000000..d50ad1be
 +	}
 +}
 diff --git a/internal/api/handlers/management/config_v8_test.go b/internal/api/handlers/management/config_v8_test.go
-index a9d9eb97..0534a399 100644
+index 9943e213..27ab7730 100644
 --- a/internal/api/handlers/management/config_v8_test.go
 +++ b/internal/api/handlers/management/config_v8_test.go
-@@ -534,16 +534,14 @@ func TestConfigV8EmptyExcludedModelsSurvivesSave(t *testing.T) {
+@@ -536,16 +536,14 @@ func TestConfigV8EmptyExcludedModelsSurvivesSave(t *testing.T) {
  			if len(after.OAuthExcludedModels) != 0 {
  				t.Errorf("legacy rules became effective after saving: %v", after.OAuthExcludedModels)
  			}
@@ -406,7 +406,7 @@ index 00000000..6b5bd4b0
 +	}
 +}
 diff --git a/internal/config/config_load.go b/internal/config/config_load.go
-index baca01e9..3d65f835 100644
+index 4f9daa2e..3d65f835 100644
 --- a/internal/config/config_load.go
 +++ b/internal/config/config_load.go
 @@ -7,10 +7,8 @@ import (
@@ -451,7 +451,7 @@ index baca01e9..3d65f835 100644
  			}
  		}
  		return nil, fmt.Errorf("failed to read config file: %w", err)
-@@ -172,188 +179,42 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
+@@ -172,194 +179,42 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
  
  	// In cloud deploy mode (optional=true), if file is empty or contains only whitespace, return empty config.
  	if optional && len(bytes.TrimSpace(data)) == 0 {
@@ -499,7 +499,15 @@ index baca01e9..3d65f835 100644
 -			cfgOptional.NormalizePluginsConfig()
 -			cfgOptional.NormalizeClaudeConfig()
 -			return cfgOptional, nil
--		}
++		return emptyOptionalConfig(), nil
++	}
++	if optional {
++		// In cloud deploy mode, a document that fails the weight check or does
++		// not parse as YAML yields the empty config instead of an error.
++		var probe Config
++		if validateCredentialWeightYAML(data) != nil || yaml.Unmarshal(data, &probe) != nil {
++			return emptyOptionalConfig(), nil
+ 		}
 -		return nil, fmt.Errorf("failed to parse config file: %w", err)
 -	}
 -	if errValidate := validateTrustedProxies(cfg.TrustedProxies); errValidate != nil {
@@ -529,15 +537,7 @@ index baca01e9..3d65f835 100644
 -		hashed, errHash := hashSecret(cfg.RemoteManagement.SecretKey)
 -		if errHash != nil {
 -			return nil, fmt.Errorf("failed to hash remote management key: %w", errHash)
-+		return emptyOptionalConfig(), nil
-+	}
-+	if optional {
-+		// In cloud deploy mode, a document that fails the weight check or does
-+		// not parse as YAML yields the empty config instead of an error.
-+		var probe Config
-+		if validateCredentialWeightYAML(data) != nil || yaml.Unmarshal(data, &probe) != nil {
-+			return emptyOptionalConfig(), nil
- 		}
+-		}
 -		cfg.RemoteManagement.SecretKey = hashed
 -
 -		// Persist the hashed value back to the config file to avoid re-hashing on next startup.
@@ -554,6 +554,8 @@ index baca01e9..3d65f835 100644
 -	if cfg.Pprof.Addr == "" {
 -		cfg.Pprof.Addr = DefaultPprofAddr
 -	}
+-
+-	cfg.KVStore.Path = strings.TrimSpace(cfg.KVStore.Path)
 -
 -	if cfg.LogsMaxTotalSizeMB < 0 {
 -		cfg.LogsMaxTotalSizeMB = 0
@@ -608,6 +610,10 @@ index baca01e9..3d65f835 100644
 -
 -	// Sanitize Claude key headers
 -	cfg.SanitizeClaudeKeys()
+-
+-	// Sanitize Antigravity and Devin sensitive-word replacement maps.
+-	cfg.SanitizeAntigravity()
+-	cfg.SanitizeDevin()
 -
 -	// Sanitize OpenAI compatibility providers: drop entries without base-url
 -	cfg.SanitizeOpenAICompatibility()
@@ -671,7 +677,7 @@ index baca01e9..3d65f835 100644
 +	return cfg
  }
 diff --git a/internal/config/config_v8_test.go b/internal/config/config_v8_test.go
-index e8c66625..edbfe536 100644
+index 1c04a151..97b9b1fd 100644
 --- a/internal/config/config_v8_test.go
 +++ b/internal/config/config_v8_test.go
 @@ -113,7 +113,8 @@ func TestV8PresencePrecedenceAndCleanup(t *testing.T) {
@@ -740,7 +746,7 @@ index e8c66625..edbfe536 100644
  		})
  	}
 diff --git a/internal/watcher/clients.go b/internal/watcher/clients.go
-index 98bf690d..b908f3ea 100644
+index e8ddbcce..95afd9bd 100644
 --- a/internal/watcher/clients.go
 +++ b/internal/watcher/clients.go
 @@ -26,6 +26,13 @@ import (
@@ -757,7 +763,7 @@ index 98bf690d..b908f3ea 100644
  	log.Debugf("starting full client load process")
  
  	w.clientsMutex.RLock()
-@@ -646,7 +653,7 @@ func (w *Watcher) triggerServerUpdate(cfg *config.Config) {
+@@ -672,7 +679,7 @@ func (w *Watcher) triggerServerUpdate(cfg *config.Config) {
  		}
  		w.serverUpdatePend = false
  		w.serverUpdateMu.Unlock()
@@ -766,7 +772,7 @@ index 98bf690d..b908f3ea 100644
  		return
  	}
  
-@@ -669,10 +676,6 @@ func (w *Watcher) triggerServerUpdate(cfg *config.Config) {
+@@ -695,10 +702,6 @@ func (w *Watcher) triggerServerUpdate(cfg *config.Config) {
  		if w.stopped.Load() {
  			return
  		}
@@ -777,7 +783,7 @@ index 98bf690d..b908f3ea 100644
  		w.serverUpdateMu.Lock()
  		if w.serverUpdateTimer != timer || !w.serverUpdatePend {
  			w.serverUpdateMu.Unlock()
-@@ -680,15 +683,29 @@ func (w *Watcher) triggerServerUpdate(cfg *config.Config) {
+@@ -706,15 +709,29 @@ func (w *Watcher) triggerServerUpdate(cfg *config.Config) {
  		}
  		w.serverUpdateTimer = nil
  		w.serverUpdatePend = false
@@ -1591,10 +1597,10 @@ index 00000000..23d0fd7d
 +	}
 +}
 diff --git a/internal/watcher/config_reload.go b/internal/watcher/config_reload.go
-index b9d5aabb..021da6ea 100644
+index 5738909d..d69a1760 100644
 --- a/internal/watcher/config_reload.go
 +++ b/internal/watcher/config_reload.go
-@@ -3,10 +3,12 @@
+@@ -3,6 +3,7 @@
  package watcher
  
  import (
@@ -1602,12 +1608,7 @@ index b9d5aabb..021da6ea 100644
  	"crypto/sha256"
  	"encoding/hex"
  	"os"
- 	"reflect"
-+	"strings"
- 	"time"
- 
- 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
-@@ -17,7 +19,9 @@ import (
+@@ -18,7 +19,9 @@ import (
  	log "github.com/sirupsen/logrus"
  )
  
@@ -1618,7 +1619,7 @@ index b9d5aabb..021da6ea 100644
  
  func (w *Watcher) stopConfigReloadTimer() {
  	w.configReloadMu.Lock()
-@@ -61,8 +65,8 @@ func (w *Watcher) reloadConfigIfChanged() {
+@@ -62,8 +65,8 @@ func (w *Watcher) reloadConfigIfChanged() {
  		log.Errorf("failed to read config file for hash check: %v", err)
  		return
  	}
@@ -1629,7 +1630,7 @@ index b9d5aabb..021da6ea 100644
  		return
  	}
  	sum := sha256.Sum256(data)
-@@ -77,10 +81,10 @@ func (w *Watcher) reloadConfigIfChanged() {
+@@ -78,10 +81,10 @@ func (w *Watcher) reloadConfigIfChanged() {
  		return
  	}
  	log.Infof("config file changed, reloading: %s", w.configPath)
@@ -1644,7 +1645,7 @@ index b9d5aabb..021da6ea 100644
  		w.clientsMutex.Lock()
  		appliedHash := newHash
  		if w.config != nil && w.config.SourceHash != "" {
-@@ -92,11 +96,31 @@ func (w *Watcher) reloadConfigIfChanged() {
+@@ -93,11 +96,31 @@ func (w *Watcher) reloadConfigIfChanged() {
  	}
  }
  
@@ -1677,21 +1678,22 @@ index b9d5aabb..021da6ea 100644
  	if errLoadConfig != nil {
  		log.Errorf("failed to reload config: %v", errLoadConfig)
  		return false
-@@ -113,6 +137,13 @@ func (w *Watcher) reloadConfig() bool {
- 	}
+@@ -118,6 +141,14 @@ func (w *Watcher) reloadConfig() bool {
  
+ 	w.authRescanMu.Lock()
  	w.clientsMutex.Lock()
 +	if w.config != nil && countNonBlank(w.config.APIKeys) > 0 && countNonBlank(newConfig.APIKeys) == 0 {
 +		// With no api-keys the config access provider is unregistered and every
 +		// request is served unauthenticated. Never hot-apply that transition.
 +		w.clientsMutex.Unlock()
++		w.authRescanMu.Unlock()
 +		log.Errorf("refusing config reload from %s: it removes every api-key and would disable client authentication; keeping the running config (restart the server to apply it deliberately)", w.configPath)
 +		return false
 +	}
  	var oldConfig *config.Config
  	_ = yaml.Unmarshal(w.oldConfigYaml, &oldConfig)
- 	w.oldConfigYaml, _ = yaml.Marshal(newConfig)
-@@ -146,6 +177,17 @@ func (w *Watcher) reloadConfig() bool {
+ 	prevAuthDir := w.authDir
+@@ -160,6 +191,17 @@ func (w *Watcher) reloadConfig() bool {
  	forceAuthRefresh := oldConfig != nil && (oldConfig.ForceModelPrefix != newConfig.ForceModelPrefix || !reflect.DeepEqual(oldConfig.OAuthModelAlias, newConfig.OAuthModelAlias) || !reflect.DeepEqual(oldConfig.OAuthSettings, newConfig.OAuthSettings) || retryConfigChanged)
  
  	log.Infof("config successfully reloaded, triggering client reload")
@@ -1972,7 +1974,7 @@ index 00000000..00da46fa
 +	}
 +}
 diff --git a/internal/watcher/events.go b/internal/watcher/events.go
-index f6a55d04..5a0aaf9c 100644
+index 5b025275..ebd19334 100644
 --- a/internal/watcher/events.go
 +++ b/internal/watcher/events.go
 @@ -6,6 +6,7 @@ import (
@@ -2011,18 +2013,21 @@ index f6a55d04..5a0aaf9c 100644
 -	log.Debugf("watching config file: %s", w.configPath)
 +	log.Debugf("watching config file: %s (via directory %s)", w.configPath, configDir)
  
- 	if errAddAuthDir := w.watcher.Add(w.authDir); errAddAuthDir != nil {
- 		log.Errorf("failed to watch auth directory %s: %v", w.authDir, errAddAuthDir)
+ 	w.watchMu.Lock()
+ 	authDir := w.currentAuthDir()
 diff --git a/internal/watcher/watcher.go b/internal/watcher/watcher.go
-index 60a5f68f..9436b273 100644
+index bca9c0a6..60c74fa5 100644
 --- a/internal/watcher/watcher.go
 +++ b/internal/watcher/watcher.go
-@@ -31,14 +31,16 @@ type authDirProvider interface {
+@@ -33,17 +33,19 @@ type authDirProvider interface {
  
  // Watcher manages file watching for configuration and authentication files
  type Watcher struct {
 -	configPath                 string
 -	authDir                    string
+-	watchMu                    sync.Mutex
+-	started                    bool
+-	watchedAuthDir             string
 -	config                     *config.Config
 -	clientsMutex               sync.RWMutex
 -	authRescanMu               sync.Mutex
@@ -2031,23 +2036,26 @@ index 60a5f68f..9436b273 100644
 -	configApplyMu              sync.Mutex // Serializes config file reloads so they apply in file order.
 +	configPath        string
 +	authDir           string
++	watchMu           sync.Mutex
++	started           bool
++	watchedAuthDir    string
 +	config            *config.Config
 +	clientsMutex      sync.RWMutex
 +	authRescanMu      sync.Mutex
 +	configReloadMu    sync.Mutex
 +	configReloadTimer *time.Timer
 +	// Serializes config file reloads so they apply in file order. Lock order:
-+	// configApplyMu -> clientsMutex/serverUpdateMu; held through callbacks.
++	// configApplyMu -> clientsMutex/serverUpdateMu/watchMu; held through callbacks.
 +	configApplyMu              sync.Mutex
  	serverUpdateMu             sync.Mutex
  	serverUpdateTimer          *time.Timer
  	serverUpdateLast           time.Time
-@@ -168,6 +170,8 @@ func (w *Watcher) Stop() error {
+@@ -173,6 +175,8 @@ func (w *Watcher) Stop() error {
  // SetConfig updates the current configuration
  func (w *Watcher) SetConfig(cfg *config.Config) {
  	cloned := cfg.CloneForRuntime()
 +	w.configApplyMu.Lock()
 +	defer w.configApplyMu.Unlock()
  	w.clientsMutex.Lock()
- 	defer w.clientsMutex.Unlock()
- 	w.config = cloned
+ 	if cloned != nil {
+ 		if w.mirroredAuthDir != "" {

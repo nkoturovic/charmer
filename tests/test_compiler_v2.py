@@ -636,7 +636,7 @@ class EnvTests(unittest.TestCase):
                 value = plan.settings["env"][scope.MODEL_CAPABILITIES_ENV]
                 names = {entry.split("=", 1)[0] for entry in value.split(";")}
                 fenced = {selector.removesuffix("[1m]") for selector in plan.settings["availableModels"]}
-                self.assertEqual(fenced - names, {"claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5-5",
+                self.assertEqual(fenced - names, {"claude-opus-5-5", "claude-fable-5-2", "claude-sonnet-5-5",
                                                   "claude-opus-4-8", "claude-opus-5", "claude-sonnet-5"})
                 self.assertIn("gpt-multi-sol-6-1-high", names)
                 self.assertIn("charmer-or-opus-xhigh", names)

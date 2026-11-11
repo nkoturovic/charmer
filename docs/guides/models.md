@@ -38,7 +38,7 @@ usable for leads, agents and reviews.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `astra` | GPT-6 Astra | OpenAI | openai | low, medium, high, xhigh, max (high) | 1M class, provider window 872K | lead and agents | `gpt-multi-astra-<effort>[1m]` |
 | `deepseek-flash` | DeepSeek V4.1 Flash | DeepSeek | deepseek | high, max (high) | 1M class, provider window 1M | lead and agents | `charmer-deepseek-flash-<effort>[1m]` |
-| `fable` | Fable 5.1 · 1M selector | Anthropic | anthropic | low, medium, high, xhigh, max (high) | 1M class, provider window 1M | lead and agents | `claude-fable-5-1[1m]` (the effort is chosen in Claude Code) |
+| `fable` | Fable 5.2 · 1M selector | Anthropic | anthropic | low, medium, high, xhigh, max (high) | 1M class, provider window 1M | lead and agents | `claude-fable-5-2[1m]` (the effort is chosen in Claude Code) |
 | `haiku` | Haiku 5.5 · 1M selector | Anthropic | anthropic | low, medium, high, xhigh, max (medium) | 1M class, provider window 1M | agents | `claude-haiku-5-5[1m]` (the effort is chosen in Claude Code) |
 | `kimi-code` | Kimi for Coding | Kimi | moonshot | low, high, max (max) | 1M class, provider window 1M | lead and agents | `charmer-kimi-code-<effort>[1m]` |
 | `luna` | GPT-6 Luna | OpenAI | openai | low, medium, high, xhigh, max (max) | 1M class, provider window 872K | lead and agents | `gpt-multi-luna-<effort>[1m]` |

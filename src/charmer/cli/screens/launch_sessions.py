@@ -982,6 +982,8 @@ class _LineupDialog:
 
 
 _ROW_ACTIONS = (cli_text.SESSIONS_STOP_BINDING, cli_text.SESSIONS_MARK_BINDING, cli_text.SESSIONS_REPAIR_BINDING)
+# N fork is on every record row; the floor counts it with the row actions.
+_FORK_BINDING = ("N", "fork")
 
 
 def _with_row_actions(base: Sequence[tuple[str, str]], actions: Sequence[tuple[str, str]]) -> tuple[tuple[str, str], ...]:
@@ -1002,7 +1004,9 @@ class _SessionsScreen:
     (``_live_prefixes``/``_proc_ids``), taken once per reload.  Enter resumes
     (the resume gate, then ``Runtime.prepare``, then the resume card when
     there is something to state) and returns ``("perform", prepared,
-    decision)``; the caller performs after curses teardown.  V shows the
+    decision)``; the caller performs after curses teardown.  N forks the
+    session the same way (the fork gate, ``Runtime.prepare`` with
+    ``action="fork"``, then the card).  V shows the
     details, T opens the lineup dialog, F previews then follows/pins, R
     renames, X forgets (default Cancel), E stops a live session, M marks an
     exited session ended, P repairs its scope, L links a native session.
@@ -1176,8 +1180,8 @@ class _SessionsScreen:
             list_rows=len(self.records),
             detail_reserve=1 if (self.native or self.native_overflow) else 0,
             bar_rows=max(tui.KeyBar(bar).rows(width) for bar in
-                         (_with_row_actions(cli_text.SESSIONS_KEYBAR, _ROW_ACTIONS),
-                          _with_row_actions(cli_text.SESSIONS_KEYBAR_ALL, _ROW_ACTIONS))),
+                         (_with_row_actions(cli_text.SESSIONS_KEYBAR, (_FORK_BINDING, *_ROW_ACTIONS)),
+                          _with_row_actions(cli_text.SESSIONS_KEYBAR_ALL, (_FORK_BINDING, *_ROW_ACTIONS)))),
             cols=cli_text.SESSIONS_MIN_COLS,
         ).as_tuple()
 
@@ -1245,7 +1249,7 @@ class _SessionsScreen:
             needs_notice=needs_notice,
             needs=needs,
             repair=repair,
-        )
+        ) + session_facts.fork_of_note(record, lead="  ")
 
     def _draw(self, win: Any) -> None:
         palette = self.palette
@@ -1368,6 +1372,42 @@ class _SessionsScreen:
         )
         if result is None:
             self._say("Resume cancelled.")
+            self._reload()
+        return result
+
+    def _fork(self, win: Any, record: dict[str, Any]) -> tuple | None:
+        """N on a record: ``charmer -r SESSION --fork`` — the inside-session
+        refusal and the fork gate (each shown whole), the fork's preparation,
+        then the card, always (it names the new session); Enter there forks.
+        The record is read, never written."""
+
+        runtime = self.runtime
+        mid = sessions.managed_id(record)
+        refusal = resume_checks.fork_session_refusal(runtime.environ)
+        if refusal is not None:
+            self._say(termtext.visible_text(refusal), "warn")
+            return None
+        try:
+            refusal = resume_checks.fork_gate_refusal(runtime, record)
+            if refusal is not None:
+                self._say(termtext.visible_text(refusal), "warn")
+                return None
+            target = cli_types.LaunchTarget("record", None, record.get("profile"), bool(record.get("follow", False)),
+                                            f"Fork of {mid[:8]} — new session")
+            prepared = runtime.prepare(target, action="fork", passthrough=list(self.passthrough), session_id=mid)
+        except cli_types.LaunchPlanError as exc:
+            self._say("not forked: " + "; ".join(termtext.visible_text(p) for p in exc.problems), "error")
+            return None
+        except (*_CARD_PLAN_ERRORS, state.StateError, OSError) as exc:
+            self._say("not forked: " + termtext.visible_message(exc).replace("\n", " "), "error")
+            return None
+        result = _resume_card_result(
+            runtime, win, prepared, palette=self.palette, passthrough=self.passthrough,
+            decision=None, tty_in=self.tty_in, tty_out=self.tty_out, now=self.now, always=True,
+            way_back=self.way_back.deeper(),
+        )
+        if result is None:
+            self._say("Fork cancelled.")
             self._reload()
         return result
 
@@ -2047,6 +2087,10 @@ class _SessionsScreen:
                     continue
                 if key.kind == "enter":
                     outcome = self._resume(win, record)
+                    if outcome is not None:
+                        return outcome
+                elif ch in ("n", "N"):
+                    outcome = self._fork(win, record)
                     if outcome is not None:
                         return outcome
                 elif ch in ("t", "T"):

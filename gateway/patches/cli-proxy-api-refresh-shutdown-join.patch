@@ -196,7 +196,7 @@ index 00000000..bfdaec6f
 +	}
 +}
 diff --git a/sdk/cliproxy/auth/auto_refresh_loop.go b/sdk/cliproxy/auth/auto_refresh_loop.go
-index ab54ba48..aa035034 100644
+index b7f87bf0..9538fa31 100644
 --- a/sdk/cliproxy/auth/auto_refresh_loop.go
 +++ b/sdk/cliproxy/auth/auto_refresh_loop.go
 @@ -28,6 +28,7 @@ type authAutoRefreshLoop struct {
@@ -706,10 +706,10 @@ index 00000000..0dc2d9b2
 +	})
 +}
 diff --git a/sdk/cliproxy/auth/conductor.go b/sdk/cliproxy/auth/conductor.go
-index 3baead92..3bf578bd 100644
+index 3f485fcf..86f6e6b1 100644
 --- a/sdk/cliproxy/auth/conductor.go
 +++ b/sdk/cliproxy/auth/conductor.go
-@@ -229,7 +229,9 @@ type Manager struct {
+@@ -232,7 +232,9 @@ type Manager struct {
  	refreshCancel context.CancelFunc
  	refreshLoop   *authAutoRefreshLoop
  	// refreshJobs retains queued and running jobs across loop restarts under m.mu.
@@ -721,10 +721,10 @@ index 3baead92..3bf578bd 100644
  	requestPrepareLocks sync.Map
  	// refreshLocks serializes credential refresh per auth ID so concurrent
 diff --git a/sdk/cliproxy/auth/conductor_refresh.go b/sdk/cliproxy/auth/conductor_refresh.go
-index e21998ce..1e4f2a8c 100644
+index 6bfc063a..2ba2bcf9 100644
 --- a/sdk/cliproxy/auth/conductor_refresh.go
 +++ b/sdk/cliproxy/auth/conductor_refresh.go
-@@ -40,28 +40,44 @@ const (
+@@ -41,28 +41,44 @@ const (
  	transientErrorCooldown    = time.Minute
  )
  
@@ -780,7 +780,7 @@ index e21998ce..1e4f2a8c 100644
  	m.refreshCancel = cancelCtx
  	m.refreshLoop = loop
  	m.mu.Unlock()
-@@ -70,22 +86,96 @@ func (m *Manager) StartAutoRefresh(parent context.Context, interval time.Duratio
+@@ -71,22 +87,96 @@ func (m *Manager) StartAutoRefresh(parent context.Context, interval time.Duratio
  	go loop.run(ctx)
  }
  
@@ -883,7 +883,7 @@ index e21998ce..1e4f2a8c 100644
  }
  
  func (m *Manager) queueRefreshReschedule(authID string) {
-@@ -940,6 +1030,11 @@ func (m *Manager) refreshAuthForRequestAtEpoch(ctx context.Context, id, failedAc
+@@ -1265,6 +1355,11 @@ func (m *Manager) refreshAuthForRequestAtEpoch(ctx context.Context, id, failedAc
  	if id == "" {
  		return nil, errors.New("auth id is empty")
  	}
@@ -895,8 +895,8 @@ index e21998ce..1e4f2a8c 100644
  	if failedAccessToken != "" {
  		m.markRejectedAccessToken(id, failedAccessToken)
  	}
-@@ -982,6 +1077,11 @@ func (m *Manager) refreshAuthForRequestAtEpoch(ctx context.Context, id, failedAc
- 		}
+@@ -1405,6 +1500,11 @@ func (m *Manager) refreshAuthForRequestAtEpoch(ctx context.Context, id, failedAc
+ 		return nil, &Error{Code: "unauthorized", Message: "unauthorized (refresh token invalid)", HTTPStatus: http.StatusUnauthorized}
  	}
  
 +	// Check after both lock acquisitions: a queued worker may have waited behind
@@ -1065,10 +1065,10 @@ index 00000000..538dd88b
 +	}
 +}
 diff --git a/sdk/cliproxy/service.go b/sdk/cliproxy/service.go
-index 535781e7..b37700e5 100644
+index 7f4d1ba8..9d74edac 100644
 --- a/sdk/cliproxy/service.go
 +++ b/sdk/cliproxy/service.go
-@@ -115,8 +115,9 @@ type Service struct {
+@@ -122,8 +122,9 @@ type Service struct {
  	// pluginHost owns dynamic plugin lifecycle and runtime capability adapters.
  	pluginHost *pluginhost.Host
  
@@ -1080,10 +1080,10 @@ index 535781e7..b37700e5 100644
  	// wsGateway manages websocket Gemini providers.
  	wsGateway *wsrelay.Manager
 diff --git a/sdk/cliproxy/service_lifecycle.go b/sdk/cliproxy/service_lifecycle.go
-index 0e813610..c993d697 100644
+index a710c620..70dc8d02 100644
 --- a/sdk/cliproxy/service_lifecycle.go
 +++ b/sdk/cliproxy/service_lifecycle.go
-@@ -263,8 +263,11 @@ func (s *Service) Shutdown(ctx context.Context) error {
+@@ -266,8 +266,11 @@ func (s *Service) Shutdown(ctx context.Context) error {
  	if s == nil {
  		return nil
  	}
@@ -1096,7 +1096,7 @@ index 0e813610..c993d697 100644
  		if ctx == nil {
  			ctx = context.Background()
  		}
-@@ -335,12 +338,19 @@ func (s *Service) Shutdown(ctx context.Context) error {
+@@ -338,12 +341,19 @@ func (s *Service) Shutdown(ctx context.Context) error {
  			watcherCancel()
  		}
  		if s.coreManager != nil {
@@ -1118,8 +1118,8 @@ index 0e813610..c993d697 100644
  			}
  		}
  		if s.wsGateway != nil {
-@@ -411,7 +421,7 @@ func (s *Service) Shutdown(ctx context.Context) error {
- 
+@@ -422,7 +432,7 @@ func (s *Service) Shutdown(ctx context.Context) error {
+ 		helps.RetireProxyPoolPublisher(s.proxyPoolPublisher)
  		usage.StopDefault()
  	})
 -	return shutdownErr

@@ -1,11 +1,11 @@
 diff --git a/internal/runtime/executor/claude_executor_execute.go b/internal/runtime/executor/claude_executor_execute.go
-index 8a9c808a..69671353 100644
+index e9352424..bb5419d2 100644
 --- a/internal/runtime/executor/claude_executor_execute.go
 +++ b/internal/runtime/executor/claude_executor_execute.go
-@@ -256,6 +256,21 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, r
- 	}
- 	extraBetas, bodyForUpstream = extractAndRemoveBetas(bodyForUpstream)
- 	bodyForUpstream = stripPromptCacheOptions(bodyForUpstream)
+@@ -260,6 +260,21 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, r
+ 	extraBetas, _ = extractAndRemoveBetasDoc(doc)
+ 	stripPromptCacheOptionsDoc(doc)
+ 	bodyForUpstream := doc.Bytes()
 +	// Final outbound boundary for third-party Claude-compatible upstreams:
 +	// strip the unsupported OpenAI-platform TTL control after translation,
 +	// cloaking, Claude-message normalization, CLI identity, sensitive-word
@@ -21,17 +21,17 @@ index 8a9c808a..69671353 100644
 +			return resp, fmt.Errorf("claude executor: %w", err)
 +		}
 +	}
+ 	body = bodyForUpstream
+ 	bodyForTranslation := bodyForUpstream
  	if cchSigning {
- 		bodyForUpstream, err = signAnthropicMessagesBody(bodyForUpstream)
- 		if err != nil {
 diff --git a/internal/runtime/executor/claude_executor_stream.go b/internal/runtime/executor/claude_executor_stream.go
-index c0ec95ca..82aede49 100644
+index aa20045d..a6942504 100644
 --- a/internal/runtime/executor/claude_executor_stream.go
 +++ b/internal/runtime/executor/claude_executor_stream.go
-@@ -248,6 +248,21 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
- 	}
- 	extraBetas, bodyForUpstream = extractAndRemoveBetas(bodyForUpstream)
- 	bodyForUpstream = stripPromptCacheOptions(bodyForUpstream)
+@@ -254,6 +254,21 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
+ 	extraBetas, _ = extractAndRemoveBetasDoc(doc)
+ 	stripPromptCacheOptionsDoc(doc)
+ 	bodyForUpstream := doc.Bytes()
 +	// Final outbound boundary for third-party Claude-compatible upstreams:
 +	// strip the unsupported OpenAI-platform TTL control after translation,
 +	// cloaking, Claude-message normalization, CLI identity, sensitive-word
@@ -47,17 +47,17 @@ index c0ec95ca..82aede49 100644
 +			return nil, fmt.Errorf("claude executor: %w", err)
 +		}
 +	}
+ 	body = bodyForUpstream
+ 	bodyForTranslation := bodyForUpstream
  	if cchSigning {
- 		bodyForUpstream, err = signAnthropicMessagesBody(bodyForUpstream)
- 		if err != nil {
 diff --git a/internal/runtime/executor/claude_executor_tokens.go b/internal/runtime/executor/claude_executor_tokens.go
-index a4855194..b611407f 100644
+index 54197965..a7530850 100644
 --- a/internal/runtime/executor/claude_executor_tokens.go
 +++ b/internal/runtime/executor/claude_executor_tokens.go
-@@ -258,6 +258,20 @@ func (e *ClaudeExecutor) countTokensUpstream(ctx context.Context, auth *cliproxy
- 	}
- 	body = helps.NewPayloadFinalizer(e.cfg, e.Identifier(), baseModel, to.String(), "", originalTranslatedForPayload, req, opts)(body)
- 	body = stripPromptCacheOptions(body)
+@@ -269,6 +269,20 @@ func (e *ClaudeExecutor) countTokensUpstream(ctx context.Context, auth *cliproxy
+ 	helps.FinalizePayloadDoc(ctx, doc)
+ 	stripPromptCacheOptionsDoc(doc)
+ 	body = doc.Bytes()
 +	// Final outbound boundary for third-party Claude-compatible upstreams:
 +	// keep count_tokens payloads consistent with the messages paths. This
 +	// upstream count path is reached by official Anthropic transport (which is
@@ -72,17 +72,17 @@ index a4855194..b611407f 100644
 +			return cliproxyexecutor.Response{}, fmt.Errorf("claude executor: %w", errStrip)
 +		}
 +	}
- 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
- 	if err != nil {
- 		return cliproxyexecutor.Response{}, err
+ 	if errMidSystem := validateClaudeMidSystemMessageModel(body, confirmedClaudeCode, directAnthropic); errMidSystem != nil {
+ 		return cliproxyexecutor.Response{}, errMidSystem
+ 	}
 diff --git a/internal/runtime/executor/codex_executor_request.go b/internal/runtime/executor/codex_executor_request.go
-index b03948d7..23b12114 100644
+index 1acd7d79..84540bd3 100644
 --- a/internal/runtime/executor/codex_executor_request.go
 +++ b/internal/runtime/executor/codex_executor_request.go
-@@ -153,6 +153,18 @@ func (e *CodexExecutor) cacheHelper(ctx context.Context, from sdktranslator.Form
+@@ -196,6 +196,18 @@ func (e *CodexExecutor) cacheHelperDoc(ctx context.Context, from sdktranslator.F
+ 	if doc != nil {
+ 		rawJSON = doc.Bytes()
  	}
- 	rawJSON = helps.SanitizeCodexInputItemIDs(rawJSON)
- 	rawJSON = helps.FinalizePayload(ctx, rawJSON)
 +	// Final outbound boundary: strip prompt_cache_retention after cache-key
 +	// insertion, input-ID sanitization and payload finalization so no earlier
 +	// transformation (payload rules, replay injection) can leak the
@@ -99,91 +99,68 @@ index b03948d7..23b12114 100644
  	if e.cfg != nil && e.cfg.Codex.UpstreamRequestCompression && auth != nil &&
  		!codexAuthUsesAPIKey(auth) && !codexUseSIWCForRequest(ctx, auth, headers) &&
 diff --git a/internal/runtime/executor/codex_websockets_execute.go b/internal/runtime/executor/codex_websockets_execute.go
-index 1637c5d1..2d80caad 100644
+index e1b44ebb..ffbf6f44 100644
 --- a/internal/runtime/executor/codex_websockets_execute.go
 +++ b/internal/runtime/executor/codex_websockets_execute.go
-@@ -104,6 +104,14 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
- 		body = applyCodexSIWCWebsocketBodyRules(body, hasExplicitInstructions, cliproxyexecutor.Options{KeepTopLevelEffort: thinking.HasThinkingSuffix(req.Model)})
+@@ -127,6 +127,14 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
+ 	if upstreamModel != "" && upstreamModel != baseModel {
+ 		reporter.SetUpstreamModel(upstreamModel)
  	}
- 	body = finalizePayload(body)
 +	// Final outbound boundary: strip prompt_cache_retention after payload
 +	// finalization and before request logging/frame transmission. Every
 +	// response.create frame of this request (first send and retries) is built
 +	// from this body.
-+	body, err = stripPromptCacheRetention(body)
-+	if err != nil {
-+		return resp, fmt.Errorf("codex websockets executor: %w", err)
++	body, errStrip := stripPromptCacheRetention(body)
++	if errStrip != nil {
++		return resp, fmt.Errorf("codex websockets executor: %w", errStrip)
 +	}
  	reporter.SetTranslatedReasoningEffort(body, to.String())
  	wsHeaders = applyCodexWebsocketHeaders(ctx, wsHeaders, auth, apiKey, e.cfg, nativeRequest, opts.Headers)
- 	applyCodexRoutingHint(ctx, wsHeaders, auth, baseModel, body, opts.Headers)
+ 	applyCodexRoutingHint(ctx, wsHeaders, auth, upstreamModel, body, opts.Headers)
 diff --git a/internal/runtime/executor/codex_websockets_stream.go b/internal/runtime/executor/codex_websockets_stream.go
-index 91989d7d..5d4de927 100644
+index e01dc786..4aadf3d2 100644
 --- a/internal/runtime/executor/codex_websockets_stream.go
 +++ b/internal/runtime/executor/codex_websockets_stream.go
-@@ -909,6 +909,14 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
- 		body = applyCodexSIWCWebsocketBodyRules(body, hasExplicitInstructions, cliproxyexecutor.Options{KeepTopLevelEffort: thinking.HasThinkingSuffix(req.Model)})
- 	}
- 	body = finalizePayload(body)
+@@ -966,6 +966,14 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
+ 	helps.FinalizePayloadDoc(ctx, doc)
+ 	body = doc.Bytes()
+ 	upstreamModel := strings.TrimSpace(doc.Get("model").String())
 +	// Final outbound boundary: strip prompt_cache_retention after payload
 +	// finalization and before request logging/frame transmission. The stream
 +	// path, its retries, and every duplex response.create/append continuation
 +	// build their frames from this prepared body.
-+	body, err = stripPromptCacheRetention(body)
-+	if err != nil {
-+		return nil, fmt.Errorf("codex websockets executor: %w", err)
-+	}
- 	wsHeaders = applyCodexWebsocketHeaders(ctx, wsHeaders, auth, apiKey, e.cfg, preserveNativeOutput, opts.Headers)
- 	applyCodexRoutingHint(ctx, wsHeaders, auth, baseModel, body, opts.Headers)
- 	applyModelHeaderOverrides(wsHeaders, baseModel)
-diff --git a/internal/runtime/executor/meta_executor_execute.go b/internal/runtime/executor/meta_executor_execute.go
-index d8af8539..5217b3e2 100644
---- a/internal/runtime/executor/meta_executor_execute.go
-+++ b/internal/runtime/executor/meta_executor_execute.go
-@@ -62,7 +62,6 @@ func (e *MetaExecutor) prepareResponsesRequest(ctx context.Context, auth *clipro
- 	body = helps.SetStringIfDifferent(body, "model", baseModel)
- 	body = helps.SetBoolIfDifferent(body, "stream", stream)
- 	body, _ = sjson.DeleteBytes(body, "generate")
--	body, _ = sjson.DeleteBytes(body, "prompt_cache_retention")
- 	body, _ = sjson.DeleteBytes(body, "safety_identifier")
- 	body, _ = sjson.DeleteBytes(body, "stream_options")
- 	body, _ = sjson.DeleteBytes(body, "client_metadata")
-@@ -79,6 +78,14 @@ func (e *MetaExecutor) prepareResponsesRequest(ctx context.Context, auth *clipro
- 	body = helps.NormalizeCodexToolIntegerTypes(body, opts.Headers)
- 
- 	body = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, e.Identifier(), from.String(), "", body, originalTranslated, requestedModel, requestPath, opts.Headers)
-+	// Final outbound boundary: the former early retention cleanup (a single
-+	// sjson delete, which leaves duplicate top-level keys behind) is folded
-+	// into this invariant at the end of the shared preparation used by the
-+	// HTTP execute and stream paths, after payload rules. Fails closed.
 +	body, errStrip := stripPromptCacheRetention(body)
 +	if errStrip != nil {
-+		return nil, fmt.Errorf("meta executor: %w", errStrip)
++		return nil, fmt.Errorf("codex websockets executor: %w", errStrip)
 +	}
- 	return &metaPreparedRequest{
- 		applyPatch:      applyPatch,
- 		baseModel:       baseModel,
+ 	wsHeaders = applyCodexWebsocketHeaders(ctx, wsHeaders, auth, apiKey, e.cfg, preserveNativeOutput, opts.Headers)
+ 	applyCodexRoutingHint(ctx, wsHeaders, auth, upstreamModel, body, opts.Headers)
+ 	applyModelHeaderOverrides(wsHeaders, upstreamModel)
 diff --git a/internal/runtime/executor/non_claude_cache_retention.go b/internal/runtime/executor/non_claude_cache_retention.go
 new file mode 100644
-index 00000000..b67f6115
+index 00000000..6f42aa21
 --- /dev/null
 +++ b/internal/runtime/executor/non_claude_cache_retention.go
-@@ -0,0 +1,132 @@
+@@ -0,0 +1,152 @@
 +// Package executor provides runtime execution capabilities for various AI service providers.
 +// This file implements the final outbound-boundary sanitizer for prompt_cache_retention,
 +// the OpenAI Responses-platform cache TTL control that non-Claude upstreams reject.
 +package executor
 +
 +import (
-+	"encoding/json"
 +	"errors"
 +	"fmt"
 +	"net/url"
 +	"strings"
 +
++	"github.com/MoeForge/moego/ojson"
 +	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
-+	"github.com/tidwall/gjson"
 +)
++
++// maxRetentionKeys bounds the deletions for one body: a body can carry a
++// duplicated top-level key at most once per byte, so a body that still holds
++// one after this many deletions is refused instead of looped over.
++const maxRetentionKeys = 1 << 16
 +
 +// stripPromptCacheRetention removes every top-level prompt_cache_retention
 +// field from an outbound JSON request body.
@@ -191,46 +168,60 @@ index 00000000..b67f6115
 +// prompt_cache_retention is an OpenAI Responses-platform TTL control. The
 +// ChatGPT/Codex subscription backend rejects it with HTTP 400
 +// ("prompt_cache_retention is not supported on this model"), and the
-+// third-party Claude-compatible, xAI and Meta upstreams do not support it
-+// either. Historical sanitization was scattered across executor paths and ran
-+// before later transformations, and it removed a single occurrence only, so a
-+// reintroduced or duplicated field could still leak upstream. This helper is
-+// applied at each final outbound boundary — after every transformation that
-+// can mutate the body — as an invariant rather than an early cleanup.
++// third-party Claude-compatible upstreams (Meta's Messages adapter among
++// them) and xAI do not support it either. Meta's own Responses executor is
++// left alone: that endpoint accepts the field. This helper is applied at each
++// final outbound boundary — after every
++// transformation that can mutate the body — as an invariant rather than an
++// early cleanup.
 +//
 +// The helper removes only top-level occurrences, and all of them: a body
 +// carrying duplicate prompt_cache_retention keys must leave sanitized as
-+// well (sjson.DeleteBytes removes a single occurrence and cannot prove the
-+// result). prompt_cache_key and nested prompt_cache_retention entries are
-+// preserved. The helper is idempotent and fails closed — callers must not
-+// send the body upstream when an error is returned — and enforces a
-+// postcondition: the returned body is valid JSON and provably free of the
-+// top-level field. An empty or nil body is invalid JSON and fails closed
-+// with the same error; there is no body that can be proven retention-free.
++// well (one delete removes a single occurrence). prompt_cache_key and nested
++// prompt_cache_retention entries are preserved, and every other byte of the
++// body is kept as it was. The helper is idempotent and fails closed —
++// callers must not send the body upstream when an error is returned — and
++// enforces a postcondition: the returned body is a valid JSON object with no
++// top-level field of that name. An empty or nil body is invalid JSON and fails
++// closed with the same error; there is no body that can be proven
++// retention-free.
 +func stripPromptCacheRetention(body []byte) ([]byte, error) {
-+	if !gjson.ValidBytes(body) {
++	if !ojson.ValidBytes(body) {
 +		return nil, fmt.Errorf("strip prompt_cache_retention: body is not valid JSON")
 +	}
-+	if !gjson.GetBytes(body, "prompt_cache_retention").Exists() {
++	if !ojson.ParseBytes(body).IsObject() {
++		return nil, fmt.Errorf("strip prompt_cache_retention: body is not a JSON object")
++	}
++	if !topLevelRetentionPresent(body) {
 +		return body, nil
 +	}
-+	// Rebuilding the top level from a map removes every duplicate occurrence
-+	// of the key; re-marshaling preserves the untouched raw values.
-+	var obj map[string]json.RawMessage
-+	if err := json.Unmarshal(body, &obj); err != nil {
-+		return nil, fmt.Errorf("strip prompt_cache_retention: body is not a JSON object: %w", err)
-+	}
-+	delete(obj, "prompt_cache_retention")
-+	updated, err := json.Marshal(obj)
-+	if err != nil {
-+		return nil, fmt.Errorf("strip prompt_cache_retention: %w", err)
++	updated := body
++	for i := 0; i < maxRetentionKeys && ojson.GetBytes(updated, "prompt_cache_retention").Exists(); i++ {
++		var err error
++		updated, err = ojson.DeleteBytes(updated, "prompt_cache_retention")
++		if err != nil {
++			return nil, fmt.Errorf("strip prompt_cache_retention: %w", err)
++		}
 +	}
 +	// Postcondition: no outbound body may leave sanitized unless it is valid
-+	// JSON and provably free of the top-level field.
-+	if !gjson.ValidBytes(updated) || gjson.GetBytes(updated, "prompt_cache_retention").Exists() {
++	// JSON and provably free of the top-level field (every member checked,
++	// not only the first match a lookup returns).
++	if !ojson.ValidBytes(updated) || topLevelRetentionPresent(updated) {
 +		return nil, fmt.Errorf("strip prompt_cache_retention: postcondition failed: field still present in sanitized body")
 +	}
 +	return updated, nil
++}
++
++func topLevelRetentionPresent(body []byte) bool {
++	present := false
++	ojson.ParseBytes(body).ForEach(func(key, _ ojson.Result) bool {
++		if key.String() == "prompt_cache_retention" {
++			present = true
++			return false
++		}
++		return true
++	})
++	return present
 +}
 +
 +// errRetentionUnverified is returned by a call site of
@@ -243,7 +234,9 @@ index 00000000..b67f6115
 +// outbound boundary, for executors whose rules are applied at each call site
 +// right before transmission. A body that cannot be proven retention-free is
 +// replaced by nil; every call site checks for an empty result and returns
-+// errRetentionUnverified instead of sending anything.
++// errRetentionUnverified instead of sending anything. The wrapper is applied
++// to a document by helps.PayloadFinalizer.FinalizeDoc through its byte form,
++// so the document carries the stripped bytes (or nothing) afterwards.
 +func retentionStrippingFinalizer(finalize helps.PayloadFinalizer) helps.PayloadFinalizer {
 +	return func(body []byte) []byte {
 +		if finalize != nil {
@@ -280,7 +273,7 @@ index 00000000..b67f6115
 +		return true
 +	}
 +	// Userinfo never makes an endpoint official; upstream's first-party gate
-+	// (helps.IsAnthropicUpstreamURL) rejects it as well.
++	// rejects it as well.
 +	if parsed.User != nil {
 +		return true
 +	}
@@ -303,7 +296,7 @@ index 00000000..b67f6115
 +}
 diff --git a/internal/runtime/executor/non_claude_cache_retention_payload_rules_test.go b/internal/runtime/executor/non_claude_cache_retention_payload_rules_test.go
 new file mode 100644
-index 00000000..bacff06d
+index 00000000..1bcc0e76
 --- /dev/null
 +++ b/internal/runtime/executor/non_claude_cache_retention_payload_rules_test.go
 @@ -0,0 +1,315 @@
@@ -320,11 +313,11 @@ index 00000000..bacff06d
 +	"sync/atomic"
 +	"testing"
 +
++	"github.com/MoeForge/moego/ojson"
 +	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 +	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 +	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 +	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-+	"github.com/tidwall/gjson"
 +)
 +
 +// The user payload rules run late on the Claude paths: after cloaking and CLI
@@ -510,7 +503,7 @@ index 00000000..bacff06d
 +			t.Fatalf("Execute() error = %v", err)
 +		}
 +		assertRetentionStripped(t, gotBody)
-+		if gjson.GetBytes(gotBody, "prompt_cache_options").Exists() {
++		if ojson.GetBytes(gotBody, "prompt_cache_options").Exists() {
 +			t.Fatalf("prompt_cache_options reached a third-party upstream: %s", gotBody)
 +		}
 +	})
@@ -537,7 +530,7 @@ index 00000000..bacff06d
 +			t.Fatalf("Execute() error = %v", err)
 +		}
 +		assertRetentionPresent(t, gotBody)
-+		if gjson.GetBytes(gotBody, "prompt_cache_options").Exists() {
++		if ojson.GetBytes(gotBody, "prompt_cache_options").Exists() {
 +			t.Fatalf("prompt_cache_options reached the official upstream: %s", gotBody)
 +		}
 +	})
@@ -617,17 +610,17 @@ index 00000000..bacff06d
 +	}
 +	passing := retentionStrippingFinalizer(func(body []byte) []byte { return body })
 +	got := buildXAIWebsocketRequestBody([]byte(`{"model":"grok-4.3","prompt_cache_retention":"24h","input":"hello"}`), passing)
-+	if gjson.GetBytes(got, "type").String() != "response.create" {
-+		t.Fatalf("frame type = %q, want response.create; frame=%s", gjson.GetBytes(got, "type").String(), got)
++	if ojson.GetBytes(got, "type").String() != "response.create" {
++		t.Fatalf("frame type = %q, want response.create; frame=%s", ojson.GetBytes(got, "type").String(), got)
 +	}
 +	assertRetentionStripped(t, got)
 +}
 diff --git a/internal/runtime/executor/non_claude_cache_retention_test.go b/internal/runtime/executor/non_claude_cache_retention_test.go
 new file mode 100644
-index 00000000..ece13b82
+index 00000000..9b8f58ea
 --- /dev/null
 +++ b/internal/runtime/executor/non_claude_cache_retention_test.go
-@@ -0,0 +1,1790 @@
+@@ -0,0 +1,1704 @@
 +package executor
 +
 +import (
@@ -641,6 +634,7 @@ index 00000000..ece13b82
 +	"testing"
 +	"time"
 +
++	"github.com/MoeForge/moego/ojson"
 +	"github.com/gorilla/websocket"
 +	"github.com/klauspost/compress/zstd"
 +	"github.com/pierrec/xxHash/xxHash64"
@@ -649,8 +643,6 @@ index 00000000..ece13b82
 +	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 +	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 +	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-+	"github.com/tidwall/gjson"
-+	"github.com/tidwall/sjson"
 +)
 +
 +// These tests pin the final outbound-boundary invariant for
@@ -663,14 +655,14 @@ index 00000000..ece13b82
 +
 +func assertRetentionStripped(t *testing.T, body []byte) {
 +	t.Helper()
-+	if gjson.GetBytes(body, "prompt_cache_retention").Exists() {
++	if ojson.GetBytes(body, "prompt_cache_retention").Exists() {
 +		t.Fatalf("upstream body still contains prompt_cache_retention: %s", string(body))
 +	}
 +}
 +
 +func assertRetentionPresent(t *testing.T, body []byte) {
 +	t.Helper()
-+	if !gjson.GetBytes(body, "prompt_cache_retention").Exists() {
++	if !ojson.GetBytes(body, "prompt_cache_retention").Exists() {
 +		t.Fatalf("upstream body lost prompt_cache_retention: %s", string(body))
 +	}
 +}
@@ -684,7 +676,7 @@ index 00000000..ece13b82
 +// i.e. the retention strip ran before signing, not after.
 +func assertCCHMatchesSanitizedBody(t *testing.T, body []byte) {
 +	t.Helper()
-+	billingHeader := gjson.GetBytes(body, "system.0.text").String()
++	billingHeader := ojson.GetBytes(body, "system.0.text").String()
 +	if !strings.HasPrefix(billingHeader, "x-anthropic-billing-header:") {
 +		t.Fatalf("system.0.text = %q, want x-anthropic-billing-header; body=%s", billingHeader, string(body))
 +	}
@@ -728,13 +720,13 @@ index 00000000..ece13b82
 +		t.Fatalf("stripPromptCacheRetention() error = %v", err)
 +	}
 +	assertRetentionStripped(t, out)
-+	if got := gjson.GetBytes(out, "prompt_cache_key").String(); got != "cache-123" {
++	if got := ojson.GetBytes(out, "prompt_cache_key").String(); got != "cache-123" {
 +		t.Fatalf("prompt_cache_key = %q, want cache-123; body=%s", got, string(out))
 +	}
-+	if got := gjson.GetBytes(out, "input.0.prompt_cache_retention").String(); got != "nested" {
++	if got := ojson.GetBytes(out, "input.0.prompt_cache_retention").String(); got != "nested" {
 +		t.Fatalf("nested prompt_cache_retention = %q, want preserved nested; body=%s", got, string(out))
 +	}
-+	if got := gjson.GetBytes(out, "model").String(); got != "gpt-5.6-sol" {
++	if got := ojson.GetBytes(out, "model").String(); got != "gpt-5.6-sol" {
 +		t.Fatalf("model = %q, want gpt-5.6-sol; body=%s", got, string(out))
 +	}
 +}
@@ -748,13 +740,13 @@ index 00000000..ece13b82
 +		t.Fatalf("stripPromptCacheRetention() error = %v", err)
 +	}
 +	assertRetentionStripped(t, out)
-+	if got := gjson.GetBytes(out, "prompt_cache_key").String(); got != "cache-123" {
++	if got := ojson.GetBytes(out, "prompt_cache_key").String(); got != "cache-123" {
 +		t.Fatalf("prompt_cache_key = %q, want cache-123; body=%s", got, string(out))
 +	}
-+	if got := gjson.GetBytes(out, "input.0.prompt_cache_retention").String(); got != "nested" {
++	if got := ojson.GetBytes(out, "input.0.prompt_cache_retention").String(); got != "nested" {
 +		t.Fatalf("nested prompt_cache_retention = %q, want preserved nested; body=%s", got, string(out))
 +	}
-+	if got := gjson.GetBytes(out, "model").String(); got != "gpt-5.6-sol" {
++	if got := ojson.GetBytes(out, "model").String(); got != "gpt-5.6-sol" {
 +		t.Fatalf("model = %q, want gpt-5.6-sol; body=%s", got, string(out))
 +	}
 +}
@@ -767,6 +759,17 @@ index 00000000..ece13b82
 +	}
 +	if !bytes.Equal(out, body) {
 +		t.Fatalf("body mutated when field absent: %s", string(out))
++	}
++}
++
++func TestStripPromptCacheRetentionKeepsEveryOtherByte(t *testing.T) {
++	body := []byte(`{"z":1,"prompt_cache_retention":"24h","a":{"b":[1,2]},"m":"x"}`)
++	out, err := stripPromptCacheRetention(body)
++	if err != nil {
++		t.Fatalf("stripPromptCacheRetention() error = %v", err)
++	}
++	if string(out) != `{"z":1,"a":{"b":[1,2]},"m":"x"}` {
++		t.Fatalf("members reordered or rewritten: %s", string(out))
 +	}
 +}
 +
@@ -894,10 +897,10 @@ index 00000000..ece13b82
 +		t.Fatalf("decode wire body: %v", errDecode)
 +	}
 +	for name, body := range map[string][]byte{"wire": decoded, "retry": upstreamBody} {
-+		if gjson.GetBytes(body, "prompt_cache_retention").Exists() {
++		if ojson.GetBytes(body, "prompt_cache_retention").Exists() {
 +			t.Fatalf("%s body still carries prompt_cache_retention: %s", name, body[:64])
 +		}
-+		if !gjson.GetBytes(body, "input").Exists() {
++		if !ojson.GetBytes(body, "input").Exists() {
 +			t.Fatalf("%s body lost its input", name)
 +		}
 +	}
@@ -937,7 +940,7 @@ index 00000000..ece13b82
 +		t.Fatal("expected captured upstream body")
 +	}
 +	assertRetentionStripped(t, gotBody)
-+	if got := gjson.GetBytes(gotBody, "prompt_cache_key").String(); got != "cache-123" {
++	if got := ojson.GetBytes(gotBody, "prompt_cache_key").String(); got != "cache-123" {
 +		t.Fatalf("prompt_cache_key = %q, want cache-123; body=%s", got, string(gotBody))
 +	}
 +}
@@ -974,7 +977,7 @@ index 00000000..ece13b82
 +		t.Fatal("expected captured upstream body")
 +	}
 +	assertRetentionStripped(t, gotBody)
-+	if got := gjson.GetBytes(gotBody, "prompt_cache_key").String(); got != "cache-123" {
++	if got := ojson.GetBytes(gotBody, "prompt_cache_key").String(); got != "cache-123" {
 +		t.Fatalf("prompt_cache_key = %q, want cache-123; body=%s", got, string(gotBody))
 +	}
 +}
@@ -1016,7 +1019,7 @@ index 00000000..ece13b82
 +		t.Fatal("expected captured upstream body")
 +	}
 +	assertRetentionStripped(t, gotBody)
-+	if got := gjson.GetBytes(gotBody, "prompt_cache_key").String(); got != "cache-123" {
++	if got := ojson.GetBytes(gotBody, "prompt_cache_key").String(); got != "cache-123" {
 +		t.Fatalf("prompt_cache_key = %q, want cache-123; body=%s", got, string(gotBody))
 +	}
 +}
@@ -1062,7 +1065,7 @@ index 00000000..ece13b82
 +		t.Fatal("expected captured upstream body")
 +	}
 +	assertRetentionStripped(t, gotBody)
-+	if got := gjson.GetBytes(gotBody, "prompt_cache_key").String(); got != "cache-123" {
++	if got := ojson.GetBytes(gotBody, "prompt_cache_key").String(); got != "cache-123" {
 +		t.Fatalf("prompt_cache_key = %q, want cache-123; body=%s", got, string(gotBody))
 +	}
 +}
@@ -1155,14 +1158,14 @@ index 00000000..ece13b82
 +
 +	select {
 +	case payload := <-capturedPayload:
-+		if got := gjson.GetBytes(payload, "type").String(); got != "response.create" {
++		if got := ojson.GetBytes(payload, "type").String(); got != "response.create" {
 +			t.Fatalf("upstream type = %s, want response.create; payload=%s", got, string(payload))
 +		}
 +		assertRetentionStripped(t, payload)
-+		if got := gjson.GetBytes(payload, "prompt_cache_key").String(); got != "cache-123" {
++		if got := ojson.GetBytes(payload, "prompt_cache_key").String(); got != "cache-123" {
 +			t.Fatalf("prompt_cache_key = %q, want cache-123; payload=%s", got, string(payload))
 +		}
-+		if !gjson.GetBytes(payload, "input").Exists() {
++		if !ojson.GetBytes(payload, "input").Exists() {
 +			t.Fatalf("input missing from response.create frame: %s", string(payload))
 +		}
 +	case <-time.After(5 * time.Second):
@@ -1219,14 +1222,14 @@ index 00000000..ece13b82
 +
 +	select {
 +	case payload := <-capturedPayload:
-+		if got := gjson.GetBytes(payload, "type").String(); got != "response.create" {
++		if got := ojson.GetBytes(payload, "type").String(); got != "response.create" {
 +			t.Fatalf("upstream type = %s, want response.create; payload=%s", got, string(payload))
 +		}
 +		assertRetentionStripped(t, payload)
-+		if got := gjson.GetBytes(payload, "prompt_cache_key").String(); got != "cache-123" {
++		if got := ojson.GetBytes(payload, "prompt_cache_key").String(); got != "cache-123" {
 +			t.Fatalf("prompt_cache_key = %q, want cache-123; payload=%s", got, string(payload))
 +		}
-+		if !gjson.GetBytes(payload, "input").Exists() {
++		if !ojson.GetBytes(payload, "input").Exists() {
 +			t.Fatalf("input missing from response.create frame: %s", string(payload))
 +		}
 +	case <-time.After(5 * time.Second):
@@ -1283,7 +1286,7 @@ index 00000000..ece13b82
 +		t.Fatal("expected captured upstream body")
 +	}
 +	assertRetentionStripped(t, gotBody)
-+	if got := gjson.GetBytes(gotBody, "messages.0.role").String(); got != "user" {
++	if got := ojson.GetBytes(gotBody, "messages.0.role").String(); got != "user" {
 +		t.Fatalf("messages.0.role = %q, want user; body=%s", got, string(gotBody))
 +	}
 +}
@@ -1319,7 +1322,7 @@ index 00000000..ece13b82
 +		t.Fatal("expected captured upstream body")
 +	}
 +	assertRetentionStripped(t, gotBody)
-+	if got := gjson.GetBytes(gotBody, "messages.0.role").String(); got != "user" {
++	if got := ojson.GetBytes(gotBody, "messages.0.role").String(); got != "user" {
 +		t.Fatalf("messages.0.role = %q, want user; body=%s", got, string(gotBody))
 +	}
 +}
@@ -1739,7 +1742,7 @@ index 00000000..ece13b82
 +		t.Fatal("expected captured upstream body")
 +	}
 +	assertRetentionStripped(t, gotBody)
-+	if got := gjson.GetBytes(gotBody, "prompt_cache_key").String(); got != "conv-xai-1" {
++	if got := ojson.GetBytes(gotBody, "prompt_cache_key").String(); got != "conv-xai-1" {
 +		t.Fatalf("prompt_cache_key = %q, want conv-xai-1; body=%s", got, string(gotBody))
 +	}
 +}
@@ -1798,11 +1801,11 @@ index 00000000..ece13b82
 +
 +	select {
 +	case payload := <-capturedPayload:
-+		if got := gjson.GetBytes(payload, "type").String(); got != "response.create" {
++		if got := ojson.GetBytes(payload, "type").String(); got != "response.create" {
 +			t.Fatalf("type = %q, want response.create; payload=%s", got, string(payload))
 +		}
 +		assertRetentionStripped(t, payload)
-+		if got := gjson.GetBytes(payload, "prompt_cache_key").String(); got != "retention-xai-ws-session" {
++		if got := ojson.GetBytes(payload, "prompt_cache_key").String(); got != "retention-xai-ws-session" {
 +			t.Fatalf("prompt_cache_key = %q, want retention-xai-ws-session; payload=%s", got, string(payload))
 +		}
 +	case <-time.After(5 * time.Second):
@@ -1860,7 +1863,7 @@ index 00000000..ece13b82
 +		t.Fatal("expected captured upstream body")
 +	}
 +	assertRetentionPresent(t, gotBody)
-+	if got := gjson.GetBytes(gotBody, "prompt_cache_key").String(); got != "cache-123" {
++	if got := ojson.GetBytes(gotBody, "prompt_cache_key").String(); got != "cache-123" {
 +		t.Fatalf("prompt_cache_key = %q, want cache-123; body=%s", got, string(gotBody))
 +	}
 +}
@@ -1875,7 +1878,7 @@ index 00000000..ece13b82
 +
 +// retentionDuplicatePayload returns payload with two extra top-level
 +// prompt_cache_retention members appended after the existing ones, so a
-+// single sjson.DeleteBytes (upstream's early cleanup) leaves one behind.
++// single ojson.DeleteBytes (upstream's early cleanup) leaves one behind.
 +func retentionDuplicatePayload(t *testing.T, payload string) []byte {
 +	t.Helper()
 +	trimmed := strings.TrimSpace(payload)
@@ -1883,102 +1886,6 @@ index 00000000..ece13b82
 +		t.Fatalf("payload is not an object: %s", payload)
 +	}
 +	return []byte(trimmed[:len(trimmed)-1] + `,"prompt_cache_retention":"48h","prompt_cache_retention":"72h"}`)
-+}
-+
-+// Meta Responses (new in 7.3): HTTP execute and stream share
-+// prepareResponsesRequest; the boundary folds upstream's early single delete.
-+
-+func TestMetaExecutorExecuteStripsAllDuplicateRetentionKeysAtFinalBoundary(t *testing.T) {
-+	var gotBody []byte
-+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-+		body, errRead := io.ReadAll(r.Body)
-+		if errRead != nil {
-+			t.Fatalf("read body: %v", errRead)
-+		}
-+		gotBody = bytes.Clone(body)
-+		writeMetaResponsesOK(w, "ok")
-+	}))
-+	defer server.Close()
-+
-+	exec := NewMetaExecutor(&config.Config{})
-+	auth := &cliproxyauth.Auth{
-+		Provider: "meta",
-+		Attributes: map[string]string{
-+			"api_key":  "test-key",
-+			"base_url": server.URL,
-+		},
-+	}
-+	payload := retentionDuplicatePayload(t, `{"model":"muse-spark-1.3","prompt_cache_retention":"24h","prompt_cache_key":"cache-123","input":[{"type":"message","role":"user","content":"hello","prompt_cache_retention":"nested"}]}`)
-+	if _, err := exec.Execute(context.Background(), auth, cliproxyexecutor.Request{
-+		Model:   "muse-spark-1.3",
-+		Payload: payload,
-+	}, cliproxyexecutor.Options{
-+		SourceFormat: sdktranslator.FormatOpenAIResponse,
-+	}); err != nil {
-+		t.Fatalf("Execute() error = %v", err)
-+	}
-+	if len(gotBody) == 0 {
-+		t.Fatal("expected captured upstream body")
-+	}
-+	assertRetentionStripped(t, gotBody)
-+	if got := gjson.GetBytes(gotBody, "prompt_cache_key").String(); got != "cache-123" {
-+		t.Fatalf("prompt_cache_key = %q, want cache-123; body=%s", got, string(gotBody))
-+	}
-+	if got := gjson.GetBytes(gotBody, "input.0.prompt_cache_retention").String(); got != "nested" {
-+		t.Fatalf("nested prompt_cache_retention = %q, want preserved nested; body=%s", got, string(gotBody))
-+	}
-+}
-+
-+func TestMetaExecutorExecuteStreamStripsRetentionAtFinalBoundary(t *testing.T) {
-+	var gotBody []byte
-+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-+		body, errRead := io.ReadAll(r.Body)
-+		if errRead != nil {
-+			t.Fatalf("read body: %v", errRead)
-+		}
-+		gotBody = bytes.Clone(body)
-+		writeMetaResponsesOK(w, "ok")
-+	}))
-+	defer server.Close()
-+
-+	// The override rule reintroduces the field during payload-rule
-+	// application, after upstream's early cleanup used to run.
-+	exec := NewMetaExecutor(&config.Config{
-+		Payload: config.PayloadConfig{
-+			Override: []config.PayloadRule{{
-+				Models: []config.PayloadModelRule{{Name: "*"}},
-+				Params: map[string]any{"prompt_cache_retention": "24h"},
-+			}},
-+		},
-+	})
-+	auth := &cliproxyauth.Auth{
-+		Provider: "meta",
-+		Attributes: map[string]string{
-+			"api_key":  "test-key",
-+			"base_url": server.URL,
-+		},
-+	}
-+	result, err := exec.ExecuteStream(context.Background(), auth, cliproxyexecutor.Request{
-+		Model:   "muse-spark-1.3",
-+		Payload: []byte(`{"model":"muse-spark-1.3","prompt_cache_key":"cache-123","input":[{"type":"message","role":"user","content":"hello"}]}`),
-+	}, cliproxyexecutor.Options{
-+		SourceFormat: sdktranslator.FormatOpenAIResponse,
-+	})
-+	if err != nil {
-+		t.Fatalf("ExecuteStream() error = %v", err)
-+	}
-+	for chunk := range result.Chunks {
-+		if chunk.Err != nil {
-+			t.Fatalf("stream chunk error = %v", chunk.Err)
-+		}
-+	}
-+	if len(gotBody) == 0 {
-+		t.Fatal("expected captured upstream body")
-+	}
-+	assertRetentionStripped(t, gotBody)
-+	if got := gjson.GetBytes(gotBody, "prompt_cache_key").String(); got != "cache-123" {
-+		t.Fatalf("prompt_cache_key = %q, want cache-123; body=%s", got, string(gotBody))
-+	}
 +}
 +
 +// xAI: duplicate keys (upstream's early single delete left one behind) and
@@ -2023,7 +1930,7 @@ index 00000000..ece13b82
 +		t.Fatal("expected captured upstream body")
 +	}
 +	assertRetentionStripped(t, gotBody)
-+	if got := gjson.GetBytes(gotBody, "prompt_cache_key").String(); got != "conv-xai-dup" {
++	if got := ojson.GetBytes(gotBody, "prompt_cache_key").String(); got != "conv-xai-dup" {
 +		t.Fatalf("prompt_cache_key = %q, want conv-xai-dup; body=%s", got, string(gotBody))
 +	}
 +}
@@ -2117,7 +2024,7 @@ index 00000000..ece13b82
 +		t.Fatal("expected captured upstream body")
 +	}
 +	assertRetentionStripped(t, gotBody)
-+	if got := gjson.GetBytes(gotBody, "prompt_cache_key").String(); got != "cache-123" {
++	if got := ojson.GetBytes(gotBody, "prompt_cache_key").String(); got != "cache-123" {
 +		t.Fatalf("prompt_cache_key = %q, want cache-123; body=%s", got, string(gotBody))
 +	}
 +}
@@ -2188,11 +2095,11 @@ index 00000000..ece13b82
 +	}
 +	select {
 +	case payload := <-capturedPayload:
-+		if got := gjson.GetBytes(payload, "type").String(); got != "response.create" {
++		if got := ojson.GetBytes(payload, "type").String(); got != "response.create" {
 +			t.Fatalf("upstream type = %s, want response.create; payload=%s", got, string(payload))
 +		}
 +		assertRetentionStripped(t, payload)
-+		if got := gjson.GetBytes(payload, "prompt_cache_key").String(); got != "cache-123" {
++		if got := ojson.GetBytes(payload, "prompt_cache_key").String(); got != "cache-123" {
 +			t.Fatalf("prompt_cache_key = %q, want cache-123; payload=%s", got, string(payload))
 +		}
 +	case <-time.After(5 * time.Second):
@@ -2256,10 +2163,10 @@ index 00000000..ece13b82
 +		if chunk.Err != nil {
 +			t.Fatal(chunk.Err)
 +		}
-+		eventType := gjson.GetBytes(chunk.Payload, "type").String()
-+		eventID := gjson.GetBytes(chunk.Payload, "response.id").String()
++		eventType := ojson.GetBytes(chunk.Payload, "type").String()
++		eventID := ojson.GetBytes(chunk.Payload, "response.id").String()
 +		if eventType == "response.completed" && eventID == "resp-1" {
-+			continuation, errSet := sjson.SetBytes([]byte(`{"type":"response.create","model":"gpt-6-astra","prompt_cache_key":"cache-123","input":[{"role":"user","content":"turn 2"}]}`), "prompt_cache_retention", "24h")
++			continuation, errSet := ojson.SetBytes([]byte(`{"type":"response.create","model":"gpt-6-astra","prompt_cache_key":"cache-123","input":[{"role":"user","content":"turn 2"}]}`), "prompt_cache_retention", "24h")
 +			if errSet != nil {
 +				t.Fatalf("build continuation: %v", errSet)
 +			}
@@ -2280,7 +2187,7 @@ index 00000000..ece13b82
 +	count := 0
 +	for frame := range frames {
 +		count++
-+		if got := gjson.GetBytes(frame, "type").String(); got != "response.create" {
++		if got := ojson.GetBytes(frame, "type").String(); got != "response.create" {
 +			t.Fatalf("frame %d type = %q, want response.create; frame=%s", count, got, string(frame))
 +		}
 +		assertRetentionStripped(t, frame)
@@ -2420,7 +2327,7 @@ index 00000000..ece13b82
 +}
 diff --git a/internal/runtime/executor/openai_compat_chat_retention_cm053_test.go b/internal/runtime/executor/openai_compat_chat_retention_cm053_test.go
 new file mode 100644
-index 00000000..66f4f3f4
+index 00000000..c8ae1272
 --- /dev/null
 +++ b/internal/runtime/executor/openai_compat_chat_retention_cm053_test.go
 @@ -0,0 +1,335 @@
@@ -2436,11 +2343,11 @@ index 00000000..66f4f3f4
 +	"sync"
 +	"testing"
 +
++	"github.com/MoeForge/moego/ojson"
 +	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 +	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 +	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 +	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
-+	"github.com/tidwall/gjson"
 +)
 +
 +// The OpenAI-compatible chat completions
@@ -2579,7 +2486,7 @@ index 00000000..66f4f3f4
 +	if !keyed && auths[0] != "" {
 +		t.Fatalf("keyless request carried Authorization %q, want none", auths[0])
 +	}
-+	if !gjson.ValidBytes(bodies[0]) {
++	if !ojson.ValidBytes(bodies[0]) {
 +		t.Fatalf("upstream body is not valid JSON: %s", string(bodies[0]))
 +	}
 +	return bodies[0]
@@ -2602,10 +2509,10 @@ index 00000000..66f4f3f4
 +				}
 +				body := cm053AssertOneChatRequest(t, upstream, keyed)
 +				assertRetentionStripped(t, body)
-+				if got := gjson.GetBytes(body, "prompt_cache_key").String(); got != "cache-cm053" {
++				if got := ojson.GetBytes(body, "prompt_cache_key").String(); got != "cache-cm053" {
 +					t.Fatalf("prompt_cache_key = %q, want cache-cm053; body=%s", got, string(body))
 +				}
-+				if got := gjson.GetBytes(body, "metadata.prompt_cache_retention").String(); got != "nested" {
++				if got := ojson.GetBytes(body, "metadata.prompt_cache_retention").String(); got != "nested" {
 +					t.Fatalf("nested metadata.prompt_cache_retention = %q, want nested; body=%s", got, string(body))
 +				}
 +			})
@@ -2641,7 +2548,7 @@ index 00000000..66f4f3f4
 +						t.Fatalf("request error: %v", err)
 +					}
 +					body := cm053AssertOneChatRequest(t, upstream, keyed)
-+					if got := gjson.GetBytes(body, "cm053_late_marker").String(); got != "late" {
++					if got := ojson.GetBytes(body, "cm053_late_marker").String(); got != "late" {
 +						t.Fatalf("late payload rule did not run (marker %q); body=%s", got, string(body))
 +					}
 +					assertRetentionStripped(t, body)
@@ -2669,7 +2576,7 @@ index 00000000..66f4f3f4
 +				if n := bytes.Count(body, []byte(`"prompt_cache_retention"`)); n != 0 {
 +					t.Fatalf("upstream body carries %d prompt_cache_retention members, want 0: %s", n, string(body))
 +				}
-+				if got := gjson.GetBytes(body, "prompt_cache_key").String(); got != "cache-cm053" {
++				if got := ojson.GetBytes(body, "prompt_cache_key").String(); got != "cache-cm053" {
 +					t.Fatalf("prompt_cache_key = %q, want cache-cm053; body=%s", got, string(body))
 +				}
 +			})
@@ -2735,7 +2642,7 @@ index 00000000..66f4f3f4
 +					t.Fatalf("stream error: %v", err)
 +				}
 +				body := cm053AssertOneChatRequest(t, upstream, keyed)
-+				if tc.marker && gjson.GetBytes(body, "cm053_late_marker").String() != "late" {
++				if tc.marker && ojson.GetBytes(body, "cm053_late_marker").String() != "late" {
 +					t.Fatalf("late payload rule did not run; body=%s", string(body))
 +				}
 +				if n := bytes.Count(body, []byte(`"prompt_cache_retention"`)); n != 0 {
@@ -2760,12 +2667,12 @@ index 00000000..66f4f3f4
 +	})
 +}
 diff --git a/internal/runtime/executor/openai_compat_executor.go b/internal/runtime/executor/openai_compat_executor.go
-index d270f621..2fcf6b32 100644
+index c4ac7e0c..7e4cfaaf 100644
 --- a/internal/runtime/executor/openai_compat_executor.go
 +++ b/internal/runtime/executor/openai_compat_executor.go
-@@ -168,6 +168,18 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
- 	url := strings.TrimSuffix(baseURL, "/") + endpoint
- 	translated = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, to.String(), from.String(), "", translated, originalTranslated, requestedModel, requestPath, opts.Headers)
+@@ -184,6 +184,18 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
+ 	helps.ApplyPayloadConfigWithRequestDoc(e.cfg, baseModel, to.String(), from.String(), "", doc, originalTranslated, requestedModel, requestPath, opts.Headers)
+ 	translated = doc.Bytes()
  	reporter.SetTranslatedReasoningEffort(translated, to.String())
 +	if opts.Alt != "responses/compact" {
 +		// Final outbound boundary for OpenAI-compatible chat completions: strip
@@ -2782,9 +2689,9 @@ index d270f621..2fcf6b32 100644
  	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(translated))
  	if err != nil {
  		return resp, err
-@@ -402,6 +414,15 @@ func (e *OpenAICompatExecutor) executeStreamWithCredentials(ctx context.Context,
- 	url := strings.TrimSuffix(baseURL, "/") + "/chat/completions"
- 	translated = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, to.String(), from.String(), "", translated, originalTranslated, requestedModel, requestPath, opts.Headers)
+@@ -429,6 +441,15 @@ func (e *OpenAICompatExecutor) executeStreamWithCredentials(ctx context.Context,
+ 	helps.ApplyPayloadConfigWithRequestDoc(e.cfg, baseModel, to.String(), from.String(), "", doc, originalTranslated, requestedModel, requestPath, opts.Headers)
+ 	translated = doc.Bytes()
  	reporter.SetTranslatedReasoningEffort(translated, to.String())
 +	// Final outbound boundary for OpenAI-compatible streaming chat: the stream
 +	// always targets /chat/completions, including when its Alt is
@@ -2799,23 +2706,23 @@ index d270f621..2fcf6b32 100644
  	if err != nil {
  		return nil, err
 diff --git a/internal/runtime/executor/xai_executor_execute.go b/internal/runtime/executor/xai_executor_execute.go
-index f92d436b..10389f93 100644
+index a6eb980b..d5266a93 100644
 --- a/internal/runtime/executor/xai_executor_execute.go
 +++ b/internal/runtime/executor/xai_executor_execute.go
-@@ -48,6 +48,9 @@ func (e *XAIExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req
- 	url := strings.TrimSuffix(baseURL, "/") + "/responses"
- 	prepared.body = sanitizeXAIInputEncryptedContentForBaseURL(prepared.body, baseURL)
- 	prepared.body = prepared.finalizePayload(prepared.body)
+@@ -49,6 +49,9 @@ func (e *XAIExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req
+ 	sanitizeXAIInputEncryptedContentForBaseURLDoc(doc, baseURL)
+ 	helps.FinalizePayloadDoc(helps.WithPayloadFinalizer(ctx, prepared.finalizePayload), doc)
+ 	prepared.body = doc.Bytes()
 +	if len(prepared.body) == 0 {
 +		return resp, fmt.Errorf("xai executor: %w", errRetentionUnverified)
 +	}
  	reporter.SetTranslatedReasoningEffort(prepared.body, e.Identifier())
  	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(prepared.body))
  	if err != nil {
-@@ -214,6 +217,9 @@ func (e *XAIExecutor) executeCompactRequest(ctx context.Context, auth *cliproxya
- 	requestURL := strings.TrimSuffix(baseURL, "/") + "/responses/compact"
- 	prepared.body = sanitizeXAIInputEncryptedContentForBaseURL(prepared.body, baseURL)
- 	prepared.body = prepared.finalizePayload(prepared.body)
+@@ -312,6 +315,9 @@ func (e *XAIExecutor) executeCompactRequest(ctx context.Context, auth *cliproxya
+ 	sanitizeXAIInputEncryptedContentForBaseURLDoc(doc, baseURL)
+ 	helps.FinalizePayloadDoc(helps.WithPayloadFinalizer(ctx, prepared.finalizePayload), doc)
+ 	prepared.body = doc.Bytes()
 +	if len(prepared.body) == 0 {
 +		return nil, nil, nil, nil, fmt.Errorf("xai executor: %w", errRetentionUnverified)
 +	}
@@ -2823,24 +2730,24 @@ index f92d436b..10389f93 100644
  	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(prepared.body))
  	if err != nil {
 diff --git a/internal/runtime/executor/xai_executor_request.go b/internal/runtime/executor/xai_executor_request.go
-index 569b4b91..69f34853 100644
+index b8e685bc..0034f591 100644
 --- a/internal/runtime/executor/xai_executor_request.go
 +++ b/internal/runtime/executor/xai_executor_request.go
-@@ -97,11 +97,10 @@ func (e *XAIExecutor) prepareResponsesRequestTo(ctx context.Context, req cliprox
+@@ -126,11 +126,10 @@ func (e *XAIExecutor) prepareResponsesRequestToDoc(ctx context.Context, req clip
  		return nil, err
  	}
  
 -	finalizePayload := helps.NewPayloadFinalizer(e.cfg, e.Identifier(), baseModel, to.String(), "", originalTranslated, req, opts)
 +	finalizePayload := retentionStrippingFinalizer(helps.NewPayloadFinalizer(e.cfg, e.Identifier(), baseModel, to.String(), "", originalTranslated, req, opts))
- 	body = helps.SetStringIfDifferent(body, "model", baseModel)
- 	body = helps.SetBoolIfDifferent(body, "stream", stream)
- 	body, _ = sjson.DeleteBytes(body, "previous_response_id")
--	body, _ = sjson.DeleteBytes(body, "prompt_cache_retention")
- 	body, _ = sjson.DeleteBytes(body, "safety_identifier")
- 	body, _ = sjson.DeleteBytes(body, "stream_options")
- 	body = helps.RewriteCodexMultiAgentV2Input(ctx, opts.Headers, body, e.cfg)
-@@ -171,6 +170,16 @@ func (e *XAIExecutor) prepareResponsesRequestTo(ctx context.Context, req cliprox
- 		body = helps.SetStringIfDifferent(body, "prompt_cache_key", sessionID)
+ 	helps.SetStringIfDifferentDoc(doc, "model", baseModel)
+ 	helps.SetBoolIfDifferentDoc(doc, "stream", stream)
+ 	_ = doc.Delete("previous_response_id")
+-	_ = doc.Delete("prompt_cache_retention")
+ 	_ = doc.Delete("safety_identifier")
+ 	_ = doc.Delete("stream_options")
+ 	helps.RewriteCodexMultiAgentV2InputDoc(doc, ctx, opts.Headers, e.cfg)
+@@ -200,6 +199,17 @@ func (e *XAIExecutor) prepareResponsesRequestToDoc(ctx context.Context, req clip
+ 		helps.SetStringIfDifferentDoc(doc, "prompt_cache_key", sessionID)
  	}
  
 +	// Final outbound boundary: the former early retention cleanup is folded
@@ -2848,16 +2755,17 @@ index 569b4b91..69f34853 100644
 +	// so any transformation reintroducing the field is still caught (and every
 +	// duplicate top-level occurrence removed) before HTTP request construction,
 +	// /responses/compact, or WebSocket frame transmission. Fails closed.
-+	body, err = stripPromptCacheRetention(body)
-+	if err != nil {
-+		return nil, fmt.Errorf("xai executor: %w", err)
++	stripped, errStrip := stripPromptCacheRetention(doc.Bytes())
++	if errStrip != nil {
++		return nil, fmt.Errorf("xai executor: %w", errStrip)
 +	}
++	*doc = *ojson.NewDoc(stripped)
 +
  	return &xaiPreparedRequest{
  		finalizePayload:       finalizePayload,
  		applyPatch:            applyPatch,
 diff --git a/internal/runtime/executor/xai_executor_stream.go b/internal/runtime/executor/xai_executor_stream.go
-index 715fbcf5..e1b65bf3 100644
+index a5176436..d9cdcdb4 100644
 --- a/internal/runtime/executor/xai_executor_stream.go
 +++ b/internal/runtime/executor/xai_executor_stream.go
 @@ -4,6 +4,7 @@ import (
@@ -2868,10 +2776,10 @@ index 715fbcf5..e1b65bf3 100644
  	"io"
  	"net/http"
  	"strings"
-@@ -42,6 +43,9 @@ func (e *XAIExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth
- 	url := strings.TrimSuffix(baseURL, "/") + "/responses"
- 	prepared.body = sanitizeXAIInputEncryptedContentForBaseURL(prepared.body, baseURL)
- 	prepared.body = prepared.finalizePayload(prepared.body)
+@@ -44,6 +45,9 @@ func (e *XAIExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth
+ 	sanitizeXAIInputEncryptedContentForBaseURLDoc(doc, baseURL)
+ 	helps.FinalizePayloadDoc(helps.WithPayloadFinalizer(ctx, prepared.finalizePayload), doc)
+ 	prepared.body = doc.Bytes()
 +	if len(prepared.body) == 0 {
 +		return nil, fmt.Errorf("xai executor: %w", errRetentionUnverified)
 +	}
@@ -2879,13 +2787,13 @@ index 715fbcf5..e1b65bf3 100644
  	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(prepared.body))
  	if err != nil {
 diff --git a/internal/runtime/executor/xai_executor_tokens.go b/internal/runtime/executor/xai_executor_tokens.go
-index 2a3b5c9d..ecfc5b37 100644
+index 6ffbbfb2..f5837e0e 100644
 --- a/internal/runtime/executor/xai_executor_tokens.go
 +++ b/internal/runtime/executor/xai_executor_tokens.go
-@@ -23,6 +23,9 @@ func (e *XAIExecutor) CountTokens(ctx context.Context, auth *cliproxyauth.Auth,
- 		return cliproxyexecutor.Response{}, fmt.Errorf("xai executor: tokenizer init failed: %w", err)
- 	}
- 	prepared.body = prepared.finalizePayload(prepared.body)
+@@ -27,6 +27,9 @@ func (e *XAIExecutor) CountTokens(ctx context.Context, auth *cliproxyauth.Auth,
+ 	doc := prepared.ensureDoc()
+ 	helps.FinalizePayloadDoc(helps.WithPayloadFinalizer(ctx, prepared.finalizePayload), doc)
+ 	prepared.body = doc.Bytes()
 +	if len(prepared.body) == 0 {
 +		return cliproxyexecutor.Response{}, fmt.Errorf("xai executor: %w", errRetentionUnverified)
 +	}
@@ -2893,21 +2801,21 @@ index 2a3b5c9d..ecfc5b37 100644
  	if err != nil {
  		return cliproxyexecutor.Response{}, fmt.Errorf("xai executor: token counting failed: %w", err)
 diff --git a/internal/runtime/executor/xai_websockets_executor.go b/internal/runtime/executor/xai_websockets_executor.go
-index cca1478d..ec4053b4 100644
+index 09943aaa..4af6684a 100644
 --- a/internal/runtime/executor/xai_websockets_executor.go
 +++ b/internal/runtime/executor/xai_websockets_executor.go
-@@ -521,6 +521,10 @@ func (e *XAIWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *cliprox
- 	prepared.body = sanitizeXAIInputEncryptedContentForBaseURL(prepared.body, baseURL)
+@@ -541,6 +541,10 @@ func (e *XAIWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *cliprox
+ 	sanitizeXAIInputEncryptedContentForBaseURLDoc(doc, baseURL)
  	wsHeaders := applyXAIWebsocketHeaders(ctx, http.Header{}, auth, token, prepared.sessionID, opts.Headers)
- 	wsReqBody := buildXAIWebsocketRequestBody(prepared.body, prepared.finalizePayload)
+ 	wsReqBody := buildXAIWebsocketRequestBodyDoc(ctx, doc, prepared.finalizePayload)
 +	if len(wsReqBody) == 0 {
 +		unlockStreamSession()
 +		return nil, fmt.Errorf("xai websockets executor: %w", errRetentionUnverified)
 +	}
+ 	prepared.body = wsReqBody
  	reporter.SetTranslatedReasoningEffort(wsReqBody, e.Identifier())
- 	requestType := strings.TrimSpace(gjson.GetBytes(req.Payload, "type").String())
- 	transcriptReset := strings.TrimSpace(gjson.GetBytes(wsReqBody, "previous_response_id").String()) == "" &&
-@@ -631,6 +635,12 @@ func (e *XAIWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *cliprox
+ 	requestType := strings.TrimSpace(ojson.GetBytesNoCopy(req.Payload, "type").String())
+@@ -646,6 +650,12 @@ func (e *XAIWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *cliprox
  			}
  			readCh = sess.activate(conn)
  			wsReqBodyRetry := buildXAIWebsocketRequestBody(prepared.body, prepared.finalizePayload)
@@ -2920,15 +2828,15 @@ index cca1478d..ec4053b4 100644
  			helps.RecordAPIWebsocketRequest(ctx, e.cfg, helps.UpstreamRequestLog{
  				URL:       wsURL,
  				Method:    "WEBSOCKET",
-@@ -1627,6 +1637,11 @@ func buildXAIWebsocketRequestBody(body []byte, finalizers ...helps.PayloadFinali
+@@ -1655,6 +1665,11 @@ func buildXAIWebsocketRequestBodyDoc(ctx context.Context, doc *ojson.Doc, finali
  	}
  	if len(finalizers) > 0 && finalizers[0] != nil {
- 		wsReqBody = finalizers[0](wsReqBody)
-+		if len(wsReqBody) == 0 {
+ 		helps.FinalizePayloadDoc(helps.WithPayloadFinalizer(ctx, finalizers[0]), doc)
++		if len(doc.Bytes()) == 0 {
 +			// The finalizer refused the body (retention not provably
 +			// stripped); the caller sends no frame.
 +			return nil
 +		}
  	}
- 	wsReqBody, _ = sjson.SetBytes(wsReqBody, "type", "response.create")
- 	return wsReqBody
+ 	_ = doc.Set("type", "response.create")
+ 	return doc.Bytes()

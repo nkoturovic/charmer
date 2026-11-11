@@ -8,9 +8,9 @@ measure what the pinned Claude Code does with that argv, end to end:
 - the launch runs in a launcher subprocess that really ``execve``\\ s the
   client (the session's lifecycle lock is held across the exec and dropped
   by it, as in production, so the client's SessionStart hook can take it);
-  this module waits outside. The launch is prepared by a minimal prototype
-  (a fresh launch of the fixture ``balanced`` profile whose argv gains the
-  fork flags and whose record gains ``forked_from``);
+  this module waits outside. The launcher prepares and performs the fork
+  as ``charmer -r SESSION --fork`` does (``Runtime.prepare`` with
+  ``action="fork"``, then ``Runtime.perform``);
 - every run is hermetic: fixture-owned HOME, XDG roots and charmer state,
   the pinned copy hard-linked into the fixture's owned location and
   verified by the launch, the fixture provider bridged into a
@@ -23,23 +23,34 @@ measure what the pinned Claude Code does with that argv, end to end:
 - G1 (headless): the fork's conversation file, the parent's bytes, the
   fork's first lead request (history marker, the managed-session sentinel in
   the system prompt), SessionStart on the fork's hooks, no daemon or jobs
-  directory; with a parent whose prompt snapshot is established (and the
-  fork's own resume after it), with a compacted parent, and with
-  ``--system-prompt-snapshot off`` on the fork's launch only or on every
-  launch of the fork;
+  directory, the fork's own-fork notice and its authoritative record; with
+  a parent whose prompt snapshot is established (the fork and its own
+  resume send the fork's prompt: every launch of a fork compiles
+  ``--system-prompt-snapshot off``), with a compacted parent, the negative
+  control (that switch taken out again: the fork and its resume send the
+  parent's recorded prompt), five fork starts in a row (each start
+  counted on the fork's hooks), and the keyed-fence case (a direct
+  ``--no-subagents`` session on a keyed line: the fork keeps the selector,
+  lead set and fence, authenticates only through the token helper and
+  never sees the provider key the launching shell carried);
 - G2 (PTY): an idle parent stays live while the fork runs; both take more
-  turns; both conversation files stay independent (also with the fork's
-  prompt snapshot switched off: which prompt each turn sends);
+  turns; both conversation files stay independent; each turn sends its own
+  session's prompt;
 - G2b: the parent is streaming, or running a tool, when it is forked; the
   fork runs headless (then resumes) or in a PTY;
-- G3 (record only): ``/fork`` typed in a charmer session.
+- G3 (record): Claude Code's ``/fork`` typed in a charmer session never
+  copies the session (refused for the launch flags, or not offered while
+  the agent view is off) and creates no conversation file and no daemon
+  directory; the model's own Agent call of a fork is refused; what
+  ``/fork <directive>`` does is recorded.
 
 Evidence is metadata only: marker names, ids of fixture sessions, counts,
 digests, booleans, role sequences. No request text, transcript text or
 screen text beyond the client's one-line refusal is printed.
 
-Each row prints ``fork-launch row <name>: <json>``; the class prints one
-``client check fork-launch: ...`` line from ``tearDownClass``.
+Each row prints ``fork-launch row <name>: <json>`` and fails its test on any
+problem; the class prints one ``client check fork-launch: ...`` line from
+``tearDownClass`` (``PASS`` only when every row passed).
 """
 
 from __future__ import annotations
@@ -66,6 +77,7 @@ from pathlib import Path
 from typing import Any
 
 from charmer import endpoint, pin, probe, state, strict_json
+from charmer import scope as scope_mod
 
 from _catalog import FIXTURE_GATEWAY_TOKEN, FIXTURE_ROOT
 from _layout import REPO_ROOT, RESOURCES_ROOT
@@ -85,10 +97,22 @@ T4 = "FORKPROBE-FORK-TURN-FOUR"
 T5 = "FORKPROBE-FORK-TURN-FIVE"
 HOLD_STREAM = "FORKPROBE-HOLD-STREAM"
 HOLD_TOOL = "FORKPROBE-HOLD-TOOL"
+AGENT_FORK = "FORKPROBE-AGENT-FORK"  # the lead's turn answered with an Agent fork call
+KEYED_ENV = "FORKPROBE-KEYED-ENV"  # the fork's turn answered with a Bash call that reads its environment
 SUMMARY = "FORKPROBE-COMPACT-SUMMARY"
-_TURNS = (HOLD_STREAM, HOLD_TOOL, T1, T2, T3, T4, T5)
-_SNAPSHOT_OFF = ("--system-prompt-snapshot", "off")
+_TURNS = (HOLD_STREAM, HOLD_TOOL, AGENT_FORK, KEYED_ENV, T1, T2, T3, T4, T5)
+# The keyed-fence case: a direct line of a keyed provider of the fixture
+# catalog, its key (a fixed non-secret test id the fake upstream can label)
+# and the variable that names it.
+_KEYED_LINE = "kimi-k3"
+_KEYED_ENV_NAME = "KIMI_CLAUDE_API_KEY"
+_KEYED_SECRET = "kimi-fixture-key-0001"
+_KEYED_TOOL_ID = "toolu_forkprobe_keyed_env"
+# Prints whether the variable is set; the printed words never appear in the command.
+_KEYED_COMMAND = (f'if [ -n "${{{_KEYED_ENV_NAME}+x}}" ]; then echo FORKKEY-$((1+1))-SET; '
+                  "else echo FORKKEY-$((1+1))-UNSET; fi")
 _TOOL_ID = "toolu_forkprobe_hold"
+_AGENT_FORK_ID = "toolu_forkprobe_agent_fork"
 _TOOL_OUTPUT = "FORKTOOL-OUT42"  # printed by the tool, never part of its command
 _LEAD_BODY = "You are the lead of a managed session."
 _EXTRA_MARKERS = {
@@ -101,6 +125,7 @@ _PREFACES = {
     "startup": "Session started. The lineup below is current.",
     "resume": "Session resumed. Your recorded lead is",
     "fork-shared": "This is a native fork that shares the parent session",
+    "fork-own": "This session was forked from another charmer session and has its own record and scope",
 }
 _SENTINEL_RE = re.compile(r"Managed session: ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})")
 _ANSI_RE = re.compile(r"\x1b\[[0-9;?<>=]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\x1b[()][A-Z0-9]|\x1b[=>78]")
@@ -120,6 +145,23 @@ class _HeldSse(probe.SseResponse):
     hold_after: int = 0
     gate: Any = None
     started: Any = None
+
+
+class _ForkProvider(probe.FakeAnthropicProvider):
+    """The fake upstream with one more credential label: the exact fixture
+    gateway token (what charmer's token helper hands the client) is
+    ``gateway``. Any other token stays ``other``; the value is compared in
+    memory and never kept."""
+
+    def _auth_label(self, headers: Any) -> str:
+        label = super()._auth_label(headers)
+        if label != "other":
+            return label
+        presented = headers.get("x-api-key") or ""
+        if not presented:
+            bearer = headers.get("Authorization") or ""
+            presented = bearer[7:] if bearer.startswith("Bearer ") else bearer
+        return "gateway" if presented == FIXTURE_GATEWAY_TOKEN else label
 
 
 class _StreamingHandler(probe._ProviderHandler):
@@ -154,6 +196,19 @@ def _text_blocks(content: Any) -> list[str]:
         if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
             texts.append(block["text"])
     return texts
+
+
+def _agent_fork_class(content: Any) -> str:
+    """The class of the Agent fork call's result (its text stays in memory)."""
+
+    text = json.dumps(content)
+    if "has been denied by permission rule 'Agent(fork)'" in text:
+        return "denied"
+    if "Agent type 'fork' not found" in text:
+        return "unavailable"
+    if "Fork started" in text or "[Subagent hand-back]" in text:
+        return "started"
+    return "other"
 
 
 def _system_text(document: dict[str, Any]) -> str:
@@ -235,10 +290,15 @@ class _ForkResponder:
         tool_names = set(record.tool_names)
         main = bool(tool_names & {"Agent", "Bash"}) and hints.get("x-claude-code-request-class") not in (
             "subagent", "workflow")
-        tool_done = any(
-            isinstance(block, dict) and block.get("type") == "tool_result" and block.get("tool_use_id") == _TOOL_ID
-            for message in messages[-1:] if isinstance(message, dict)
-            for block in (message.get("content") if isinstance(message.get("content"), list) else []))
+        results = {block.get("tool_use_id"): block.get("content")
+                   for message in messages[-1:] if isinstance(message, dict)
+                   for block in (message.get("content") if isinstance(message.get("content"), list) else [])
+                   if isinstance(block, dict) and block.get("type") == "tool_result"}
+        tool_done = _TOOL_ID in results
+        agent_fork = _agent_fork_class(results[_AGENT_FORK_ID]) if _AGENT_FORK_ID in results else None
+        keyed_text = json.dumps(results[_KEYED_TOOL_ID]) if _KEYED_TOOL_ID in results else None
+        keyed_env = (None if keyed_text is None else "unset" if "FORKKEY-2-UNSET" in keyed_text
+                     else "set" if "FORKKEY-2-SET" in keyed_text else "other")
         compact = tag is None and not tool_done and "summar" in last_user.lower()
         row = {
             "ordinal": context.ordinal,
@@ -248,6 +308,11 @@ class _ForkResponder:
             "tool_done": tool_done,
             "model": record.model,
             "request_class": hints.get("x-claude-code-request-class"),
+            "agent_type": hints.get("x-claude-code-agent-type"),
+            "agent_fork_result": agent_fork,
+            "auth": record.auth,
+            "keyed_env": keyed_env,
+            "secret_in_request": _KEYED_SECRET in json.dumps(document, ensure_ascii=False),
             "session_hint": hints.get("x-claude-code-session-id"),
             "hint_names": list(record.hint_header_names),
             "system_sentinels": sorted(set(_SENTINEL_RE.findall(system))),
@@ -274,6 +339,19 @@ class _ForkResponder:
         if main and tag == HOLD_TOOL and first_hold and not tool_done:
             block = {"type": "tool_use", "id": _TOOL_ID, "name": "Bash",
                      "input": {"command": self._tool_command, "description": "fork probe wait"}}
+            payload = probe._message_payload([block], model=model, stop_reason="tool_use",
+                                             message_id=f"msg_forkprobe_{context.ordinal:04d}")
+            return 200, probe._sse_message(payload) if stream else payload
+        if main and tag == KEYED_ENV and first_hold and keyed_env is None:
+            block = {"type": "tool_use", "id": _KEYED_TOOL_ID, "name": "Bash",
+                     "input": {"command": _KEYED_COMMAND, "description": "fork probe environment"}}
+            payload = probe._message_payload([block], model=model, stop_reason="tool_use",
+                                             message_id=f"msg_forkprobe_{context.ordinal:04d}")
+            return 200, probe._sse_message(payload) if stream else payload
+        if main and tag == AGENT_FORK and first_hold and agent_fork is None:
+            block = {"type": "tool_use", "id": _AGENT_FORK_ID, "name": "Agent",
+                     "input": {"description": "fork probe", "prompt": "Reply FORKPROBE-AGENT-FORKED",
+                               "subagent_type": "fork", "run_in_background": False}}
             payload = probe._message_payload([block], model=model, stop_reason="tool_use",
                                              message_id=f"msg_forkprobe_{context.ordinal:04d}")
             return 200, probe._sse_message(payload) if stream else payload
@@ -313,13 +391,12 @@ class _ForkResponder:
             return [dict(row) for row in self.rows]
 
 
-# ------------------------------------------------------- the launch prototype
+# ------------------------------------------------------------- the launcher
 
 # Runs inside the namespace as ``python <this> <spec.json>``: prepares a
-# fresh launch of the fixture ``balanced`` profile, a resume, or a fork (the
-# fresh plan with the fork flags in front of its argv and ``forked_from`` in
-# its record), writes the plan's ids, then performs it with the real
-# ``os.execve``.
+# fresh launch of the fixture ``balanced`` profile, a resume, or a fork
+# (``Runtime.prepare`` with ``action="fork"``), writes the plan's ids, then
+# performs it (``Runtime.perform``) with the real ``os.execve``.
 _LAUNCHER = r'''
 import dataclasses, json, os, sys
 spec = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -344,26 +421,29 @@ runtime._live_prefixes = lambda: frozenset()
 store = runtime.session_store
 plan = {"mode": spec["mode"]}
 try:
-    if spec["mode"] == "resume":
-        record = store.load(spec["session"])
-        target = cli.LaunchTarget("record", None, record.get("profile"), bool(record.get("follow")), "resume")
-        prepared = runtime.prepare(target, action="resume", passthrough=spec["passthrough"],
-                                   session_id=spec["session"])
+    if spec["mode"] in ("resume", "fork"):
+        record = store.load(spec["session"] if spec["mode"] == "resume" else spec["parent"])
+        target = cli.LaunchTarget("record", None, record.get("profile"), bool(record.get("follow")),
+                                  spec["mode"])
+        prepared = runtime.prepare(target, action=spec["mode"], passthrough=spec["passthrough"],
+                                   session_id=sessions.managed_id(record))
+    elif spec.get("direct"):
+        # A direct session on one line, with --no-subagents when asked.
+        from charmer import profile
+        target = cli.LaunchTarget("ad-hoc", profile.ad_hoc_direct(spec["direct"]), None, False,
+                                  f"Direct {spec['direct']}")
+        prepared = runtime.prepare(target, action="fresh", passthrough=spec["passthrough"],
+                                   no_subagents=bool(spec.get("no_subagents")))
     else:
         document = runtime.profiles.load("balanced")
         target = cli.LaunchTarget("profile", document, "balanced", True, "Profile balanced")
         prepared = runtime.prepare(target, action="fresh", passthrough=spec["passthrough"])
-    if spec["mode"] == "fork":
-        parent = store.load(spec["parent"])
+    if spec.get("without_switch"):
+        # The negative control: the compiled system-prompt record switch
+        # taken out of the argv again.
         argv = list(prepared.result.argv)
-        if argv[:1] != ["--session-id"]:
-            raise SystemExit("fork prototype: the fresh plan does not start with --session-id")
-        argv = ["--resume", sessions.runtime_session_id(parent), "--fork-session", *argv]
-        record = {**prepared.record, "forked_from": sessions.managed_id(parent)}
-        prepared = dataclasses.replace(prepared, result=dataclasses.replace(prepared.result, argv=argv),
-                                       record=record)
-    if spec.get("extra_client_args"):
-        argv = [*prepared.result.argv, *spec["extra_client_args"]]
+        at = argv.index("--system-prompt-snapshot")
+        del argv[at:at + 2]
         prepared = dataclasses.replace(prepared, result=dataclasses.replace(prepared.result, argv=argv))
     plan.update(managed_id=sessions.managed_id(prepared.record),
                 runtime_id=sessions.runtime_session_id(prepared.record),
@@ -486,6 +566,19 @@ class _Terminal:
             time.sleep(0.1)
         return False
 
+    def wait_any(self, markers: dict[str, str], *, since: int = 0, timeout: float = 60.0) -> str | None:
+        """The name of the first marker the screen shows, or None."""
+
+        deadline = time.monotonic() + timeout
+        while True:
+            screen = self.text(since)
+            for name, marker in markers.items():
+                if " ".join(marker.split()) in screen:
+                    return name
+            if time.monotonic() >= deadline or self.process.poll() is not None:
+                return None
+            time.sleep(0.1)
+
     def send(self, data: bytes) -> None:
         view = memoryview(data)
         while view:
@@ -527,8 +620,12 @@ class _ForkFixture:
         base = Path(tempfile.mkdtemp(prefix="cmfork-"))
         os.chmod(base, 0o700)
         case.addCleanup(shutil.rmtree, base, True)
-        if Path(os.path.realpath(base)).is_relative_to("/tmp"):
-            case.skipTest("BOUNDARY: the namespace's private /tmp needs a test TMPDIR outside /tmp")
+        # The namespace's /tmp is a fixture directory. A test tree under the
+        # host's /tmp (the runner's own, holding the pinned copy and this
+        # fixture) is bound back into it at the same path.
+        real = Path(os.path.realpath(base))
+        self.tmp_rebind = (Path("/tmp") / real.relative_to("/tmp").parts[0]
+                           if real.is_relative_to("/tmp") and real != Path("/tmp") else None)
         self.case = case
         self.environ = {"HOME": str(base / "live" / "home"), "PATH": "/usr/bin:/bin"}
         self.fx = probe.build_fixture(base / "fx", environ=self.environ)
@@ -545,7 +642,11 @@ class _ForkFixture:
         command = (f"touch {self.tool_started}; n=0; while [ ! -e {self.release} ] && [ $n -lt 900 ]; "
                    "do sleep 0.2; n=$((n+1)); done; echo FORKTOOL-OUT$((6*7))")
         self.responder = _ForkResponder(command)
-        self.provider = probe.FakeAnthropicProvider(responder=self.responder).start()
+        # The credentials the fake upstream tells apart: the keyed provider's
+        # key (providerkey), the exact fixture gateway token (gateway) and
+        # any other token (other).
+        self.provider = _ForkProvider(responder=self.responder,
+                                      known_tokens={_KEYED_SECRET: "providerkey"}).start()
         case.addCleanup(self.provider.stop)
         socket_path = self.provider.unix_socket(self.run_dir)
         for server, _thread in self.provider._unix_servers.values():
@@ -554,7 +655,8 @@ class _ForkFixture:
         self.case.addCleanup(self.stream_release)
         # charmer's gateway: the token file and the endpoint (the bridge port).
         token_dir = state.ensure_private_dir(self.home / ".config" / "charmer")
-        state.atomic_write(token_dir / "api-key", (FIXTURE_GATEWAY_TOKEN + "\n").encode())
+        self.token_file = token_dir / "api-key"
+        state.atomic_write(self.token_file, (FIXTURE_GATEWAY_TOKEN + "\n").encode())
         endpoint.write_config(self.home, endpoint.EndpointConfig(port=self.provider.port))
         # The pinned copy in the fixture's owned location (a hard link of the
         # copy the runner verified and placed).
@@ -582,9 +684,14 @@ class _ForkFixture:
         # A managed launch unsets CLAUDE_CONFIG_DIR (the client keeps its
         # conversations under ~/.claude); the launcher's shell does not set it.
         env.pop("CLAUDE_CONFIG_DIR", None)
+        # The private key file of the fixture's keyed provider (the gateway's
+        # input; the client never reads it).
+        secrets = state.ensure_private_dir(root / "secrets") / "claude.env"
+        state.atomic_write(secrets, f"{_KEYED_ENV_NAME}={_KEYED_SECRET}\n".encode())
         self.env = {
             **env,
             **_HINT_ENV,
+            "CHARMER_SECRET_ENV": str(secrets),
             "CHARMER_HOOK_COMMAND": str(self.wrapper),
             "PYTHONPATH": os.environ.get("PYTHONPATH", f"{REPO_ROOT / 'src'}"),
         }
@@ -595,7 +702,7 @@ class _ForkFixture:
 
     # ---------------------------------------------------------- launching
 
-    def _argv(self, spec: dict[str, Any]) -> tuple[list[str], Path]:
+    def _argv(self, spec: dict[str, Any], env: dict[str, str] | None = None) -> tuple[list[str], Path]:
         self._count += 1
         spec_path = self.specs / f"launch-{self._count:02d}.json"
         plan = self.specs / f"plan-{self._count:02d}.json"
@@ -604,10 +711,12 @@ class _ForkFixture:
             "managed_root": str(self.fx.root / "managed-policy"), "contract": str(_CONTRACT_PATH),
         }
         state.atomic_write(spec_path, json.dumps(spec).encode())
-        argv = probe.isolated_argv([self.python, str(self.launcher), str(spec_path)], env_keys=list(self.env),
+        argv = probe.isolated_argv([self.python, str(self.launcher), str(spec_path)],
+                                   env_keys=list(env if env is not None else self.env),
                                    bridges=(self.bridge,), cwd=self.fx.project_dir, pid_namespace=True)
         at = argv.index("--dev-bind") + 3
-        argv[at:at] = ["--bind", str(self.nstmp), "/tmp"]
+        rebind = ["--bind", str(self.tmp_rebind), str(self.tmp_rebind)] if self.tmp_rebind else []
+        argv[at:at] = ["--bind", str(self.nstmp), "/tmp", *rebind]
         return argv, plan
 
     @staticmethod
@@ -617,12 +726,17 @@ class _ForkFixture:
         except (OSError, ValueError):
             return {}
 
-    def headless(self, mode: str, prompt: str, **spec: Any) -> dict[str, Any]:
+    def headless(self, mode: str, prompt: str, *, inherited: dict[str, str] | None = None,
+                 **spec: Any) -> dict[str, Any]:
+        """One headless launch; ``inherited``: variables the launching shell
+        adds to the fixture environment for this launch only."""
+
+        env = {**self.env, **(inherited or {})}
         argv, plan_path = self._argv({"mode": mode, "passthrough": ["-p", prompt, *spec.pop("passthrough", ())],
-                                      **spec})
+                                      **spec}, env)
         out, err = self.fx.root / f"out-{self._count:02d}.txt", self.fx.root / f"err-{self._count:02d}.txt"
         with open(out, "wb") as stdout, open(err, "wb") as stderr:
-            process = subprocess.Popen(argv, cwd=self.fx.project_dir, env=self.env, stdin=subprocess.DEVNULL,
+            process = subprocess.Popen(argv, cwd=self.fx.project_dir, env=env, stdin=subprocess.DEVNULL,
                                        stdout=stdout, stderr=stderr, close_fds=True, process_group=0)
             try:
                 code = process.wait(timeout=_RUN_TIMEOUT)
@@ -673,6 +787,16 @@ class _ForkFixture:
 
         slug = session_facts._native_project_slug(str(self.fx.project_dir))
         return self.claude_dir / "projects" / slug / f"{runtime_id}.jsonl"
+
+    def conversation_ids(self) -> list[str]:
+        """The fixture project's top-level conversation ids (names only)."""
+
+        folder = self.transcript("x").parent
+        try:
+            return sorted(entry.name.removesuffix(".jsonl") for entry in os.scandir(folder)
+                          if entry.name.endswith(".jsonl") and entry.is_file(follow_symlinks=False))
+        except FileNotFoundError:
+            return []
 
     def record_bytes(self, managed_id: str) -> bytes | None:
         path = self.state_root / "sessions" / f"{managed_id}.json"
@@ -758,6 +882,11 @@ class ForkLaunchProbe(unittest.TestCase):
     boundary: str | None = None
     rows: dict[str, dict[str, Any]] = {}
     verdicts: dict[str, str] = {}
+    # Every row of the class: the completion record needs all of them.
+    ROWS = ("G1-snapshot", "G1-compacted", "G1-control-without-switch", "G1-repeat", "G1-keyed-fence",
+            "G1-keyed-fence-control-wrong-token", "G2-idle",
+            "G2b-streaming", "G2b-tool", "G2b-streaming-pty", "G2b-tool-pty",
+            "G3-builtin-fork")
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -776,9 +905,16 @@ class ForkLaunchProbe(unittest.TestCase):
             print(f"client check fork-launch: BOUNDARY {cls.boundary}")
         elif cls.verdicts:
             failed = sorted(name for name, verdict in cls.verdicts.items() if verdict != "pass")
-            overall = "PASS" if not failed else "FAIL"
+            missing = sorted(set(cls.ROWS) - set(cls.verdicts))
             detail = " ".join(f"{name}={verdict}" for name, verdict in sorted(cls.verdicts.items()))
-            print(f"client check fork-launch: {overall} client={cls.version} {detail}")
+            if not failed and not missing:
+                # The completion record: every row ran and passed.
+                print(f"client check fork-launch: PASS client={cls.version} {detail}")
+            elif not failed:
+                print(f"client check fork-launch: INCOMPLETE client={cls.version} {detail} "
+                      f"not run: {','.join(missing)}")
+            else:
+                print(f"client check fork-launch: FAIL client={cls.version} {detail}")
         super().tearDownClass()
 
     def setUp(self) -> None:
@@ -788,10 +924,14 @@ class ForkLaunchProbe(unittest.TestCase):
         self.fixture = _ForkFixture(self, self.trusted, self.version)
 
     def _row(self, name: str, row: dict[str, Any], problems: list[str]) -> None:
+        """Print the row's evidence, then fail the test on any problem."""
+
         row = {**row, "problems": problems}
         type(self).rows[name] = row
         type(self).verdicts[name] = "pass" if not problems else "fail"
         print(f"fork-launch row {name}: {json.dumps(row, sort_keys=True, default=str)}", flush=True)
+        if problems:
+            self.fail(f"{name}: " + "; ".join(problems))
 
     def _lead_rows(self, since: float = 0.0, tag: str | None = None) -> list[dict[str, Any]]:
         return [row for row in self.fixture.responder.snapshot()
@@ -810,8 +950,12 @@ class ForkLaunchProbe(unittest.TestCase):
                              f"parent compaction: {compacted.get('error')} {compacted['stderr'][-800:]}")
         return first
 
-    def _g1(self, name: str, *, compact: bool, extra: tuple[str, ...] = (), resume_fork: bool = False,
-            resume_extra: tuple[str, ...] = ()) -> None:
+    def _g1(self, name: str, *, compact: bool, resume_fork: bool = False, control: bool = False) -> None:
+        """One headless fork of a headless parent. ``control``: the compiled
+        system-prompt record switch is taken out of the fork's launch and its
+        resume, which must then send the parent's recorded prompt (the
+        switch is what gives a fork its own)."""
+
         fx = self.fixture
         first = self._parent_headless(compact=compact)
         parent, parent_rt = first["managed_id"], first["runtime_id"]
@@ -819,8 +963,9 @@ class ForkLaunchProbe(unittest.TestCase):
         before = {"transcript": _transcript_facts(parent_file), "record": fx.record_bytes(parent),
                   "scope": fx.scope_digest(parent)}
         started = time.monotonic()
-        fork = fx.headless("fork", T2, parent=parent, extra_client_args=list(extra))
+        fork = fx.headless("fork", T2, parent=parent, without_switch=control)
         child = fork.get("managed_id")
+        prompt_owner = [parent] if control else [child]
         problems: list[str] = []
         if fork.get("rc") != 0:
             problems.append(f"fork exit {fork.get('rc')}: {fork.get('error')}")
@@ -829,6 +974,8 @@ class ForkLaunchProbe(unittest.TestCase):
         argv = fork.get("argv") or []
         if argv[:5] != ["--resume", parent_rt, "--fork-session", "--session-id", child]:
             problems.append("fork argv shape")
+        if ("--system-prompt-snapshot" in argv) == control:
+            problems.append(f"the fork's argv {'still has' if control else 'lacks'} the system-prompt record switch")
         after = {"transcript": _transcript_facts(parent_file), "record": fx.record_bytes(parent),
                  "scope": fx.scope_digest(parent)}
         if after != before:
@@ -842,10 +989,10 @@ class ForkLaunchProbe(unittest.TestCase):
         history = SUMMARY if compact else T1
         if history not in lead.get("messages_markers", ()):
             problems.append(f"the fork's first lead request lacks the parent's {history}")
-        if lead.get("system_sentinels") != [child]:
-            owner = ("parent" if lead.get("system_sentinels") == [parent]
-                     else str(lead.get("system_sentinels")))
-            problems.append(f"the fork's system prompt names {owner}, not the fork")
+        if lead.get("system_sentinels") != prompt_owner:
+            owner = ("parent" if lead.get("system_sentinels") == [parent] else
+                     "fork" if lead.get("system_sentinels") == [child] else str(lead.get("system_sentinels")))
+            problems.append(f"the fork's system prompt names {owner}, not the {'parent' if control else 'fork'}")
         if not lead.get("system_lead_body"):
             problems.append("the fork's system prompt lacks the lead body")
         hooks = [row for row in fx.hook_rows() if row.get("call") == "session-event"
@@ -862,20 +1009,31 @@ class ForkLaunchProbe(unittest.TestCase):
         daemon = fx.daemon_state()
         if daemon["private_tmp_daemon_dirs"] or daemon["jobs_dir"]:
             problems.append("a daemon or jobs directory appeared")
+        if "fork-own" not in lead.get("messages_prefaces", ()) or "fork-shared" in lead.get(
+                "messages_prefaces", ()):
+            problems.append(f"the fork's first request lacks its own-fork notice ({lead.get('messages_prefaces')})")
         record = fx.record(child) if child else {}
+        if record.get("identity_state") != "authoritative" or record.get("pending_forks"):
+            problems.append(f"the fork's record is {record.get('identity_state')} with pending forks "
+                            f"{record.get('pending_forks')}")
         resumed: dict[str, Any] = {}
         if resume_fork and child:
             again_started = time.monotonic()
-            again = fx.headless("resume", T5, session=child, extra_client_args=list(resume_extra))
+            again = fx.headless("resume", T5, session=child, without_switch=control)
             again_lead = self._lead_rows(again_started, T5)
-            resumed = {"rc": again.get("rc"), "error": again.get("error"), "extra_client_args": list(resume_extra),
+            again_argv = again.get("argv") or []
+            resumed = {"rc": again.get("rc"), "error": again.get("error"),
+                       "switch": "--system-prompt-snapshot" in again_argv,
                        "system_sentinels": again_lead[0]["system_sentinels"] if again_lead else None,
                        "child_transcript": _transcript_facts(child_file)}
-            if again.get("rc") != 0 or not again_lead or again_lead[0]["system_sentinels"] != [child]:
-                problems.append("the fork's own resume does not send the fork's prompt")
+            if ("--system-prompt-snapshot" in again_argv) == control:
+                problems.append("the fork's resume argv " + ("still has" if control else "lacks")
+                                + " the system-prompt record switch")
+            if again.get("rc") != 0 or not again_lead or again_lead[0]["system_sentinels"] != prompt_owner:
+                problems.append(f"the fork's own resume does not send the {'parent' if control else 'fork'}'s prompt")
         row = {
             "client": self.version, "parent": parent[:8], "fork": (child or "")[:8],
-            "extra_client_args": list(extra),
+            "control_without_switch": control,
             "parent_transcript": after["transcript"], "parent_unchanged": after == before,
             "parent_hook_events_after_fork": len(parent_hooks),
             "fork_transcript": child_facts,
@@ -903,12 +1061,136 @@ class ForkLaunchProbe(unittest.TestCase):
     def test_g1_fork_of_a_compacted_parent(self) -> None:
         self._g1("G1-compacted", compact=True)
 
-    def test_g1_fork_with_the_prompt_snapshot_switched_off(self) -> None:
-        self._g1("G1-snapshot-off", compact=False, extra=_SNAPSHOT_OFF, resume_fork=True)
+    def test_g1_control_a_fork_without_the_switch_sends_the_parents_prompt(self) -> None:
+        self._g1("G1-control-without-switch", compact=False, resume_fork=True, control=True)
 
-    def test_g1_fork_and_its_resume_with_the_prompt_snapshot_switched_off(self) -> None:
-        self._g1("G1-snapshot-off-every-launch", compact=False, extra=_SNAPSHOT_OFF, resume_fork=True,
-                 resume_extra=_SNAPSHOT_OFF)
+    FORK_STARTS = 5
+
+    def test_g1_every_fork_start_reaches_the_forks_hooks(self) -> None:
+        """One parent forked ``FORK_STARTS`` times in a row: every fork's
+        SessionStart hook begins and ends on the fork's own hooks with source
+        ``fork``, the fork's id and exit 0 (counted, so a miss is a defect)."""
+
+        fx = self.fixture
+        parent = self._parent_headless(compact=False)["managed_id"]
+        counts = {"forks": 0, "exit_0": 0, "begun": 0, "recorded": 0, "notice": 0}
+        durations: list[int] = []
+        for _ in range(self.FORK_STARTS):
+            started = time.monotonic()
+            fork = fx.headless("fork", T2, parent=parent)
+            child = fork.get("managed_id")
+            counts["forks"] += 1
+            counts["exit_0"] += fork.get("rc") == 0
+            rows = [row for row in fx.hook_rows() if row.get("managed_id") == child and row.get("event") == "start"]
+            counts["begun"] += any(row.get("call") == "session-event-begin" and row.get("source") == "fork"
+                                   and row.get("session_id") == child for row in rows)
+            done = [row for row in rows if row.get("call") == "session-event" and row.get("source") == "fork"
+                    and row.get("session_id") == child and row.get("rc") == 0]
+            counts["recorded"] += bool(done)
+            durations.extend(row.get("ms") for row in done)
+            leads = self._lead_rows(started, T2)
+            counts["notice"] += bool(leads and "fork-own" in leads[0]["messages_prefaces"])
+        problems = [f"{key} {value}/{self.FORK_STARTS}" for key, value in counts.items()
+                    if value != self.FORK_STARTS]
+        self._row("G1-repeat", {"client": self.version, "parent": parent[:8], "counts": counts,
+                                "start_hook_ms": durations}, problems)
+
+    def test_g1_keyed_direct_no_subagents_fork_keeps_its_fence(self) -> None:
+        """The keyed-fence case on the client: a direct ``--no-subagents``
+        session on a keyed line of the fixture catalog is forked while the
+        launching shell carries the provider's key variable. The fork sends
+        the parent's selector under the same lead set and fence settings,
+        authenticates only with the token helper's gateway token (label
+        ``gateway``; never the provider key, which reaches no request),
+        keeps the subagent policy, and its environment lacks the inherited
+        key variable (a Bash call of the fork reports it unset). A provider
+        switched off between the preparation and the commit refuses before
+        the client runs, so that case is the host test named in the row."""
+
+        self._keyed_fence("G1-keyed-fence")
+
+    def test_g1_control_a_wrong_gateway_token_is_told_apart(self) -> None:
+        """The keyed-fence row's negative control: the token helper hands the
+        fork another well-formed token, which the fake upstream labels
+        ``other``; the row's credential check must report it."""
+
+        self._keyed_fence("G1-keyed-fence-control-wrong-token", wrong_token=True)
+
+    def _keyed_fence(self, name: str, *, wrong_token: bool = False) -> None:
+        fx = self.fixture
+        first = fx.headless("fresh", T1, direct=_KEYED_LINE, no_subagents=True)
+        self.assertEqual(first.get("rc"), 0, f"parent launch: {first.get('error')} {first['stderr'][-800:]}")
+        parent = first["managed_id"]
+        parent_leads = self._lead_rows(0.0, T1)
+        started = time.monotonic()
+        if wrong_token:
+            state.atomic_write(fx.token_file, ("f" * 64 + "\n").encode())
+        try:
+            fork = fx.headless("fork", KEYED_ENV, parent=parent, passthrough=("--allowedTools", "Bash"),
+                               inherited={_KEYED_ENV_NAME: _KEYED_SECRET})
+        finally:
+            state.atomic_write(fx.token_file, (FIXTURE_GATEWAY_TOKEN + "\n").encode())
+        child = fork.get("managed_id")
+        rows = [row for row in fx.responder.snapshot() if row["received"] >= started]
+        leads = [row for row in rows if row["main"] and row["tag"] == KEYED_ENV]
+        problems: list[str] = []
+        if fork.get("rc") != 0:
+            problems.append(f"fork exit {fork.get('rc')}: {fork.get('error')}")
+        if reply_text(KEYED_ENV) not in fork.get("stdout", ""):
+            problems.append("the fork printed no reply")
+        record = fx.record(child) if child else {}
+        applied = record.get("applied") or {}
+        if (record.get("forked_from"), record.get("profile"), record.get("follow"),
+                applied.get("no_subagents")) != (parent, None, False, True):
+            problems.append("the fork's record is not a pinned --no-subagents direct fork of the parent")
+        parent_models = sorted({str(row["model"]) for row in parent_leads})
+        fork_models = sorted({str(row["model"]) for row in leads})
+        if not leads or fork_models != parent_models:
+            problems.append(f"the fork's selector {fork_models} is not the parent's {parent_models}")
+
+        def scope_file(mid: str, name: str) -> bytes:
+            try:
+                return (fx.state_root / "scopes" / mid / name).read_bytes()
+            except OSError:
+                return b""
+
+        same_lead_set = bool(child) and scope_file(parent, scope_mod.LEAD_SET_JSON) == scope_file(
+            child, scope_mod.LEAD_SET_JSON) != b""
+        settings = [json.loads(scope_file(mid, "settings.json") or b"{}") for mid in (parent, child or parent)]
+        fence_keys = ("availableModels", "model", "modelPicker", "apiKeyHelper")
+        same_fence = all(settings[0].get(key) == settings[1].get(key) for key in fence_keys)
+        if not same_lead_set or not same_fence:
+            problems.append("the fork's lead set or fence settings differ from the parent's")
+        auths = sorted({str(row["auth"]) for row in rows})
+        only_gateway = bool(rows) and auths == ["gateway"]
+        if wrong_token:
+            # The control: the check must tell the wrong token apart.
+            if only_gateway or auths != ["other"]:
+                problems.append(f"the credential check did not tell the wrong token apart ({auths})")
+        elif not only_gateway:
+            problems.append(f"the fork authenticated with {auths}, not only the helper's gateway token")
+        if any(row["secret_in_request"] for row in fx.responder.snapshot()):
+            problems.append("the provider key reached a request")
+        keyed = next((row["keyed_env"] for row in leads if row["keyed_env"]), None)
+        if keyed != "unset":
+            problems.append(f"the fork's Bash call found {_KEYED_ENV_NAME} {keyed}")
+        if _KEYED_ENV_NAME not in (fork.get("env_unset") or ()):
+            problems.append(f"the fork's plan does not unset {_KEYED_ENV_NAME}")
+        daemon = fx.daemon_state()
+        if daemon["private_tmp_daemon_dirs"] or daemon["jobs_dir"]:
+            problems.append("a daemon or jobs directory appeared")
+        self._row(name, {
+            "client": self.version, "parent": parent[:8], "fork": (child or "")[:8], "line": _KEYED_LINE,
+            "control_wrong_token": wrong_token, "parent_auth": sorted({str(row["auth"]) for row in parent_leads}),
+            "selector": {"parent": parent_models, "fork": fork_models},
+            "same_lead_set": same_lead_set, "same_fence_settings": same_fence, "auth": auths,
+            "inherited_key_in_fork": keyed, "fork_requests": len(rows),
+            "fork_record": {"forked_from": (record.get("forked_from") or "")[:8], "profile": record.get("profile"),
+                            "follow": record.get("follow"), "no_subagents": applied.get("no_subagents")},
+            "revocation_before_commit": "host test tests.test_fork.ForkKeyedFenceTests."
+                                        "test_a_provider_switched_off_after_the_preparation_refuses",
+            "daemon": daemon,
+        }, problems)
 
     # ------------------------------------------------------------- G2
 
@@ -938,10 +1220,7 @@ class ForkLaunchProbe(unittest.TestCase):
     def test_g2_idle_parent_stays_live_while_the_fork_runs(self) -> None:
         self._g2("G2-idle")
 
-    def test_g2_idle_parent_with_the_fork_prompt_snapshot_switched_off(self) -> None:
-        self._g2("G2-idle-snapshot-off", extra=_SNAPSHOT_OFF)
-
-    def _g2(self, name: str, *, extra: tuple[str, ...] = ()) -> None:
+    def _g2(self, name: str) -> None:
         fx = self.fixture
         parent_term, parent_plan = self._start_parent()
         parent, parent_rt = parent_plan["managed_id"], parent_plan["runtime_id"]
@@ -952,7 +1231,7 @@ class ForkLaunchProbe(unittest.TestCase):
         parent_file = fx.transcript(parent_rt)
         at_fork = parent_file.read_bytes()
         record_at_fork = fx.record_bytes(parent)
-        fork_term, fork_plan_path = fx.terminal("fork", parent=parent, extra_client_args=list(extra))
+        fork_term, fork_plan_path = fx.terminal("fork", parent=parent)
         if not fx.ready(fork_term):
             self.fail(f"fork never reached its prompt: {fx.plan(fork_plan_path).get('error')} "
                       f"{fork_term.text()[-600:]}")
@@ -991,13 +1270,17 @@ class ForkLaunchProbe(unittest.TestCase):
                      if row["system_sentinels"] == [parent] else str(row["system_sentinels"]), row["system_sha256"])
                     for row in self._lead_rows(0.0, tag)]
 
+        by_turn = {"T1-parent": names(T1), "T2-fork": names(T2), "T3-parent": names(T3), "T4-fork": names(T4)}
+        for turn, sent in by_turn.items():
+            owner = turn.rsplit("-", 1)[1]
+            if not sent or any(entry[0] != owner for entry in sent):
+                problems.append(f"turn {turn} sent {[entry[0] for entry in sent]}, not the {owner}'s prompt")
         self._row(name, {
-            "client": self.version, "parent": parent[:8], "fork": child[:8], "extra_client_args": list(extra),
+            "client": self.version, "parent": parent[:8], "fork": child[:8],
             "parent_transcript": parent_facts, "fork_transcript": child_facts,
             "fork_first_lead": {key: leads[0].get(key) for key in ("messages_markers", "roles", "system_sentinels")}
             if leads else None,
-            "system_prompt_by_turn": {"T1-parent": names(T1), "T2-fork": names(T2), "T3-parent": names(T3),
-                                      "T4-fork": names(T4)},
+            "system_prompt_by_turn": by_turn,
             "parent_record_pending_forks": fx.record(parent).get("pending_forks"),
             "fork_record": {key: record.get(key) for key in ("forked_from", "identity_state", "pending_forks")},
             "exits": [fork_exit, parent_exit], "daemon": fx.daemon_state(),
@@ -1112,30 +1395,72 @@ class ForkLaunchProbe(unittest.TestCase):
     # ------------------------------------------------------------- G3
 
     def test_g3_builtin_fork_in_a_charmer_session_is_recorded(self) -> None:
+        """Claude Code's own ``/fork`` in a charmer session: its session copy
+        never starts — refused for the launch flags, or not offered while
+        the agent view is off (``/fork`` is then the fork-subagent command,
+        which needs a directive) — no new conversation file and no daemon or
+        jobs directory appear, and the model's own Agent call of a fork is
+        refused. What ``/fork <directive>`` does is recorded: while the agent
+        view is off it starts a fork subagent in-process on the lead's model,
+        which neither the fork gate nor the ``Agent(fork)`` deny reaches."""
+
         fx = self.fixture
         term, plan = self._start_parent()
         if not self._turn(term, T1, reply_text(T1)):
             self.fail(f"session turn one: {term.text()[-600:]}")
+        before = fx.conversation_ids()
+        # The model's own fork: the lead's turn answered with an Agent call
+        # of subagent_type fork.
+        since = time.monotonic()
+        answered = self._turn(term, AGENT_FORK, reply_text(AGENT_FORK))
+        window = [row for row in fx.responder.snapshot() if row["received"] >= since]
+        agent_fork = next((row["agent_fork_result"] for row in window if row["agent_fork_result"]), None)
+        agent_fork_requests = len([row for row in window if row["agent_type"] == "fork"])
         mark = term.mark()
         term.send(b"/fork")
         time.sleep(1.0)
         menu = term.text(mark)
         term.send(b"\r")
-        refused = term.wait_for("Can't fork", since=mark, timeout=20)
-        time.sleep(2.0)
-        screen = term.text(mark)
-        found = re.search(r"Can.t fork:[^⎿❯]{0,480}", screen)
+        bare = term.wait_any({"launch-flag refusal": "Can't fork", "fork-subagent usage": "Usage: /fork"},
+                             since=mark, timeout=20)
+        time.sleep(1.0)
+        found = re.search(r"Can.t fork:[^⎿❯]{0,480}", term.text(mark))
+        mark = term.mark()
+        since = time.monotonic()
+        term.send(b"/fork FORKG3 directive")
+        time.sleep(1.0)
+        term.send(b"\r")
+        directive = term.wait_any({"launch-flag refusal": "Can't fork", "fork subagent started": "forked forkg3",
+                                   "not available": "Forking is not available",
+                                   "before the first turn": "Cannot fork before"}, since=mark, timeout=30)
+        time.sleep(4.0)
+        directive_rows = [row for row in fx.responder.snapshot()
+                          if row["received"] >= since and row["request_class"] == "subagent"]
         daemon = fx.daemon_state()
         exit_code = self._exit(term)
+        copies = sorted(set(fx.conversation_ids()) - set(before))
         problems = []
-        if not refused:
-            problems.append("the client did not refuse /fork")
+        if not answered or agent_fork not in ("denied", "unavailable") or agent_fork_requests:
+            problems.append(f"the model's Agent fork call was not refused: {agent_fork}, "
+                            f"{agent_fork_requests} fork request(s)")
+        if bare is None:
+            problems.append("/fork showed neither the launch-flag refusal nor the fork-subagent usage")
+        if directive is None:
+            problems.append("/fork <directive> showed no known outcome")
+        if copies:
+            problems.append(f"a new conversation file appeared: {len(copies)}")
         if daemon["private_tmp_daemon_dirs"] or daemon["jobs_dir"]:
             problems.append("a daemon or jobs directory appeared")
         self._row("G3-builtin-fork", {
-            "client": self.version, "session": plan["managed_id"][:8], "refused": refused,
-            "refusal": found.group(0)[:480] if found else None,
-            "menu_lists_fork": "/fork" in menu, "daemon": daemon, "exit": exit_code,
+            "client": self.version, "session": plan["managed_id"][:8],
+            "menu_command": ("session copy" if "Copy this conversation into a new background session" in menu
+                             else "fork subagent" if "Spawn a background agent" in menu else None),
+            "bare": bare, "refusal": found.group(0)[:480] if found else None,
+            "agent_fork": agent_fork, "agent_fork_requests": agent_fork_requests,
+            "directive": directive,
+            "directive_subagent_models": sorted({str(row["model"]) for row in directive_rows}),
+            "directive_agent_types": sorted({str(row["agent_type"]) for row in directive_rows}),
+            "new_conversations": len(copies), "daemon": daemon, "exit": exit_code,
         }, problems)
 
 

@@ -161,6 +161,7 @@ HELP_EXAMPLES = (
     ("charmer --profile NAME", "launch a saved profile"),
     ("charmer -c", "continue the last session in this directory"),
     ("charmer -r SESSION", "resume a session (its id, an 8+ character prefix, or its name)"),
+    ("charmer -r SESSION --fork", "start a new session from a copy of that session's conversation"),
     ("charmer direct --model MODEL", "launch one model as the lead"),
     ("charmer doctor", "check health, with one fix for each finding"),
     ("charmer --profile NAME -- ARGS", "pass ARGS to Claude Code unchanged"),
@@ -245,6 +246,7 @@ def build_parser() -> argparse.ArgumentParser:
     session_group = parser.add_mutually_exclusive_group()
     session_group.add_argument("-c", "--continue", dest="continue_last", action="store_true", help="continue the last managed session in this directory")
     session_group.add_argument("-r", "--resume", nargs="?", const="", metavar="SESSION", help="resume a managed session: its id, an id prefix of 8 or more characters, or its name; no value opens the sessions picker")
+    parser.add_argument("--fork", action="store_true", help="with -r SESSION: start a new managed session from a copy of SESSION's conversation, with its own record and scope and the lineup SESSION would get at its next resume; SESSION is not changed and may keep running; client flags after -- must be given again")
     parser.add_argument("--force", action="store_true", help="resume despite a background-liveness marker (only bypasses the heuristic ● check; identity/transcript guards still apply)")
     parser.add_argument("--line", action="store_true", help="force the line-based UI (no full-screen curses interface)")
     parser.add_argument("--no-color", action="store_true", help="disable all color output (the NO_COLOR environment variable is also honored)")

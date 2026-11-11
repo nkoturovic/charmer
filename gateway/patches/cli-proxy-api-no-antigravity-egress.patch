@@ -61,7 +61,7 @@ index 00000000..ee7bef8f
 +	}
 +}
 diff --git a/cmd/server/main.go b/cmd/server/main.go
-index a1cf06cc..ade49cf5 100644
+index ba675971..ee06ecb0 100644
 --- a/cmd/server/main.go
 +++ b/cmd/server/main.go
 @@ -26,6 +26,7 @@ import (
@@ -72,7 +72,7 @@ index a1cf06cc..ade49cf5 100644
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/managementasset"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/misc"
-@@ -205,6 +206,8 @@ func main() {
+@@ -207,6 +208,8 @@ func main() {
  
  	// Parse the command-line flags.
  	flag.Parse()
@@ -81,7 +81,7 @@ index a1cf06cc..ade49cf5 100644
  
  	if discoverGateways || discoverJSON {
  		cfgInclude, cfgExclude := cmd.LoadDiscoveryScanFilters(configPath)
-@@ -758,9 +761,7 @@ func main() {
+@@ -761,9 +764,7 @@ func main() {
  		if tuiMode {
  			if standalone {
  				// Standalone mode: start an embedded local server and connect TUI client to it.
@@ -92,7 +92,7 @@ index a1cf06cc..ade49cf5 100644
  				hook := tui.NewLogHook(2000)
  				hook.SetFormatter(&logging.LogFormatter{})
  				log.AddHook(hook)
-@@ -833,14 +834,39 @@ func main() {
+@@ -836,14 +837,39 @@ func main() {
  			}
  		} else {
  			// Start the main proxy service
@@ -213,7 +213,7 @@ index 57aff6b8..00a78a6b 100644
  	if configFilePath == "" {
  		log.Debug("management asset auto-updater skipped: empty config path")
 diff --git a/internal/misc/antigravity_version.go b/internal/misc/antigravity_version.go
-index 1e77c2d5..bc2cdbfb 100644
+index c417fca9..e2c327fe 100644
 --- a/internal/misc/antigravity_version.go
 +++ b/internal/misc/antigravity_version.go
 @@ -13,6 +13,8 @@ import (
@@ -225,7 +225,7 @@ index 1e77c2d5..bc2cdbfb 100644
  )
  
  const (
-@@ -55,6 +57,9 @@ var (
+@@ -56,6 +58,9 @@ var (
  // StartAntigravityVersionUpdater starts a background goroutine that periodically refreshes the cached antigravity version.
  // This is intentionally decoupled from request execution to avoid blocking executors on version lookups.
  func StartAntigravityVersionUpdater(ctx context.Context) {
@@ -508,17 +508,17 @@ index 59a0329b..c514edc4 100644
  }
  
 diff --git a/internal/runtime/executor/helps/xai_version.go b/internal/runtime/executor/helps/xai_version.go
-index f6d1e83f..7b27b5be 100644
+index 3b909c51..d7ac7f29 100644
 --- a/internal/runtime/executor/helps/xai_version.go
 +++ b/internal/runtime/executor/helps/xai_version.go
-@@ -12,6 +12,7 @@ import (
- 	"time"
+@@ -13,6 +13,7 @@ import (
  
+ 	"github.com/MoeForge/moego/ojson"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 +	"github.com/router-for-me/CLIProxyAPI/v8/internal/localmode"
  	log "github.com/sirupsen/logrus"
- 	"github.com/tidwall/gjson"
  )
+ 
 @@ -54,6 +55,9 @@ func GetXAIClientVersion() string {
  // A later call cancels the previous goroutine and binds the new service context and proxy URL.
  // It executes a single fetch on startup and then polls every 3 hours without multiple retries on failure.
@@ -653,7 +653,7 @@ index 00000000..d666b9f3
 +	}
 +}
 diff --git a/sdk/cliproxy/service_lifecycle.go b/sdk/cliproxy/service_lifecycle.go
-index 118388d7..0e813610 100644
+index 7cf485cc..a710c620 100644
 --- a/sdk/cliproxy/service_lifecycle.go
 +++ b/sdk/cliproxy/service_lifecycle.go
 @@ -9,6 +9,7 @@ import (
@@ -664,7 +664,7 @@ index 118388d7..0e813610 100644
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/redisqueue"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
-@@ -446,5 +447,12 @@ func (s *Service) startModelCatalogUpdaters(ctx context.Context) {
+@@ -457,5 +458,12 @@ func (s *Service) startModelCatalogUpdaters(ctx context.Context) {
  		registry.StartModelCatalogUpdaters(ctx, cfg.Models, cfg.Home.Enabled)
  		proxyURL = cfg.ProxyURL
  	}

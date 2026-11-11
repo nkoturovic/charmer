@@ -49,7 +49,7 @@ use `PYTHONIOENCODING=utf-8` when their exact text matters.
 ## Launch
 
 ```text
-charmer [--profile <name> | --profile-file <path>] [-c | -r [<id>]] [--force] [--line] [--no-color] [--print-launch] [--version] [-- <claude-args>]
+charmer [--profile <name> | --profile-file <path>] [-c | -r [<id>]] [--fork] [--force] [--line] [--no-color] [--print-launch] [--version] [-- <claude-args>]
 charmer <command>
 ```
 
@@ -59,6 +59,7 @@ charmer <command>
 | `--profile-file <path>` | launch one unsaved profile JSON (pinned, nameless); '-' reads stdin and forces noninteractive; resume/continue refuse it; nothing is saved |
 | `-c`, `--continue` | continue the last managed session in this directory |
 | `-r [<id>]`, `--resume [<id>]` | resume a managed session: its id, an id prefix of 8 or more characters, or its name; no value opens the sessions picker |
+| `--fork` | with -r SESSION: start a new managed session from a copy of SESSION's conversation, with its own record and scope and the lineup SESSION would get at its next resume; SESSION is not changed and may keep running; client flags after -- must be given again |
 | `--force` | resume despite a background-liveness marker (only bypasses the heuristic ● check; identity/transcript guards still apply) |
 | `--line` | force the line-based UI (no full-screen curses interface) |
 | `--no-color` | disable all color output (the NO_COLOR environment variable is also honored) |
@@ -73,6 +74,7 @@ Examples:
 | `charmer --profile <name>` | launch a saved profile |
 | `charmer -c` | continue the last session in this directory |
 | `charmer -r <id>` | resume a session (its id, an 8+ character prefix, or its name) |
+| `charmer -r <id> --fork` | start a new session from a copy of that session's conversation |
 | `charmer direct --model <model>` | launch one model as the lead |
 | `charmer doctor` | check health, with one fix for each finding |
 | `charmer --profile <name> -- <claude-args>` | pass `<claude-args>` to Claude Code unchanged |

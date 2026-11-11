@@ -19,6 +19,11 @@ compiled settings and routes until their next launch or resume.
 
 ### Added
 
+- `--fork` with `charmer -r` (or **N** on the sessions screen) starts a new
+  managed session from a copy of a session's conversation, with its own
+  record, scope, hooks and lead prompt and the lineup the session would get
+  at its next resume. The original is not changed and may keep running.
+  `--print-launch` shows the fork's command and writes nothing.
 - A keyed OpenAI-compatible provider can be declared on a private network
   (`charmer providers add --network loopback|lan|tailnet …`). Its key is
   sent over plain HTTP only to addresses in that network, checked at
@@ -32,6 +37,15 @@ compiled settings and routes until their next launch or resume.
 
 ### Changed
 
+- The `fable` line now selects Fable 5.2 (1M context, output up to 128,000
+  tokens; charmer keeps its default effort `high`). Existing profiles follow
+  the stable key without reseeding or effort changes; running Fable 5.1
+  sessions keep their route until they are resumed. A model you declared
+  for Fable 5.2 yourself yields to the shipped line, with one Attention row
+  and its remedy.
+- `--system-prompt-snapshot` is reserved for the launcher in managed
+  sessions; every launch of a fork turns Claude Code's system-prompt record
+  off, so a fork and its own resumes send the fork's lead prompt.
 - Claude Code 2.1.322 is the pinned client (signed for all eight
   platforms; settings keys added: `disableReplyCheck`,
   `disableWindowsBashCommandSplit`, `responseComparisonEnabled`; none
@@ -61,6 +75,14 @@ compiled settings and routes until their next launch or resume.
 
 ### Fixed
 
+- Removing a model you declared with `--successor` keeps that choice for
+  existing sessions, pinned ones included: they resume on the successor
+  without a resume first. Messages say the model was removed by you, not
+  retired by a catalog.
+- `charmer sessions forget` also removes the lead prompts charmer generated
+  for the session.
+- The advice to fork with plain `claude --resume … --fork-session` and adopt
+  the copy is gone: it ran a managed conversation unmanaged.
 - Account rows offer **Add models** and signed-in rows offer **Sign out**.
 - Long results keep their remedies, repeated identical ones included.
 - Settings navigation and arrow keys, form help and choice controls, empty

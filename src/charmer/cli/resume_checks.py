@@ -289,6 +289,22 @@ FORK_LEGACY = ("it is a legacy record — resume it once (charmer -r {m8}) to mi
 FORK_NO_CONVERSATION = ("no conversation file exists for runtime {rid} (expected at {path}); "
                         "a session that has not had a message yet has nothing to fork")
 FORK_CHOICE_SUFFIX = " — then fork it (a saved choice applies to the fork)"
+FORK_INSIDE_SESSION = ("charmer -r SESSION --fork starts a new interactive session: run it in another "
+                       "terminal (in a session, /cm fork prints the command)")
+
+
+def fork_session_refusal(environ: Any) -> str | None:
+    """Why a fork cannot start from ``environ``, or None.
+
+    A fork starts a new interactive session, so it is refused inside a
+    Claude or managed session (any of ``consent.SESSION_MARKERS`` set). The
+    one guard of every surface: the command line before anything is read,
+    the sessions screen before anything is prepared, and the commit of every
+    prepared fork (``Runtime.perform``)."""
+
+    import charmer.cli.consent as consent  # read-only: the session markers
+
+    return FORK_INSIDE_SESSION if consent.session_marker(environ) is not None else None
 
 
 def fork_gate_refusal(runtime: runtime_mod.Runtime, record: dict[str, Any]) -> str | None:

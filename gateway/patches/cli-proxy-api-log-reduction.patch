@@ -1,26 +1,26 @@
 diff --git a/internal/runtime/executor/codex_websockets_duplex.go b/internal/runtime/executor/codex_websockets_duplex.go
-index 41daa3e0..83e3f1f4 100644
+index 29cd1569..1b88b005 100644
 --- a/internal/runtime/executor/codex_websockets_duplex.go
 +++ b/internal/runtime/executor/codex_websockets_duplex.go
-@@ -44,7 +44,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
- 	streamCtx, cancel := context.WithCancel(ctx)
+@@ -57,7 +57,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
+ 	}
  	out := make(chan cliproxyexecutor.StreamChunk)
  	// This first frame was successfully written by ExecuteStream before handoff.
 -	log.Infof("codex websockets: request forwarded session=%s auth=%s url=%s event=response.create", sess.sessionID, auth.ID, initial.wsURL)
 +	log.Debugf("codex websockets: request forwarded session=%s url=%s event=response.create", sess.sessionID, initial.wsURL)
- 	writeErrors := make(chan error, 1)
- 	// Explicit creates have their own request settings. Automatic successors
- 	// inherit the preceding response settings, just as they do upstream.
-@@ -280,7 +280,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
+ 	type writerFailure struct {
+ 		err                    error
+ 		preserveClassification bool
+@@ -642,7 +642,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
  				fail(mapCodexWebsocketWriteError(sess, conn, errWrite))
  				return false
  			}
--			log.Infof("codex websockets: request forwarded session=%s auth=%s url=%s event=%s", sess.sessionID, auth.ID, initial.wsURL, gjson.GetBytes(payload, "type").String())
-+			log.Debugf("codex websockets: request forwarded session=%s url=%s event=%s", sess.sessionID, initial.wsURL, gjson.GetBytes(payload, "type").String())
+-			log.Infof("codex websockets: request forwarded session=%s auth=%s url=%s event=%s", sess.sessionID, auth.ID, initial.wsURL, ojson.GetBytesNoCopy(payload, "type").String())
++			log.Debugf("codex websockets: request forwarded session=%s url=%s event=%s", sess.sessionID, initial.wsURL, ojson.GetBytesNoCopy(payload, "type").String())
  			return true
  		}
  		flushPendingCreates := func() bool {
-@@ -383,7 +383,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
+@@ -774,7 +774,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
  						fail(mapCodexWebsocketWriteError(sess, conn, errWrite))
  						return
  					}
@@ -30,10 +30,10 @@ index 41daa3e0..83e3f1f4 100644
  
  				case "response.create", "response.append":
 diff --git a/internal/runtime/executor/codex_websockets_session.go b/internal/runtime/executor/codex_websockets_session.go
-index cd22affd..02af56ca 100644
+index e0a63405..a8d090c8 100644
 --- a/internal/runtime/executor/codex_websockets_session.go
 +++ b/internal/runtime/executor/codex_websockets_session.go
-@@ -1060,6 +1060,10 @@ func sessionObjectKind(sess *codexWebsocketSession) string {
+@@ -1112,6 +1112,10 @@ func sessionObjectKind(sess *codexWebsocketSession) string {
  	return "ephemeral"
  }
  
@@ -44,7 +44,7 @@ index cd22affd..02af56ca 100644
  func logCodexWebsocketConnected(sessionID string, authID string, wsURL string) {
  	logCodexWebsocketConnectedWithReused(nil, sessionID, authID, wsURL, false)
  }
-@@ -1068,10 +1072,10 @@ func logCodexWebsocketConnectedWithReused(sess *codexWebsocketSession, sessionID
+@@ -1120,10 +1124,10 @@ func logCodexWebsocketConnectedWithReused(sess *codexWebsocketSession, sessionID
  	sessionStr := strings.TrimSpace(sessionID)
  	sessionKind := sessionObjectKind(sess)
  	if reused {
@@ -57,7 +57,7 @@ index cd22affd..02af56ca 100644
  }
  
  func logCodexWebsocketDisconnected(sessionID string, authID string, wsURL string, reason string, err error) {
-@@ -1093,17 +1097,17 @@ func logCodexWebsocketDisconnectedWithLastEvent(sess *codexWebsocketSession, ses
+@@ -1145,17 +1149,17 @@ func logCodexWebsocketDisconnectedWithLastEvent(sess *codexWebsocketSession, ses
  	terminalStatus := isTerminalEvent(lastEvent)
  	if err != nil {
  		if lastEvent != "" {
@@ -106,26 +106,26 @@ index ed887859..b28190e8 100644
  		sessionID: sessionID,
  		entered:   enteredLog,
 diff --git a/internal/runtime/executor/helps/usage_helpers.go b/internal/runtime/executor/helps/usage_helpers.go
-index 08dbbd63..1cebf79c 100644
+index 848be658..258f529b 100644
 --- a/internal/runtime/executor/helps/usage_helpers.go
 +++ b/internal/runtime/executor/helps/usage_helpers.go
-@@ -37,6 +37,7 @@ type UsageReporter struct {
+@@ -42,6 +42,7 @@ type UsageReporter struct {
  	alias                string
  	authID               string
  	authIndex            string
 +	logAuthIndex         string
  	authMu               sync.RWMutex
  	accessTokenHash      string
- 	authType             string
-@@ -154,6 +155,7 @@ func NewUsageReporter(ctx context.Context, provider, model string, auth *cliprox
+ 	requestScopedRules   []internalconfig.RequestScopedErrorRule
+@@ -161,6 +162,7 @@ func NewUsageReporter(ctx context.Context, provider, model string, auth *cliprox
  	if auth != nil {
  		reporter.authID = auth.ID
  		reporter.authIndex = auth.EnsureIndex()
 +		reporter.logAuthIndex = auth.LogIndex()
  		reporter.accessTokenHash = authAccessTokenSHA256(auth)
+ 		reporter.requestScopedRules = cliproxyauth.ResolveRequestScopedErrorRules(auth, cliproxyauth.RequestScopedErrorConfigFromContext(ctx))
  	}
- 	return reporter
-@@ -308,12 +310,13 @@ func (r *UsageReporter) warnModelSubstitution(ctx context.Context) {
+@@ -332,12 +334,13 @@ func (r *UsageReporter) warnModelSubstitution(ctx context.Context) {
  	LogWithRequestID(ctx).Warnf("%s executor: upstream served model %q for requested model %q (auth_index=%s)", providerName, served, r.model, r.authIndexForLog())
  }
  
@@ -297,10 +297,10 @@ index 00000000..004370ea
 +	}
 +}
 diff --git a/internal/runtime/executor/xai_websockets_executor.go b/internal/runtime/executor/xai_websockets_executor.go
-index ec4053b4..586bce82 100644
+index 4af6684a..9a7716a8 100644
 --- a/internal/runtime/executor/xai_websockets_executor.go
 +++ b/internal/runtime/executor/xai_websockets_executor.go
-@@ -995,14 +995,9 @@ func (e *XAIWebsocketsExecutor) executeCompactionTriggerFromWebsocketContext(ctx
+@@ -1008,14 +1008,9 @@ func (e *XAIWebsocketsExecutor) executeCompactionTriggerFromWebsocketContext(ctx
  			}
  		}
  	}
@@ -317,7 +317,7 @@ index ec4053b4..586bce82 100644
  		inputItemsCount,
  		keepPreviousResponseID,
  	)
-@@ -1695,19 +1690,22 @@ func applyXAIWebsocketHeaders(ctx context.Context, headers http.Header, auth *cl
+@@ -1723,19 +1718,22 @@ func applyXAIWebsocketHeaders(ctx context.Context, headers http.Header, auth *cl
  	return headers
  }
  
@@ -332,7 +332,7 @@ index ec4053b4..586bce82 100644
  		return
  	}
  	generateValue := "default"
- 	if generate := gjson.GetBytes(payload, "generate"); generate.Exists() {
+ 	if generate := ojson.GetBytesNoCopy(payload, "generate"); generate.Exists() {
  		generateValue = strings.TrimSpace(generate.Raw)
  	}
 -	log.Infof(
@@ -342,9 +342,9 @@ index ec4053b4..586bce82 100644
  		strings.TrimSpace(sessionID),
 -		strings.TrimSpace(authID),
  		strings.TrimSpace(wsURL),
- 		strings.TrimSpace(gjson.GetBytes(payload, "type").String()),
- 		strings.TrimSpace(gjson.GetBytes(payload, "previous_response_id").String()),
-@@ -1717,20 +1715,18 @@ func logXAIWebsocketRequest(sessionID string, authID string, wsURL string, paylo
+ 		strings.TrimSpace(ojson.GetBytesNoCopy(payload, "type").String()),
+ 		strings.TrimSpace(ojson.GetBytesNoCopy(payload, "previous_response_id").String()),
+@@ -1745,20 +1743,18 @@ func logXAIWebsocketRequest(sessionID string, authID string, wsURL string, paylo
  }
  
  func logXAIWebsocketWarmupCompleted(sessionID string, authID string, wsURL string, payload []byte) {
@@ -355,7 +355,7 @@ index ec4053b4..586bce82 100644
  		strings.TrimSpace(sessionID),
 -		strings.TrimSpace(authID),
  		strings.TrimSpace(wsURL),
- 		strings.TrimSpace(gjson.GetBytes(payload, "response.id").String()),
+ 		strings.TrimSpace(ojson.GetBytesNoCopy(payload, "response.id").String()),
  	)
  }
  
@@ -368,8 +368,8 @@ index ec4053b4..586bce82 100644
 -		strings.TrimSpace(authID),
  		strings.TrimSpace(wsURL),
  		strings.TrimSpace(eventType),
- 		strings.TrimSpace(gjson.GetBytes(payload, "response.id").String()),
-@@ -1746,10 +1742,10 @@ func logXAIWebsocketConnectedWithReused(sess *codexWebsocketSession, sessionID s
+ 		strings.TrimSpace(ojson.GetBytesNoCopy(payload, "response.id").String()),
+@@ -1774,10 +1770,10 @@ func logXAIWebsocketConnectedWithReused(sess *codexWebsocketSession, sessionID s
  	sessionStr := strings.TrimSpace(sessionID)
  	sessionKind := sessionObjectKind(sess)
  	if reused {
@@ -382,7 +382,7 @@ index ec4053b4..586bce82 100644
  }
  
  func logXAIWebsocketDisconnected(sessionID string, authID string, wsURL string, reason string, err error) {
-@@ -1762,17 +1758,17 @@ func logXAIWebsocketDisconnectedWithLastEvent(sess *codexWebsocketSession, sessi
+@@ -1790,17 +1786,17 @@ func logXAIWebsocketDisconnectedWithLastEvent(sess *codexWebsocketSession, sessi
  	terminalStatus := isTerminalEvent(lastEvent)
  	if err != nil {
  		if lastEvent != "" {
@@ -405,7 +405,7 @@ index ec4053b4..586bce82 100644
  
  // CloseXAIWebsocketSessionsForAuthID closes all active xAI upstream websocket sessions
 diff --git a/sdk/cliproxy/auth/conductor_execution.go b/sdk/cliproxy/auth/conductor_execution.go
-index 7d99806b..379460b8 100644
+index a291de91..6c62ca90 100644
 --- a/sdk/cliproxy/auth/conductor_execution.go
 +++ b/sdk/cliproxy/auth/conductor_execution.go
 @@ -8,7 +8,6 @@ import (
@@ -416,7 +416,7 @@ index 7d99806b..379460b8 100644
  	"sort"
  	"strconv"
  	"strings"
-@@ -1913,14 +1912,14 @@ func debugLogAuthSelection(entry *log.Entry, auth *Auth, provider string, model
+@@ -2034,14 +2033,14 @@ func debugLogAuthSelection(entry *log.Entry, auth *Auth, provider string, model
  			entry.Debugf("Use API key %s for model %s%s", openAICompatAuthLogIdentity(auth), model, suffix)
  			return
  		}
@@ -433,7 +433,7 @@ index 7d99806b..379460b8 100644
  	if auth == nil {
  		return ""
  	}
-@@ -1929,26 +1928,13 @@ func formatOauthIdentity(auth *Auth, provider string, accountInfo string) string
+@@ -2050,26 +2049,13 @@ func formatOauthIdentity(auth *Auth, provider string, accountInfo string) string
  	if providerName == "" {
  		providerName = strings.TrimSpace(provider)
  	}
@@ -465,7 +465,7 @@ index 7d99806b..379460b8 100644
  }
  
  // isOpenAICompatAuthForLog reports an OpenAI-compatible provider auth
-@@ -1982,20 +1968,11 @@ func formatAuthIdentity(auth *Auth, provider string) string {
+@@ -2103,20 +2089,11 @@ func formatAuthIdentity(auth *Auth, provider string) string {
  		if isOpenAICompatAuthForLog(auth) {
  			return "api_key=" + openAICompatAuthLogIdentity(auth)
  		}
@@ -840,10 +840,10 @@ index 00000000..1c470851
 +}
 diff --git a/sdk/cliproxy/auth/log_reduction_inventory_test.go b/sdk/cliproxy/auth/log_reduction_inventory_test.go
 new file mode 100644
-index 00000000..662fb5f6
+index 00000000..0b70b897
 --- /dev/null
 +++ b/sdk/cliproxy/auth/log_reduction_inventory_test.go
-@@ -0,0 +1,242 @@
+@@ -0,0 +1,247 @@
 +package auth
 +
 +import (
@@ -890,6 +890,11 @@ index 00000000..662fb5f6
 +	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.pickLCP", "Infof", "session-affinity: LCP fork bound to new auth | session=%s parent=%s provider=%s model=%s"},
 +	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.pickLCP", "Infof", "session-affinity: LCP compaction bound to new auth | session=%s parent=%s provider=%s model=%s"},
 +	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.pickLCP", "Infof", "session-affinity: LCP cache miss, new binding | session=%s provider=%s model=%s"},
++	// A bound credential that is unavailable while rebinding is refused: the
++	// refusal's code, without the bound auth ID.
++	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.Pick", "Infof", "session-affinity: cache hit but bound auth unavailable, refusing failover | session=%s code=%s provider=%s model=%s"},
++	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.Pick", "Infof", "session-affinity: fallback cache hit but bound auth unavailable, refusing failover | session=%s fallback=%s code=%s provider=%s model=%s"},
++	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.pickLCP", "Infof", "session-affinity: LCP cache hit but bound auth unavailable, refusing failover | session=%s code=%s provider=%s model=%s"},
 +	{"sdk/cliproxy/auth/selector.go", "SessionAffinitySelector.Pick", "Debugf", "session-affinity: no session ID extracted, falling back to default selector | provider=%s model=%s"},
 +
 +	// The selected credential (debug) and execution failures (warning), named
@@ -1103,19 +1108,27 @@ index 38979ff0..1fa9d9f0 100644
  	}
  }
 diff --git a/sdk/cliproxy/auth/selector.go b/sdk/cliproxy/auth/selector.go
-index fc780541..10d351e8 100644
+index dda37508..9c92dce5 100644
 --- a/sdk/cliproxy/auth/selector.go
 +++ b/sdk/cliproxy/auth/selector.go
-@@ -1200,7 +1200,7 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
+@@ -1715,14 +1715,14 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
  		for _, auth := range available {
  			if auth.ID == cachedAuthID {
  				bind(auth.ID, true)
 -				entry.Infof("session-affinity: cache hit | session=%s auth=%s provider=%s model=%s", truncateSessionID(primaryID), auth.ID, provider, model)
 +				entry.Infof("session-affinity: cache hit | session=%s provider=%s model=%s", truncateSessionID(primaryID), provider, model)
- 				return auth, nil
+ 				return s.pickWithAffinityReservation(ctx, provider, model, opts, available, auth, &reservation)
  			}
  		}
-@@ -1214,11 +1214,11 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
+ 		if s.rebindOnNever {
+ 			bind(cachedAuthID, false)
+ 			errBound := s.unavailableBoundAuthError(ctx, availabilityCandidates, model, cachedAuthID, now)
+-			entry.Infof("session-affinity: cache hit but bound auth unavailable, refusing failover | session=%s bound_auth=%s code=%s provider=%s model=%s", truncateSessionID(primaryID), cachedAuthID, errBound.Code, provider, model)
++			entry.Infof("session-affinity: cache hit but bound auth unavailable, refusing failover | session=%s code=%s provider=%s model=%s", truncateSessionID(primaryID), errBound.Code, provider, model)
+ 			return nil, errBound
+ 		}
+ 		if err != nil {
+@@ -1738,11 +1738,11 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
  		}
  		if s.shouldPreserveBindingWhenUnavailable(ctx, availabilityCandidates, model, cachedAuthID, now) {
  			bind(cachedAuthID, false)
@@ -1129,16 +1142,16 @@ index fc780541..10d351e8 100644
  		return auth, nil
  	}
  
-@@ -1238,7 +1238,7 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
+@@ -1762,7 +1762,7 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
  			for _, auth := range available {
  				if auth.ID == parentAuthID {
  					bind(auth.ID, true)
 -					entry.Infof("session-affinity: guardian inherited parent binding | session=%s parent=%s auth=%s provider=%s model=%s", truncateSessionID(primaryID), truncateSessionID(fallbackID), auth.ID, provider, model)
 +					entry.Infof("session-affinity: guardian inherited parent binding | session=%s parent=%s provider=%s model=%s", truncateSessionID(primaryID), truncateSessionID(fallbackID), provider, model)
- 					return auth, nil
+ 					return s.pickWithAffinityReservation(ctx, provider, model, opts, available, auth, &reservation)
  				}
  			}
-@@ -1252,9 +1252,9 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
+@@ -1776,9 +1776,9 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
  					if !isSubagent || s.subagentAffinity {
  						bind(auth.ID, true)
  						if isFork {
@@ -1148,9 +1161,18 @@ index fc780541..10d351e8 100644
 -							entry.Infof("session-affinity: fallback cache hit | session=%s fallback=%s auth=%s provider=%s model=%s", truncateSessionID(primaryID), truncateSessionID(fallbackID), auth.ID, provider, model)
 +							entry.Infof("session-affinity: fallback cache hit | session=%s fallback=%s provider=%s model=%s", truncateSessionID(primaryID), truncateSessionID(fallbackID), provider, model)
  						}
- 						return auth, nil
+ 						return s.pickWithAffinityReservation(ctx, provider, model, opts, available, auth, &reservation)
  					}
-@@ -1269,7 +1269,7 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
+@@ -1787,7 +1787,7 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
+ 			if !isSubagent && !isFork && s.rebindOnNever {
+ 				bind(cachedAuthID, false)
+ 				errBound := s.unavailableBoundAuthError(ctx, availabilityCandidates, model, cachedAuthID, now)
+-				entry.Infof("session-affinity: fallback cache hit but bound auth unavailable, refusing failover | session=%s fallback=%s bound_auth=%s code=%s provider=%s model=%s", truncateSessionID(primaryID), truncateSessionID(fallbackID), cachedAuthID, errBound.Code, provider, model)
++				entry.Infof("session-affinity: fallback cache hit but bound auth unavailable, refusing failover | session=%s fallback=%s code=%s provider=%s model=%s", truncateSessionID(primaryID), truncateSessionID(fallbackID), errBound.Code, provider, model)
+ 				return nil, errBound
+ 			}
+ 			if !isSubagent && !isFork && s.shouldPreserveBindingWhenUnavailable(ctx, availabilityCandidates, model, cachedAuthID, now) {
+@@ -1799,7 +1799,7 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
  					return nil, nil
  				}
  				bind(cachedAuthID, false)
@@ -1159,7 +1181,7 @@ index fc780541..10d351e8 100644
  				return auth, nil
  			}
  		}
-@@ -1284,9 +1284,9 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
+@@ -1817,9 +1817,9 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
  	}
  	bind(auth.ID, true)
  	if isFork && fallbackID != "" {
@@ -1171,7 +1193,7 @@ index fc780541..10d351e8 100644
  	}
  	return auth, nil
  }
-@@ -1348,21 +1348,21 @@ func (s *SessionAffinitySelector) pickLCP(ctx context.Context, provider, model s
+@@ -1881,21 +1881,21 @@ func (s *SessionAffinitySelector) pickLCP(ctx context.Context, provider, model s
  					delete(opts.Metadata, cliproxyexecutor.IsCompactionMetadataKey)
  					opts.Metadata[cliproxyexecutor.NodeKindMetadataKey] = "fork"
  				}
@@ -1194,9 +1216,18 @@ index fc780541..10d351e8 100644
 -				entry.Infof("session-affinity: LCP cache hit | session=%s prefix=%d auth=%s provider=%s model=%s", truncateSessionID(match.SessionID), match.PrefixLength, auth.ID, provider, model)
 +				entry.Infof("session-affinity: LCP cache hit | session=%s prefix=%d provider=%s model=%s", truncateSessionID(match.SessionID), match.PrefixLength, provider, model)
  			}
- 			return auth, true, nil
+ 			picked, errPick := s.pickWithAffinityReservation(ctx, provider, model, opts, available, auth, reservation)
+ 			return picked, true, errPick
+@@ -1925,7 +1925,7 @@ func (s *SessionAffinitySelector) pickLCP(ctx context.Context, provider, model s
+ 				}
+ 			}
+ 			errBound := s.unavailableBoundAuthError(ctx, availabilityCandidates, model, match.AuthID, now)
+-			entry.Infof("session-affinity: LCP cache hit but bound auth unavailable, refusing failover | session=%s bound_auth=%s code=%s provider=%s model=%s", truncateSessionID(match.SessionID), match.AuthID, errBound.Code, provider, model)
++			entry.Infof("session-affinity: LCP cache hit but bound auth unavailable, refusing failover | session=%s code=%s provider=%s model=%s", truncateSessionID(match.SessionID), errBound.Code, provider, model)
+ 			return nil, true, errBound
  		}
-@@ -1406,28 +1406,28 @@ func (s *SessionAffinitySelector) pickLCP(ctx context.Context, provider, model s
+ 		if !match.IsFork && s.shouldPreserveBindingWhenUnavailable(ctx, availabilityCandidates, model, match.AuthID, now) {
+@@ -1971,28 +1971,28 @@ func (s *SessionAffinitySelector) pickLCP(ctx context.Context, provider, model s
  				delete(opts.Metadata, cliproxyexecutor.IsCompactionMetadataKey)
  				delete(opts.Metadata, cliproxyexecutor.NodeKindMetadataKey)
  			}
