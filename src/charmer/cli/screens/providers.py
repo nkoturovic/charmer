@@ -759,23 +759,37 @@ class ConnectActions:
     def _add_models(self, provider_id: str) -> str | None:
         return self.continue_to_models(provider_id)
 
-    def endpoint(self, kind: str) -> Outcome | None:
+    def _network_offered(self) -> bool:
+        """The private-network routes are open in this build."""
+
+        from charmer import catalog
+
+        return catalog.private_network_audited(self.runtime.catalog.docs.get("gateway"))
+
+    def endpoint(self, kind: str, *, on_network: bool = False) -> Outcome | None:
         """Your own endpoint: the form, the preview, the route approval and
         the key; Save writes the declaration, the approval and the key in one
-        transaction."""
+        transaction. ``on_network``: a server on a private network (its
+        network is a required choice)."""
 
         from charmer.setup import model, providers as layer, texts
 
         refusal = self._read_only() or self._guard("providers add")
         if refusal is not None:
             return refusal
-        values = tui.OnboardingForm(cli_text.ENDPOINT_FORM_TITLE.get(kind, kind), views.endpoint_form_fields(kind),
-                                    palette=self.palette, help_text=cli_text.ENDPOINT_FORM_HELP,
+        offered = self._network_offered()
+        fields = views.endpoint_form_fields(kind, network="tailnet" if on_network else (
+            views.NETWORK_NONE if offered else None), network_required=on_network)
+        help_text = cli_text.ENDPOINT_FORM_HELP + (
+            "\n" + cli_text.NETWORK_FORM_HELP if offered and kind in views.NETWORK_KINDS else "")
+        title = cli_text.ENDPOINT_FORM_TITLE["network"] if on_network else cli_text.ENDPOINT_FORM_TITLE.get(kind, kind)
+        values = tui.OnboardingForm(title, fields, palette=self.palette, help_text=help_text,
                                     footer=cli_text.ENDPOINT_FORM_FOOTER).run(self.win)
         if values is None:
             return None
         try:
-            plan = layer.plan_add_endpoint(self.runtime, {**values, "kind": kind})
+            plan = layer.plan_add_endpoint(self.runtime, {**values, "kind": kind,
+                                                          "network": views.network_value(values) or ""})
         except cli_errors.CharmerError as exc:
             return self._refused(exc)
         return self._declare_keyed(plan, plan.provider_id)
@@ -795,6 +809,10 @@ class ConnectActions:
         approve = texts.APPROVE_BODY.format(name=plan.secret_name, present=texts.APPROVE_PRESENT[plan.key_present],
                                             origin=plan.origin, auth_text=texts.AUTH_TEXT.get(plan.auth, plan.auth),
                                             listing=plan.listing or "none").split("\n")
+        if plan.network_lines:
+            # A private network: what plain HTTP means there, what the host
+            # resolves to now, and the connection-time scope.
+            approve += [*plan.network_lines, texts.NETWORK_SCOPE]
         if not self._confirm(cli_text.APPROVE_TITLE.format(id=plan.provider_id), approve, cli_text.APPROVE_BUTTONS):
             return Outcome(model.NOTHING_CHANGED, "warn")
         value: str | None = None
@@ -900,12 +918,17 @@ class ConnectActions:
         refusal = self._read_only()
         if refusal is not None:
             return refusal
-        values = tui.OnboardingForm(cli_text.LAN_FORM_TITLE, views.lan_form_fields(), palette=self.palette,
-                                    help_text=cli_text.LAN_FORM_HELP, footer=cli_text.LAN_FORM_FOOTER).run(self.win)
+        offered = self._network_offered()
+        values = tui.OnboardingForm(cli_text.LAN_FORM_TITLE, views.lan_form_fields(network_offered=offered),
+                                    palette=self.palette,
+                                    help_text=cli_text.LAN_FORM_HELP + ("\n" + cli_text.NETWORK_FORM_HELP if offered
+                                                                        else ""),
+                                    footer=cli_text.LAN_FORM_FOOTER).run(self.win)
         if values is None:
             return None
         try:
-            plan = layer.plan_add_preset(self.runtime, preset, values["id"].strip(), values["url"].strip() or None)
+            plan = layer.plan_add_preset(self.runtime, preset, values["id"].strip(), values["url"].strip() or None,
+                                         network=views.network_value(values))
         except cli_errors.CharmerError as exc:
             return self._refused(exc)
         if not tui.TextView(cli_text.LAN_PREVIEW_TITLE, plan.lines, palette=self.palette,
@@ -966,6 +989,8 @@ class ConnectActions:
             return self.own(entry.provider_id)
         if entry.kind == "endpoint":
             return self.endpoint(entry.id.split(":", 1)[1])
+        if entry.kind == "network":
+            return self.endpoint(operator_mod.KEYED_KIND, on_network=True)
         if entry.kind == "lan":
             return self.lan(entry.id.split(":", 2)[2])
         if entry.kind == "manual":
@@ -1417,12 +1442,16 @@ class _ProvidersScreen:
             # Read, validated and secret-screened before any default is
             # drawn; the bytes stay the baseline of the save.
             previous, block = onboarding.provider_edit_snapshot(self.runtime, pid)
-            fields = views.provider_edit_form_fields(block)
+            offered = self._actions(win)._network_offered()
+            fields = views.provider_edit_form_fields(block, network_offered=offered)
         except (cli_errors.CharmerError, OSError, ValueError, KeyError, TypeError) as exc:
             self._say(cli_text.EDIT_UNREADABLE.format(id=pid, problem=_error_text(exc)), "warn")
             return
+        network = any(field[0] == "network" for field in fields)
         values = tui.OnboardingForm(cli_text.EDIT_FORM_TITLE.format(id=pid), fields, palette=self.palette,
-                                    help_text=cli_text.EDIT_FORM_HELP, footer=cli_text.EDIT_FORM_FOOTER).run(win)
+                                    help_text=cli_text.EDIT_FORM_HELP + ("\n" + cli_text.NETWORK_FORM_HELP
+                                                                         if network else ""),
+                                    footer=cli_text.EDIT_FORM_FOOTER).run(win)
         if values is None:
             return
         action = screens_common.OnboardingActions(self.runtime, win, self.palette)

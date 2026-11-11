@@ -1553,6 +1553,265 @@ class ReloadEntryPointTests(_proxy_control_case()):
                                   err.getvalue())
 
 
+class NetworkTuiTests(NetworkCommandCase):
+    """The TUI paths of a provider on a private network: G → N and Get
+    started → A (a server on your network with an API key; the keyless
+    server with its network), G → E (another network), Enter (approve).
+    The forms and dialogs are answered in place; each test inspects the
+    declaration that results."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        from unittest import mock
+
+        import charmer.cli.consent as consent
+
+        for name in consent.SESSION_MARKERS:
+            self.runtime.environ.pop(name, None)
+        guard = mock.patch.object(consent, "stdio_ttys", return_value=True)
+        guard.start()
+        self.addCleanup(guard.stop)
+
+    def answered(self, answers: dict[str, str], *, key: str = ""):
+        """Patches: every form answered with its defaults and ``answers``,
+        every view and confirmation accepted (both recorded), the key typed."""
+
+        import contextlib
+        from unittest import mock
+
+        from charmer import tui
+        import charmer.cli.screens.providers as screens_providers
+
+        seen: dict[str, list] = {"forms": [], "views": [], "confirms": []}
+
+        def form(self_form: Any, _win: Any) -> dict[str, str]:
+            defaults = {name: default for name, _label, default, _choices in self_form.fields}
+            seen["forms"].append((self_form.title, self_form.fields, getattr(self_form, "help_text", "")))
+            return {**defaults, **{name: value for name, value in answers.items() if name in defaults}}
+
+        def view(self_view: Any, _win: Any) -> bool:
+            seen["views"].append((self_view.title, list(self_view.lines)))
+            return True
+
+        def confirm(_self: Any, title: str, lines: Any, _buttons: Any) -> bool:
+            seen["confirms"].append((title, list(lines)))
+            return True
+
+        stack = contextlib.ExitStack()
+        stack.enter_context(mock.patch.object(tui.OnboardingForm, "run", autospec=True, side_effect=form))
+        stack.enter_context(mock.patch.object(tui.TextView, "run", autospec=True, side_effect=view))
+        stack.enter_context(mock.patch.object(screens_providers.ConnectActions, "_confirm", autospec=True,
+                                              side_effect=confirm))
+        stack.enter_context(mock.patch.object(screens_providers.ConnectActions, "_ask_key", autospec=True,
+                                              return_value=key))
+        stack.enter_context(mock.patch.object(screens_providers.ConnectActions, "_add_models", autospec=True,
+                                              return_value=None))
+        return stack, seen
+
+    def actions(self) -> Any:
+        from test_tui import FakeWindow
+
+        from charmer import tui
+        import charmer.cli.screens.providers as screens_providers
+
+        return screens_providers.ConnectActions(self.runtime, FakeWindow([]), tui.MONO_PALETTE)
+
+    def entry(self, entry_id: str, *, only: str | None = "other") -> Any:
+        from charmer.setup import providers as layer
+
+        return next(entry for entry in layer.picker_entries(self.runtime, only=only) if entry.id == entry_id)
+
+    def to_entry(self, entry_id: str, *, only: str | None = "other") -> list:
+        """Keys from the picker's first entry down to ``entry_id``."""
+
+        from test_tui import DOWN, HOME
+
+        from charmer import tui
+        import charmer.cli.screens.get_started as get_started
+
+        picker = get_started._ProviderPicker(self.runtime, tui.MONO_PALETTE, only=only)
+        entries = [row.entry.id for row in picker.rows if row.kind == "entry" and row.entry is not None]
+        return [HOME, *([DOWN] * entries.index(entry_id))]
+
+    def providers_screen(self) -> Any:
+        from charmer import tui
+        import charmer.cli.screens.providers as screens_providers
+
+        return screens_providers._ProvidersScreen(self.runtime, palette=tui.MONO_PALETTE, journal=lambda: None)
+
+    def test_the_picker_offers_a_keyed_server_on_your_network_next_to_the_keyless_one(self) -> None:
+        from charmer.setup import providers as layer, texts as setup_texts
+
+        for only in ("other", None):
+            with self.subTest(only=only):
+                ids = [entry.id for entry in layer.picker_entries(self.runtime, only=only)]
+                self.assertIn("other:network", ids)
+                lan = next(index for index, value in enumerate(ids) if value.startswith("other:lan:"))
+                self.assertEqual(ids.index("other:network"), lan - 1)
+        self.assertEqual(self.entry("other:network").label, setup_texts.PICKER_LABELS["other:network"])
+        self.runtime.catalog.docs["gateway"][catalog.AUDITS_KEY][operator.PRIVATE_NETWORK_AUDIT] = False
+        self.assertNotIn("other:network", [entry.id for entry in layer.picker_entries(self.runtime, only="other")])
+
+    def test_n_adds_a_keyed_server_on_the_tailnet(self) -> None:
+        import charmer.cli.text as cli_text
+        from charmer.setup import texts as setup_texts
+
+        from test_tui import FakeWindow
+
+        stack, seen = self.answered({"id": KEYED_ID, "url": "http://box.example.test:8010/v1", "family": "boxfam"},
+                                    key="box-tui-dummy-key")
+        screen = self.providers_screen()
+        with stack:
+            screen.run(FakeWindow(["n", *self.to_entry("other:network"), "\n", "\x1b", "\x1b"]))
+        self.assertTrue(screen.message.startswith(f"Added {KEYED_ID}"), screen.message)
+        title, fields, help_text = seen["forms"][0]
+        self.assertEqual(title, cli_text.ENDPOINT_FORM_TITLE["network"])
+        network = next(field for field in fields if field[0] == "network")
+        self.assertEqual(network[2], "tailnet")
+        self.assertEqual([value for value, _label in network[3]], ["loopback", "lan", "tailnet"])
+        self.assertIn("provider-keys.env", help_text)
+        self.assertIn("a terminal outside Claude Code", help_text)
+        approval = "\n".join(seen["confirms"][0][1])
+        self.assertIn("plain HTTP: the key is encrypted only while the connection runs through your tailnet", approval)
+        self.assertIn("now resolves to: 100.88.12.34 (tailnet)", approval)
+        self.assertTrue(approval.endswith(setup_texts.NETWORK_SCOPE), approval)
+        provider = self.declaration()["provider"]
+        self.assertEqual((provider["network"], provider["base_url"], provider["kind"]),
+                         ("tailnet", "http://box.example.test:8010/v1", operator.KEYED_KIND))
+        self.assertEqual(self.runtime.operator_snapshot().layer.route_status[KEYED_ID], "approved")
+        self.assertNotIn("box-tui-dummy-key", repr(seen))
+
+    def test_get_started_a_adds_a_keyed_server_on_the_lan(self) -> None:
+        from test_tui import FakeWindow
+
+        from charmer import tui
+        import charmer.cli.screens.get_started as get_started
+
+        stack, _seen = self.answered({"id": KEYED_ID, "url": "http://192.168.1.10:8010/v1", "network": "lan",
+                                      "family": "boxfam"}, key="box-tui-dummy-key")
+        screen = get_started._GetStartedScreen(self.runtime, tui.MONO_PALETTE)
+        with stack:
+            screen.run(FakeWindow(["a", *self.to_entry("other:network", only=None), "\n", "\x1b", "\x1b"]))
+        self.assertTrue(screen.message.startswith(f"Added {KEYED_ID}"), screen.message)
+        self.assertEqual(self.declaration()["provider"]["network"], "lan")
+
+    def test_n_adds_a_keyless_server_on_the_tailnet(self) -> None:
+        from charmer.setup import providers as layer, texts as setup_texts
+
+        from test_tui import FakeWindow
+
+        entry = next(item for item in layer.picker_entries(self.runtime, only="other")
+                     if item.kind == "lan" and item.label == setup_texts.PICKER_LABELS["other:lan"])
+        stack, seen = self.answered({"id": LAN_ID, "url": "http://box.example.test:8010/v1", "network": "tailnet"})
+        screen = self.providers_screen()
+        with stack:
+            screen.run(FakeWindow(["n", *self.to_entry(entry.id), "\n", "\x1b", "\x1b"]))
+        self.assertTrue(screen.message.startswith(f"Added {LAN_ID}"), screen.message)
+        _title, fields, help_text = seen["forms"][0]
+        network = next(field for field in fields if field[0] == "network")
+        self.assertEqual(network[2], "none")
+        self.assertIn("provider-keys.env", help_text)
+        preview = "\n".join(seen["views"][0][1])
+        self.assertIn("private network (tailnet): the gateway connects only to addresses in that network", preview)
+        provider = self.declaration(LAN_ID)["provider"]
+        self.assertEqual((provider["network"], provider["kind"]), ("tailnet", operator.LAN_KIND))
+
+    def test_e_edits_the_network_and_the_route_is_approved_again(self) -> None:
+        from unittest import mock
+
+        from test_tui import FakeWindow
+
+        from charmer import tui
+        import charmer.cli.screens.common as screens_common
+        import charmer.cli.screens.providers as screens_providers
+
+        code, _out, err = self.command(ADD_KEYED, "y\n", network="tailnet")
+        self.assertEqual(code, 0, err)
+        seen: dict[str, Any] = {}
+
+        def form(self_form: Any, _win: Any) -> dict[str, str]:
+            seen["fields"] = {name: default for name, _label, default, _choices in self_form.fields}
+            return {**seen["fields"], "network": "lan"}
+
+        screen = screens_providers._ProvidersScreen(self.runtime, palette=tui.MONO_PALETTE, journal=lambda: None)
+        screen.selected = [row.id for row in screen.rows].index(KEYED_ID)
+        with mock.patch.object(tui.OnboardingForm, "run", autospec=True, side_effect=form), \
+                mock.patch.object(screens_common.OnboardingActions, "confirm", return_value=True), \
+                mock.patch.object(screens_common.OnboardingActions, "show"):
+            screen.run(FakeWindow(["e", "\x1b"]))
+        self.assertEqual(seen["fields"]["network"], "tailnet")
+        self.assertEqual(self.declaration()["provider"]["network"], "lan")
+        # Another network is another route: approved again before use.
+        self.assertEqual(self.runtime.operator_snapshot().layer.route_status[KEYED_ID], "changed")
+        self.answers = ("192.168.1.10",)
+        stack, approved = self.answered({})
+        with stack:
+            outcome = self.actions().approve(KEYED_ID)
+        lines = "\n".join(approved["confirms"][0][1])
+        self.assertIn("network: lan (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7) — HTTPS", lines)
+        self.assertIn("now resolves to: 192.168.1.10 (lan)", lines)
+        self.assertTrue(outcome.text.startswith("Approved"), outcome.text)
+        self.assertEqual(self.runtime.operator_snapshot().layer.route_status[KEYED_ID], "approved")
+
+    def test_an_answer_outside_the_network_refuses_in_the_tui_and_writes_nothing(self) -> None:
+        before = self.state_bytes()
+        self.answers = ("203.0.113.9",)
+        stack, seen = self.answered({"id": KEYED_ID, "url": "http://box.example.test:8010/v1", "family": "boxfam"},
+                                    key="box-tui-dummy-key")
+        with stack:
+            outcome = self.actions().connect(self.entry("other:network"))
+        self.assertIn("resolves to 203.0.113.9 (public), outside network tailnet", outcome.text)
+        self.assertEqual(seen["confirms"], [])
+        self.assertEqual(self.state_bytes(), before)
+
+    def test_the_manual_and_preset_forms_forward_the_network(self) -> None:
+        from unittest import mock
+
+        from test_tui import FakeWindow
+
+        from charmer import tui
+        import charmer.cli.screens.common as screens_common
+
+        invoked: list[list[str]] = []
+        answers = {"id": LAN_ID, "kind": "openai-compatible-lan", "url": "http://box.example.test:8010/v1",
+                   "auth": "none", "network": "tailnet"}
+
+        def form(self_form: Any, _win: Any) -> dict[str, str]:
+            defaults = {name: default for name, _label, default, _choices in self_form.fields}
+            return {**defaults, **{name: value for name, value in answers.items() if name in defaults}}
+
+        actions = screens_common.OnboardingActions(self.runtime, FakeWindow([]), tui.MONO_PALETTE)
+        with mock.patch.object(screens_common._ProviderForm, "run", autospec=True, side_effect=form), \
+                mock.patch.object(tui.OnboardingForm, "run", autospec=True, side_effect=form), \
+                mock.patch.object(actions, "preview", return_value=True), \
+                mock.patch.object(actions, "invoke", side_effect=lambda argv: invoked.append(argv) or 1):
+            actions.new_provider(manual_only=True)
+            with mock.patch.object(tui.SelectList, "run", return_value=1):
+                actions.new_provider()
+        manual, preset = invoked
+        self.assertEqual(manual[manual.index("--network") + 1], "tailnet")
+        self.assertEqual(preset[:3], ["providers", "add", "--preset"])
+        self.assertEqual(preset[preset.index("--network") + 1], "tailnet")
+        # Without the private-network routes, no network is asked or sent.
+        invoked.clear()
+        self.runtime.catalog.docs["gateway"][catalog.AUDITS_KEY][operator.PRIVATE_NETWORK_AUDIT] = False
+        with mock.patch.object(screens_common._ProviderForm, "run", autospec=True, side_effect=form), \
+                mock.patch.object(actions, "preview", return_value=True), \
+                mock.patch.object(actions, "invoke", side_effect=lambda argv: invoked.append(argv) or 1):
+            actions.new_provider(manual_only=True)
+        self.assertNotIn("--network", invoked[0])
+
+    def test_the_row_detail_names_transport_network_and_key_state(self) -> None:
+        from charmer import tui
+        import charmer.cli.screens.providers as screens_providers
+
+        code, _out, err = self.command(ADD_KEYED, "y\n", network="tailnet")
+        self.assertEqual(code, 0, err)
+        screen = screens_providers._ProvidersScreen(self.runtime, palette=tui.MONO_PALETTE, journal=lambda: None)
+        row = next(row for row in screen._rows(width=200) if row.id == KEYED_ID)
+        self.assertEqual(row.details[0], f"transport: bearer over HTTPS, private network (tailnet) · {SECRET} missing")
+
+
 class NetworkFlagDispatchTests(NetworkCommandCase):
     """``providers add --network`` and ``providers template --network``
     through the real entry point."""

@@ -607,7 +607,18 @@ EDIT_UNREADABLE = "{id}: its declaration cannot be read here ({problem}) — cha
 EDIT_DONE = "{id} saved (the result lists what changed)"
 EDIT_NOT_SAVED = "{id}: nothing changed"
 ENDPOINT_FORM_TITLE = {"anthropic-compatible": "your Anthropic-compatible endpoint",
-                       "openai-compatible": "your OpenAI-compatible endpoint"}
+                       "openai-compatible": "your OpenAI-compatible endpoint",
+                       "network": "your server on a private network"}
+# The forms of a provider on a private network add what the network means,
+# where the gateway reads its key and that credentials need a terminal.
+NETWORK_FORM_HELP = (
+    "Private network: loopback (this computer), lan (your local network) or tailnet (your overlay).\n"
+    "A key may then travel over plain HTTP: the gateway connects only to addresses in that network,\n"
+    "checked at every connection (on a tailnet, this computer's address must be a tailnet one too).\n"
+    "The key is saved in ~/.config/charmer/secrets/provider-keys.env, the one file the gateway's\n"
+    "sandbox reads keys from; a key file you import may live anywhere you own (0600).\n"
+    "Saving a key or approving a route needs a terminal outside Claude Code."
+)
 ENDPOINT_FORM_FOOTER = "Nothing is saved before you approve the route and type the key."
 ENDPOINT_FORM_HELP = (
     "Name: a–z, 0–9 and -, starting with a letter.\n"
@@ -1046,7 +1057,9 @@ PICKER_DETAIL = {
     "endpoint": "Your vendor's documented endpoint and an API key. You approve where the key is "
                 "sent before anything is saved.",
     "lan": "An OpenAI-compatible server on your network (no key), for example a local model server.",
-    "preset": "{display}'s documented endpoint: the address, the key's name and the model list are filled "
+    "network": "Your own OpenAI-compatible server on a private network, with an API key: plain HTTP is "
+               "allowed there, and the gateway connects only to addresses in the network you choose.",
+    "preset":"{display}'s documented endpoint: the address, the key's name and the model list are filled "
               "in from its documentation (not tested by charmer). You name it, approve where the key "
               "is sent and type the key.",
     "unavailable": "{note}",
