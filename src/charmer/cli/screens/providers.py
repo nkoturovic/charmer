@@ -835,30 +835,35 @@ class ConnectActions:
             return self._refused(exc)
         return Outcome(_joined([*applied.lines, self._add_models(plan.provider_id) or ""]))
 
-    def _preset_address(self, name: str) -> str:
-        """The base URL preset ``name`` documents ("" when it does not read)."""
+    def _preset_info(self, name: str) -> Any:
+        """What preset ``name`` documents (None when it does not read)."""
 
         from charmer import operator as operator_mod
 
-        info = operator_mod.presets(self.runtime.asset_root).get(name)
-        return info.base_url if info is not None else ""
+        return operator_mod.presets(self.runtime.asset_root).get(name)
 
     def preset(self, name: str, display: str) -> Outcome | None:
         """A reviewed preset with an API key: its name (the preset's by
         default) and its address (the preset's by default; another address
         the vendor documents is checked like ``providers add --preset
         --base-url``), then your own endpoint's preview, route approval and
-        key, filled in from the preset."""
+        key, filled in from the preset. While the private-network routes are
+        open, an OpenAI-compatible preset also chooses its network."""
 
         from charmer.setup import model, providers as layer
 
         refusal = self._read_only() or self._guard("providers add")
         if refusal is not None:
             return refusal
-        address = self._preset_address(name)
+        info = self._preset_info(name)
+        address = info.base_url if info is not None else ""
+        network_kind = info.kind if info is not None and self._network_offered() else None
+        offered = network_kind in views.NETWORK_KINDS
         values = tui.OnboardingForm(cli_text.PRESET_FORM_TITLE.format(display=display),
-                                    views.preset_form_fields(name, address), palette=self.palette,
-                                    help_text=cli_text.PRESET_FORM_HELP,
+                                    views.preset_form_fields(name, address, network_kind=network_kind),
+                                    palette=self.palette,
+                                    help_text=(cli_text.PRESET_NETWORK_FORM_HELP + "\n" + cli_text.NETWORK_FORM_HELP
+                                               if offered else cli_text.PRESET_FORM_HELP),
                                     footer=cli_text.ENDPOINT_FORM_FOOTER).run(self.win)
         if values is None:
             return None
@@ -866,21 +871,23 @@ class ConnectActions:
         typed = values.get("url", "").strip()
         # Blank or unchanged keeps the preset's own address (and its bytes).
         base_url = typed if typed and typed != address else None
+        network = views.network_value(values) if offered else None
         try:
-            plan = layer.plan_add_preset(self.runtime, name, provider_id, base_url)
+            plan = layer.plan_add_preset(self.runtime, name, provider_id, base_url, network=network)
         except cli_errors.CharmerError as exc:
             return self._refused(exc)
         if not isinstance(plan, layer.EndpointPlan):
             return Outcome(model.NOTHING_CHANGED, "warn")  # a keyless server is the network form's
         if plan.preset_sharers:
-            plan = self._preset_key(name, provider_id, plan, base_url=base_url)
+            plan = self._preset_key(name, provider_id, plan, base_url=base_url, network=network)
             if plan is None:
                 return Outcome(model.NOTHING_CHANGED, "warn")
             if isinstance(plan, Outcome):
                 return plan
         return self._declare_keyed(plan, display)
 
-    def _preset_key(self, name: str, provider_id: str, plan: Any, *, base_url: str | None = None) -> Any:
+    def _preset_key(self, name: str, provider_id: str, plan: Any, *, base_url: str | None = None,
+                    network: str | None = None) -> Any:
         """Another provider already uses the preset's API key: a new key of
         its own (the default), the saved key shared (when one is saved), or
         that key replaced. The plan of the choice; None when cancelled; an
@@ -906,7 +913,7 @@ class ConnectActions:
         if key == layer.KEY_OWN:
             return plan
         try:
-            return layer.plan_add_preset(self.runtime, name, provider_id, base_url, key=key)
+            return layer.plan_add_preset(self.runtime, name, provider_id, base_url, key=key, network=network)
         except cli_errors.CharmerError as exc:
             return self._refused(exc)
 
@@ -994,7 +1001,7 @@ class ConnectActions:
         if entry.kind == "lan":
             return self.lan(entry.id.split(":", 2)[2])
         if entry.kind == "manual":
-            screens_common.OnboardingActions(self.runtime, self.win, self.palette).new_provider(manual_only=True)
+            screens_common.OnboardingActions(self.runtime, self.win, self.palette).new_provider()
             return None
         return None
 
