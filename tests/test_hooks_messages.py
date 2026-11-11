@@ -154,6 +154,13 @@ class NoticeMessageTests(_SeamCase):
         self.assertIn("start " + gen, path.read_text())
         self.assertIn("still waiting", self.prompt().get("systemMessage", ""))
 
+    def test_unchanged_compaction_has_no_reload_claim(self):
+        self.gen(4)
+        self.start("startup")
+        context = self.start("compact")["hookSpecificOutput"]["additionalContext"]
+        self.assertNotIn("staged — active after /reload-plugins", context)
+        self.assertNotIn("was applied while this session was running", context)
+
     def test_unchanged_process_never_claims_a_staged_reload_after_a_message(self):
         gen = self.gen(4)
         self.start("startup")

@@ -89,7 +89,8 @@ context = document.get("hookSpecificOutput", {}).get("additionalContext", "")
 with open(config["events"], "a", encoding="utf-8") as handle:
     handle.write(json.dumps({"event": payload["hook_event_name"], "source": payload.get("source"),
         "user_notice": bool(document.get("systemMessage")),
-        "conditional": "was applied while this session was running" in context}) + "\\n")
+        "conditional": "was applied while this session was running" in context,
+        "staged": "staged — active after /reload-plugins" in context}) + "\\n")
 """
 
 
@@ -323,7 +324,8 @@ class _PropagationFixture(unittest.TestCase):
             if "Agent" in context.record.tool_names:
                 body = json.dumps(document.get("messages", []))
                 facts.append({"current": "lineup_generation 2" in body,
-                              "conditional": "was applied while this session was running" in body})
+                              "conditional": "was applied while this session was running" in body,
+                              "staged": "active after /reload-plugins" in body})
             return hooks._sse_responder(document, path)
 
         def change():
@@ -372,7 +374,8 @@ class _PropagationFixture(unittest.TestCase):
             compactions = [row for row in events if row.get("source") == "compact"]
             self.assertEqual(len(compactions), 1)
             self.assertFalse(compactions[0]["conditional"])
-            self.assertFalse(any(row["conditional"] for row in facts))
+            self.assertFalse(compactions[0]["staged"])
+            self.assertFalse(any(row["conditional"] or row["staged"] for row in facts))
             self.assertEqual(marker.seen, before)
         kind = "external-live" if apply_live else "unchanged-compaction"
         print(f"client check propagation-{kind}: PASS user-notice-deliveries=1 screen-visible=True "
