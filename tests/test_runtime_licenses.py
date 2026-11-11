@@ -53,21 +53,28 @@ class CheckedInTests(unittest.TestCase):
                 self.assertRegex(entry["full_archive"]["sha256"], r"^[0-9a-f]{64}$")
 
     def test_security_refresh_provenance_and_components_move_together(self) -> None:
-        self.assertEqual(self.runtimes.release, "20261026")
+        self.assertEqual(self.runtimes.release, "20261110")
         self.assertEqual(self.runtimes.python, "3.15.2")
         self.assertEqual(self.inventory.document["python"], self.runtimes.python)
-        self.assertIn("8b0e472c66797dcd58dfa461171c7f416602503924091e5e4629e776221b8a27",
+        self.assertIn("d48f25ee30c3ba8006c9a3046d4d3c5ec061a3f1fd831a1e44562f2e8547ef60",
                       self.inventory.document["source"]["versions"])
         for target in self.runtimes.targets:
             with self.subTest(target=target):
                 components = {item["name"]: item["version"]
                               for item in self.tool.sbom_components(self.inventory, target)}
-                self.assertEqual(components["expat"], "2.9.0")
+                self.assertEqual(components["expat"], "2.10.0")
                 self.assertEqual(components["libffi"], "3.8.0")
                 notices = self.tool.notices_bytes(self.inventory, target).decode()
-                self.assertIn("expat 2.9.0", notices)
+                self.assertIn("expat 2.10.0", notices)
                 self.assertIn("libffi 3.8.0", notices)
-                self.assertIn("20261026", self.inventory.target(target)["full_archive"]["filename"])
+                if target.startswith("linux"):
+                    self.assertEqual(components["zlib"], "1.4")
+                    self.assertEqual(components["libedit"], "20260512-3.1")
+                    self.assertIn("zlib 1.4", notices)
+                else:
+                    self.assertNotIn("zlib", components)  # macOS supplies it
+                    self.assertNotIn("libedit", components)
+                self.assertIn("20261110", self.inventory.target(target)["full_archive"]["filename"])
 
     def test_the_runtimes_are_the_default_build(self) -> None:
         """Read from each full archive's PYTHON.json when the inventory was
