@@ -481,6 +481,26 @@ class NetworkCommandTests(NetworkCommandCase):
         self.assertEqual(self.lookups, [])
         self.assertEqual(self.state_bytes(), before)
 
+    def test_the_guard_refuses_inside_a_session_marker_for_every_network_path(self) -> None:
+        from unittest import mock
+
+        from charmer.cli import consent
+
+        before = self.state_bytes()
+        paths = ((ADD_KEYED, {"network": "tailnet"}),
+                 (["providers", "add", "--preset", "vllm", "--as", "vbox", "--base-url", "http://box.example.test:8000/v1",
+                   "--secret-file", "/nonexistent"], {"network": "tailnet"}),
+                 (["providers", "approve", KEYED_ID], {}))
+        for marker in consent.SESSION_MARKERS:
+            for argv, extra in paths:
+                with self.subTest(marker=marker, argv=argv[:3]), \
+                        mock.patch.dict(self.runtime.environ, {marker: "1"}):
+                    code, _out, err = self.command(argv, "y\n", **extra)
+                    self.assertNotEqual(code, 0)
+                    self.assertIn(f"{marker} set", err)
+        self.assertEqual(self.lookups, [])
+        self.assertEqual(self.state_bytes(), before)
+
     def test_approve_names_the_network_and_refuses_an_outside_answer(self) -> None:
         code, _out, err = self.command([*ADD_KEYED, "--declare-only"], network="lan")
         self.assertEqual(code, 0, err)
