@@ -95,6 +95,7 @@ PATCH_IDS = {
     "cli-proxy-api-tool-call-integrity.patch": 29, "cli-proxy-api-initial-registration.patch": 31,
     "cli-proxy-api-terminal-rejection-reload.patch": 32,
     "cli-proxy-api-codex-refresh-without-journal.patch": 34, "cli-proxy-api-native-advisor-beta-order.patch": 35,
+    "cli-proxy-api-private-network-dial.patch": 36,
 }
 
 

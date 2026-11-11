@@ -33,6 +33,7 @@ import charmer.launch
 import charmer.lineup
 import charmer.tui
 import charmer.cli.text as cli_text
+import charmer.cli.screens.actions as actions_mod
 
 SPEC = "the sessions screen contract"
 ESC = "\x1b"
@@ -386,9 +387,11 @@ class SessionsRowTests(_SessionsCase):
         # The selected row (no end event, not running, a v4 record) adds M and P.
         self.assertEqual(
             self.screen()._keybar().text(),
-            "Enter resume · T lineup · V details · F follow/pin · X forget · M mark ended · P repair · R rename "
-            "· Q save · L link · Space mark · * all · / filter · B filters · C all dirs · ? help · Esc back")
-        self.assertIn("Enter resume · T lineup · V details · F follow/pin", win.frames[0])
+            "Enter resume · N fork · T lineup · V details · F follow/pin · X forget · M mark ended · P repair "
+            "· R rename · Q save · L link · Space mark · * all · / filter · B filters · C all dirs · ? help · Esc back")
+        self.assertIn("Enter resume · N fork · T lineup · V details · F follow/pin", win.frames[0])
+        self.assertTrue(actions_mod.action("sessions.fork").help.startswith("N — fork: start a new managed session"))
+        self.assertIn("N — fork: start a new managed session", modal)
 
     def test_the_root_screen_quits_with_esc(self) -> None:
         self.record()
@@ -1208,7 +1211,113 @@ class SessionsRenameTests(_SessionsCase):
         self.assertIn(cli.SESSIONS_V3_TITLE, win.frames[-1])
 
 
+class SessionsForkInsideSessionTests(_SessionsCase):
+    """Bare ``charmer -r`` run inside a Claude or managed session: N on a
+    row refuses with the fork's inside-session text before anything is
+    prepared, for every session marker the launcher recognises."""
+
+    curses_script = SessionsEntryTests.curses_script
+    main = SessionsEntryTests.main
+
+    def state(self) -> tuple:
+        store = self.runtime.session_store
+        root = store.root
+        return (sorted(path.name for path in (root / "sessions").glob("*.json")),
+                sorted(path.name for path in (root / "scopes").iterdir()),
+                (root / "sessions" / f"{fx.FIXED_ID}.json").read_bytes(),
+                store.read_pointer_bytes(str(self.runtime.cwd)))
+
+    def test_n_inside_a_session_refuses_before_anything_is_prepared(self) -> None:
+        import charmer.cli.consent as consent
+        import charmer.cli.resume_checks as resume_checks
+
+        self.record()
+        before = self.state()
+        for marker in consent.SESSION_MARKERS:
+            with self.subTest(marker=marker):
+                patcher, calls = self.curses_script(["N", ESC], width=160)
+                prepare = mock.Mock(wraps=self.runtime.prepare)
+                with patcher, mock.patch.dict(self.runtime.environ, {marker: "1"}), \
+                        mock.patch.object(self.runtime, "prepare", prepare):
+                    code, output = self.main(["-r"])
+                self.assertEqual(code, 0, output)
+                self.assertEqual(len(calls), 1, "one curses session")
+                self.assertIn(resume_checks.FORK_INSIDE_SESSION, _flat("\n".join(calls[0].frames)))
+                self.assertEqual(prepare.call_args_list, [], "nothing is prepared")
+                self.assertEqual(self.runtime.launches, [], "nothing is performed or executed")
+                self.assertEqual(self.state(), before, "no record, scope or continue pointer changes")
+
+
+class SessionsNewForkTests(_SessionsCase):
+    """N: ``charmer -r SESSION --fork`` from the sessions screen — the fork
+    gate, the preparation, the card (always), then the perform intent."""
+
+    def card(self):
+        return mock.patch('charmer.cli.screens.launch_sessions._LaunchCardScreen._gateway_status', lambda _s: None)
+
+    def test_n_opens_the_fork_card_and_enter_returns_the_fork_intent(self) -> None:
+        self.record()
+        before = self.runtime.session_store.root.joinpath("sessions", f"{fx.FIXED_ID}.json").read_bytes()
+        self.assertIn("N fork", self.frame(self.screen()))
+        with self.healthy_card(), self.card():
+            result, win = self.run_screen(self.screen(), ["N", ENTER], width=120)
+        self.assertEqual(result[0], "perform")
+        prepared = result[1]
+        self.assertEqual(prepared.result.session_action.kind, "fork")
+        self.assertEqual(prepared.fork_parent, fx.FIXED_ID)
+        self.assertEqual(prepared.record["forked_from"], fx.FIXED_ID)
+        self.assertNotEqual(prepared.record["managed_id"], fx.FIXED_ID)
+        self.assertIsNone(result[2])
+        card = next((frame for frame in win.frames if "Fork of 11111111 — new session" in frame), None)
+        self.assertIsNotNone(card, "the fork card's title")
+        self.assertIn("Enter fork", card)
+        self.assertEqual(self.runtime.launches, [], "the screen never performs")
+        self.assertEqual(self.runtime.session_store.root.joinpath("sessions", f"{fx.FIXED_ID}.json").read_bytes(),
+                         before)
+        self.assertFalse(self.runtime.session_store.exists(prepared.record["managed_id"]))
+
+    def test_esc_on_the_fork_card_cancels(self) -> None:
+        self.record()
+        with self.healthy_card(), self.card():
+            result, win = self.run_screen(self.screen(), ["n", ESC, ESC])
+        self.assertIsNone(result)
+        self.assertIn("Fork cancelled.", win.frames[-1])
+        self.assertEqual(sorted(path.name for path in self.runtime.session_store.root.joinpath("sessions").glob("*.json")),
+                         [f"{fx.FIXED_ID}.json"])
+
+    def test_a_refusal_is_shown_whole_and_nothing_opens(self) -> None:
+        self.record(transcript=False)
+        result, win = self.run_screen(self.screen(), ["N", ESC], width=120)
+        self.assertIsNone(result)
+        shown = _flat("\n".join(win.frames))
+        self.assertIn(f"cannot fork session 11111111: no conversation file exists for runtime {fx.FIXED_ID}", shown)
+        self.assertIn("a session that has not had a message yet has nothing to fork", shown)
+        self.assertFalse(any("new session" in frame for frame in win.frames))
+        self.assertEqual(self.runtime.launches, [])
+
+    def test_the_actions_row_names_the_parent_of_a_fork(self) -> None:
+        record = self.record()
+        record["forked_from"] = fx.OTHER_ID
+        self.runtime.session_store.save(record)
+        self.assertIn(f"(fork of {fx.OTHER_ID[:8]}…)", self.frame(self.screen(), width=120))
+
+
 class SessionsForgetTests(_SessionsCase):
+    def test_a_tui_forget_leaves_no_generated_prompt(self) -> None:
+        from charmer.cli import doctor
+
+        self.record()
+        root = self.runtime.session_store.root
+        prompts = [root / f"lead-prompt-{digit * 16}-{fx.FIXED_ID}.md" for digit in "ab"]
+        for path in prompts:
+            path.write_bytes(b"generated prompt\n")
+        self.run_screen(self.screen(), ["x", RIGHT, ENTER, ESC, ESC], width=120)
+        self.assertFalse(self.runtime.session_store.exists(fx.FIXED_ID))
+        self.assertEqual([path for path in prompts if path.exists()], [])
+        found = doctor.prune_candidates(self.runtime)
+        self.assertEqual([path for path, _kind, _reason in found.candidates
+                          if fx.FIXED_ID in path.name and path.name.startswith("lead-prompt-")], [])
+
     def test_x_forgets_through_the_modal(self) -> None:
         self.record()
         scope_dir = scope.scope_dir(self.runtime.session_store.root, fx.FIXED_ID)

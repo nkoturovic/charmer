@@ -19,6 +19,11 @@ compiled settings and routes until their next launch or resume.
 
 ### Added
 
+- `--fork` with `charmer -r` (or **N** on the sessions screen) starts a new
+  managed session from a copy of a session's conversation, with its own
+  record, scope, hooks and lead prompt and the lineup the session would get
+  at its next resume. The original is not changed and may keep running.
+  `--print-launch` shows the fork's command and writes nothing.
 - A keyed OpenAI-compatible provider can be declared on a private network
   (`charmer providers add --network loopback|lan|tailnet …`). Its key is
   sent over plain HTTP only to addresses in that network, checked at
@@ -32,6 +37,15 @@ compiled settings and routes until their next launch or resume.
 
 ### Changed
 
+- The `fable` line now selects Fable 5.2 (1M context, output up to 128,000
+  tokens; charmer keeps its default effort `high`). Existing profiles follow
+  the stable key without reseeding or effort changes; running Fable 5.1
+  sessions keep their route until they are resumed. A model you declared
+  for Fable 5.2 yourself yields to the shipped line, with one Attention row
+  and its remedy.
+- `--system-prompt-snapshot` is reserved for the launcher in managed
+  sessions; every launch of a fork turns Claude Code's system-prompt record
+  off, so a fork and its own resumes send the fork's lead prompt.
 - Claude Code 2.1.322 is the pinned client (signed for all eight
   platforms; settings keys added: `disableReplyCheck`,
   `disableWindowsBashCommandSplit`, `responseComparisonEnabled`; none
@@ -53,14 +67,28 @@ compiled settings and routes until their next launch or resume.
   holder.
 - Key bars put row actions first and end with `? N more`; Providers
   refreshes from one observation.
-- The gateway's key-value store is turned off in the shipped
-  configuration.
+- The gateway is CLIProxyAPI 8.0.67 with 30 local patches, built with Go
+  1.27.4. Its key-value store and plugins are off in the shipped
+  configuration. A Codex refresh whose answer is lost is sent once more in
+  the same call and then ends in a new sign-in, as in 2.4.0. The ChatGPT
+  account route sends no client output cap on messages, chat and
+  responses requests (a compact request passes it through, as in 2.4.0).
+  GPT lines never get a hosted image tool. A Claude Code that sends the
+  advisor beta keeps its beta order.
 - The bundled CPython is built from python-build-standalone 20261110
   (Expat 2.10.0; on Linux zlib 1.4 and libedit); the Nix channel lane,
   release journey images and CI tools follow their newest releases.
 
 ### Fixed
 
+- Removing a model you declared with `--successor` keeps that choice for
+  existing sessions, pinned ones included: they resume on the successor
+  without a resume first. Messages say the model was removed by you, not
+  retired by a catalog.
+- `charmer sessions forget` also removes the lead prompts charmer generated
+  for the session.
+- The advice to fork with plain `claude --resume … --fork-session` and adopt
+  the copy is gone: it ran a managed conversation unmanaged.
 - Account rows offer **Add models** and signed-in rows offer **Sign out**.
 - Long results keep their remedies, repeated identical ones included.
 - Settings navigation and arrow keys, form help and choice controls, empty

@@ -353,6 +353,7 @@ def classification() -> dict[str, str]:
 # the words after ``charmer``; each spells its path and its flags.
 EXAMPLES: dict[tuple[str, str], str] = {
     ("launch.direct", "direct"): "direct [--model <model>]",
+    ("launch.fork", "--fork"): "-r <id> --fork",
     ("launch.force-resume", "--force"): "-r <id> --force",
     ("launch.force-resume", "direct --force"): "direct -r <id> --force",
     ("setup.redo", "setup --step"): "setup --step <step>",

@@ -1663,17 +1663,38 @@ def _notice_files(directory: Path, prefix: str, *, nested: bool = False,
 def vendored_records(vendor: Path) -> dict[str, tuple[str, ...]]:
     """What vendor/modules.txt records for each module path: its header's
     fields after the path (``(version,)``, or ``(version, "=>", path,
-    version)`` for a replaced requirement)."""
+    version)`` for a replaced requirement).
+
+    A replacement that names no version on its left (``replace path =>
+    other version`` in go.mod) also gets a footer, ``# path => other
+    version``, after the versioned header. The footer is no record of its
+    own: it must repeat the replacement its header names, and it never
+    displaces that header."""
 
     try:
         text = (vendor / "modules.txt").read_text(encoding="utf-8")
     except OSError as exc:
         raise BuildError(f"cannot read the vendored module list: {exc}") from exc
     records: dict[str, tuple[str, ...]] = {}
+    footers: dict[str, tuple[str, ...]] = {}
     for line in text.splitlines():
         fields = line.split()
-        if line.startswith("# ") and len(fields) > 1:
-            records[fields[1]] = tuple(fields[2:])
+        if not (line.startswith("# ") and len(fields) > 1):
+            continue
+        path, rest = fields[1], tuple(fields[2:])
+        if rest[:1] == ("=>",):
+            if path in footers:
+                raise BuildError(f"vendor/modules.txt lists the wildcard replacement of {path} twice")
+            footers[path] = rest[1:]
+        elif path in records:
+            raise BuildError(f"vendor/modules.txt lists {path} twice")
+        else:
+            records[path] = rest
+    for path, target in sorted(footers.items()):
+        record = records.get(path)
+        if record is None or record[1:2] != ("=>",) or record[2:] != target:
+            raise BuildError(f"vendor/modules.txt wildcard replacement of {path} => {' '.join(target)} "
+                             f"does not match its module header")
     return records
 
 

@@ -275,3 +275,67 @@ def _resume_gate_refusal(gate: ResumeGate) -> str:
     """Text-mode backstop text for a non-ok gate (perform enforcement)."""
 
     return gate.title + " — " + " ".join(gate.lines)
+
+
+# -- fork gate ---------------------------------------------------
+#
+# A fork reads its parent and never writes it: the resume gate without the
+# liveness check (a running parent may be forked), refusing what the fork
+# could not start from. Pure, metadata-only, lock-free, like the resume gate.
+
+FORK_REFUSAL = "cannot fork session {m8}: {reason}"
+FORK_LEGACY = ("it is a legacy record — resume it once (charmer -r {m8}) to migrate it, "
+               "then fork it")
+FORK_NO_CONVERSATION = ("no conversation file exists for runtime {rid} (expected at {path}); "
+                        "a session that has not had a message yet has nothing to fork")
+FORK_CHOICE_SUFFIX = " — then fork it (a saved choice applies to the fork)"
+FORK_INSIDE_SESSION = ("charmer -r SESSION --fork starts a new interactive session: run it in another "
+                       "terminal (in a session, /cm fork prints the command)")
+
+
+def fork_session_refusal(environ: Any) -> str | None:
+    """Why a fork cannot start from ``environ``, or None.
+
+    A fork starts a new interactive session, so it is refused inside a
+    Claude or managed session (any of ``consent.SESSION_MARKERS`` set). The
+    one guard of every surface: the command line before anything is read,
+    the sessions screen before anything is prepared, and the commit of every
+    prepared fork (``Runtime.perform``)."""
+
+    import charmer.cli.consent as consent  # read-only: the session markers
+
+    return FORK_INSIDE_SESSION if consent.session_marker(environ) is not None else None
+
+
+def fork_gate_refusal(runtime: runtime_mod.Runtime, record: dict[str, Any]) -> str | None:
+    """Why ``record`` cannot be forked now, or None.
+
+    In order: a legacy record, a parent with unresolved native forks (⚠;
+    the read-only view that drops forks already holding the authority), a
+    parent that needs identity repair, then the resume gate's checks without
+    liveness: a lead that needs a choice, a conversation file that is
+    missing, elsewhere or under another root, a project directory that is
+    gone."""
+
+    stable_id = sessions.managed_id(record)
+    m8 = stable_id[:8]
+
+    def refuse(reason: str) -> str:
+        return FORK_REFUSAL.format(m8=m8, reason=reason)
+
+    if record.get("version") != sessions.RECORD_VERSION:
+        return refuse(FORK_LEGACY.format(m8=m8))
+    view = sessions.drop_resolved_pending_forks(record) or record
+    if view.get("pending_forks"):
+        return refuse(sessions.pending_fork_message(view))
+    if view.get("identity_state") == sessions.IDENTITY_REPAIR_NEEDED:
+        return refuse(sessions.relink_message(view))
+    gate = _evaluate_resume_gate(runtime, view, live_prefixes=frozenset())
+    if gate.kind == "ok":
+        return None
+    if gate.kind == "needs-choice":
+        return " ".join(gate.lines) + FORK_CHOICE_SUFFIX
+    if gate.kind == "transcript-missing":
+        _status, path, _decoded = _resume_transcript_status(runtime, view)
+        return refuse(FORK_NO_CONVERSATION.format(rid=sessions.runtime_session_id(view), path=path))
+    return refuse(" ".join(gate.lines))

@@ -58,6 +58,7 @@ GATEWAY_CHECK_EXCLUSIONS = {
     "test_gateway_v8_traffic",  # Host: exact native client plus bounded 12s/20s traffic lanes
     "test_gateway_surfaces",  # Host: v8 traffic helpers and the fixture TLS Claude OAuth route
     "test_gateway_fable",  # Host: the Claude OAuth pool's fixture TLS upstream needs openssl on /usr/bin:/bin
+    "test_gateway_private_network",  # Host: the redirect row's fixture TLS upstream needs openssl
     # The lifecycle, its doctor facts and the service hand-off run against fake
     # worlds and stub managers in the main suite; they need no gateway binary.
     "test_gateway_lifecycle", "test_gateway_doctor", "test_gateway_service",
@@ -182,6 +183,13 @@ PATCH_ROWS = {
     ),
     "cli-proxy-api-native-advisor-beta-order.patch": (
         "tests.test_gateway_fable.NativeFingerprintTests.test_fa2_native_2_1_321_fingerprint_and_beta_order",
+    ),
+    # Without the dial guard the gateway drops a private-network entry (it
+    # carries no top-level base-url), so nothing on a private network is
+    # served: the loopback rows go red, and the refusal rows with them.
+    "cli-proxy-api-private-network-dial.patch": (
+        "tests.test_gateway_patches.PatchOmissionProbeTests.test_private_network",
+        "tests.test_gateway_private_network.PrivateNetworkGatewayTests.test_t1_keyed_loopback_is_served_with_the_bearer",
     ),
 }
 
@@ -346,6 +354,17 @@ PATCH_DEPENDENCIES = {
             "reason": "the plain-key Version default replaces the codex client Version default (also the websocket hunk)",
         },
     },
+    "cli-proxy-api-private-network-dial.patch": {
+        "cli-proxy-api-credentialed-redirects.patch": {
+            "file": "internal/runtime/executor/openai_compat_redirect.go", "hunk": 5,
+            "reason": "the guarded client is chosen where the compat client and its redirect mode are built "
+                      "(also the post-Do checks of openai_compat_executor.go)",
+        },
+        "cli-proxy-api-openai-compat-keyed-safety.patch": {
+            "file": "internal/runtime/executor/openai_compat_keyed_safety.go", "hunk": 13,
+            "reason": "the keyed route keeps a private-network refusal through the transport-error predicate",
+        },
+    },
 }
 
 
@@ -408,7 +427,7 @@ REQUIRED_EVIDENCE["tests.test_gateway_clamp"] = {
 
 
 REQUIRED_EVIDENCE["tests.test_gateway_patches"] = {
-    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "AL1", "RL1", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2", "CL1", "TI1", "TI2", "TI3", "TIC1", "TIC2", "IR1", "TR1", "RJ1", "RA1", "LR1", "SI1"},
+    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "AL1", "RL1", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2", "CL1", "TI1", "TI2", "TI3", "TIC1", "TIC2", "IR1", "TR1", "RJ1", "RA1", "LR1", "SI1", "PN1"},
 }
 
 

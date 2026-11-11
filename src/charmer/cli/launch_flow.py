@@ -21,6 +21,7 @@ import charmer.cli.gateway_facts as gateway_facts
 import charmer.cli.screens.common as screens_common
 import charmer.cli.screens.launch_sessions as launch_sessions
 import charmer.cli.screens.transition as screens_transition
+import charmer.cli.resume_checks as resume_checks
 import charmer.cli.selection as selection
 import charmer.cli.session_facts as session_facts
 import charmer.cli.streams as streams
@@ -49,8 +50,15 @@ def _perform_card_result(runtime: runtime_mod.Runtime, result: tuple, *, force: 
     """Perform a card/screen ``("perform", prepared[, decision])`` after teardown (§4.13)."""
 
     decision = result[2] if len(result) > 2 else None
-    _skill_policy_notices(result[1])
-    return runtime.perform(result[1], resume_decision=decision or ("force" if force else None))
+    prepared = result[1]
+    _skill_policy_notices(prepared)
+    if getattr(prepared, "fork_parent", None) is not None:
+        # A fork from the sessions screen (N) names both sessions, as the CLI does.
+        sys.stderr.write(FORK_EXEC_LINE.format(
+            m8=prepared.fork_parent[:8], n8=sessions.managed_id(prepared.record)[:8],
+            profile=termtext.visible_text(session_facts._record_target_label(prepared.record))))
+        sys.stderr.flush()
+    return runtime.perform(prepared, resume_decision=decision or ("force" if force else None))
 
 
 def _transition_preflight_problems(runtime: runtime_mod.Runtime) -> list[str]:
@@ -611,6 +619,103 @@ def _resume_flow(
         _launch_notes(prepared, sys.stderr)
     _skill_policy_notices(prepared)
     return runtime.perform(prepared, resume_decision="force" if force else None)
+
+
+FORK_NEEDS_SESSION = ("--fork needs the session to fork: charmer -r SESSION --fork (or N on its row in "
+                      "the sessions screen)")
+FORK_WITH_CONTINUE = "--fork works with -r SESSION only"
+FORK_WITH_PROFILE = ("--fork starts with the lineup the session would get at its next resume; after the fork "
+                     "starts, change it with /cm profile NAME (or T on its row)")
+FORK_INSIDE_SESSION = resume_checks.FORK_INSIDE_SESSION
+FORK_EXEC_LINE = ("charmer: forking session {m8} into new session {n8} ({profile}); the original is not "
+                  "changed.\n")
+
+
+FORK_DIFF_HEAD = ("the fork starts with the lineup session {m8} would get at its next resume; "
+                  "what changes from the lineup {m8} runs:\n")
+
+
+def _fork_notes(prepared: cli_types.PreparedLaunch, parent_m8: str, stream: TextIO) -> None:
+    """A non-interactive fork's notices and its lineup difference from the
+    parent, before exec."""
+
+    for notice in prepared.notices:
+        stream.write(f"charmer: {termtext.visible_text(notice)}\n")
+    if prepared.diff:
+        stream.write(FORK_DIFF_HEAD.format(m8=parent_m8))
+        for line in prepared.diff:
+            stream.write(termtext.visible_text(line) + "\n")
+    stream.flush()
+
+
+def _fork_preflight(*, session: str | None, continue_session: bool, profile: bool,
+                    environ: Any) -> None:
+    """The refusals of ``--fork`` that need only the command line and the
+    environment, before anything is read: nothing is written. A command
+    line ``--fork`` cannot use exits 2 (``UsageError``); a run inside a
+    managed session exits 1 (``resume_checks.fork_session_refusal``, the
+    guard every fork surface shares)."""
+
+    if continue_session:
+        raise cli_types.UsageError(FORK_WITH_CONTINUE)
+    if not session:
+        raise cli_types.UsageError(FORK_NEEDS_SESSION)
+    if profile:
+        raise cli_types.UsageError(FORK_WITH_PROFILE)
+    refusal = resume_checks.fork_session_refusal(environ)
+    if refusal is not None:
+        raise cli_errors.CLIError(refusal)
+
+
+def _fork_flow(
+    runtime: runtime_mod.Runtime,
+    session_id: str,
+    *,
+    passthrough: list[str],
+    interactive: bool,
+    confirm: bool,
+    input_stream: TextIO,
+    output_stream: TextIO,
+    report_stream: TextIO,
+    print_launch: bool,
+    exec_stream: TextIO | None = None,
+) -> int:
+    """``charmer -r SESSION --fork``: a new managed session from a copy of
+    SESSION's conversation, with its own record and scope and the lineup
+    SESSION would get at its next resume. SESSION is read, never written.
+
+    The fork gate refuses first (``resume_checks.fork_gate_refusal``);
+    ``--print-launch`` shows the fork's plan and writes nothing; an
+    interactive run with a lineup difference, notices or key problems
+    confirms on the line; the line before exec names both sessions."""
+
+    record = runtime.session_store.resolve(session_id)
+    mid = sessions.managed_id(record)
+    refusal = resume_checks.fork_gate_refusal(runtime, record)
+    if refusal is not None:
+        raise cli_errors.CLIError(refusal)
+    target = cli_types.LaunchTarget(
+        "record", None, record.get("profile"), bool(record.get("follow", False)),
+        f"Fork of {mid[:8]} — new session",
+    )
+    if print_launch:
+        prepared = runtime.prepare(target, action="fork", passthrough=passthrough, session_id=mid,
+                                   read_only=True)
+        _print_launch_plan(prepared, report_stream)
+        return _print_launch_verdict(prepared, report_stream)
+    prepared = runtime.prepare(target, action="fork", passthrough=passthrough, session_id=mid)
+    if interactive and confirm and (prepared.diff or prepared.notices or prepared.secret_problems):
+        if not _confirm_launch_line(prepared, input_stream, output_stream, runtime=runtime):
+            return 0
+    else:
+        _fork_notes(prepared, mid[:8], sys.stderr)
+    _skill_policy_notices(prepared)
+    stream = exec_stream if exec_stream is not None else sys.stderr
+    stream.write(FORK_EXEC_LINE.format(
+        m8=mid[:8], n8=sessions.managed_id(prepared.record)[:8],
+        profile=termtext.visible_text(session_facts._record_target_label(prepared.record))))
+    stream.flush()
+    return runtime.perform(prepared)
 
 
 DIRECT_NEEDS_MODEL = "charmer direct needs a model: there is no terminal to pick one in"

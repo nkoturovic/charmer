@@ -214,7 +214,7 @@ def _print_sessions_listing(runtime: runtime_mod.Runtime, output_stream: TextIO,
                 f"{launch_flow._session_row_marker(record, summary, live)} {summary.managed_id[:8]}  "
                 f"{summary.profile_label:<16} {summary.lead_key:<18} agents "
                 f"{summary.agent_count:<2} {follow:<7} {session_facts._record_last_used_age(record)}  "
-                f"{summary.cwd}"
+                f"{summary.cwd}{session_facts.fork_of_note(record, lead='  ')}"
             )
             + "\n"
         )
@@ -332,6 +332,9 @@ def _session_show_lines(runtime: runtime_mod.Runtime, record: dict[str, Any]) ->
     mid = sessions.managed_id(record)
     rid = sessions.runtime_session_id(record)
     lines: list[str] = []
+    if record.get("forked_from"):
+        lines.append(f"{session_facts.fork_of_note(record)}: started from a copy of session "
+                     f"{record['forked_from']}'s conversation, with its own record and scope")
     lcat = runtime.lineup_catalog()
     choice = runtime.resume_choice(record, lcat=lcat)
     if choice.needs_choice:

@@ -72,10 +72,10 @@ index 890a451c..4830883c 100644
  	// Extract account ID from ID token
 diff --git a/internal/runtime/executor/codex_refresh_without_journal_test.go b/internal/runtime/executor/codex_refresh_without_journal_test.go
 new file mode 100644
-index 00000000..832d16d9
+index 00000000..266f1f55
 --- /dev/null
 +++ b/internal/runtime/executor/codex_refresh_without_journal_test.go
-@@ -0,0 +1,421 @@
+@@ -0,0 +1,488 @@
 +package executor
 +
 +// An ordinary Codex refresh keeps no refresh journal: a refresh failure is an
@@ -205,6 +205,22 @@ index 00000000..832d16d9
 +		w.WriteHeader(http.StatusServiceUnavailable)
 +		_, _ = io.WriteString(w, `{"error":"unavailable"}`)
 +		return
++	case "lost":
++		// The endpoint rotates the grant but its answer never arrives (the
++		// connection closes once the request is read); the consumed grant
++		// presented again is answered invalid_grant.
++		grant := req.PostForm.Get("refresh_token")
++		if h.presentedCount(grant) > 1 {
++			w.WriteHeader(http.StatusBadRequest)
++			_, _ = io.WriteString(w, `{"error":"invalid_grant","error_description":"refresh_token_reused"}`)
++			return
++		}
++		if hijacker, ok := w.(http.Hijacker); ok {
++			if conn, _, errHijack := hijacker.Hijack(); errHijack == nil {
++				_ = conn.Close()
++			}
++		}
++		return
 +	case "ok-receipt-fails":
 +		// The exchange succeeds; any bookkeeping beside the credential
 +		// that follows it cannot be written (a full or read-only disk).
@@ -228,6 +244,18 @@ index 00000000..832d16d9
 +	for _, entry := range entries {
 +		_ = os.Chmod(filepath.Join(root, entry.Name()), 0o700)
 +	}
++}
++
++func (h *journalOffHarness) presentedCount(grant string) int {
++	h.mu.Lock()
++	defer h.mu.Unlock()
++	count := 0
++	for _, presented := range h.grants {
++		if presented == grant {
++			count++
++		}
++	}
++	return count
 +}
 +
 +func (h *journalOffHarness) presented() []string {
@@ -495,5 +523,44 @@ index 00000000..832d16d9
 +		t.Fatalf("the refresh wrote %d journal entries under %s", len(entries), journalOffDir)
 +	} else if !os.IsNotExist(errStat) {
 +		t.Fatal(errStat)
++	}
++}
++
++// RJ-lost: the token endpoint rotates the grant and its answer is lost. The
++// same call re-sends the grant exactly once, the consumed grant is answered
++// invalid_grant, and the credential ends in a new sign-in, as in 2.4.0: the
++// grant is recorded as rejected and a forced refresh sends nothing further.
++func TestCodexRefreshWithoutJournalLostResponseEndsInSignIn(t *testing.T) {
++	dir := t.TempDir()
++	h := newJournalOffHarness(t, dir)
++	writeJournalOffCredential(t, dir, "grant-0")
++	h.answer.Store("lost")
++	h.start()
++	_, errRefresh := h.refresh()
++	if errRefresh == nil || !strings.Contains(errRefresh.Error(), "invalid_grant") {
++		t.Fatalf("lost-answer refresh error = %v, want invalid_grant", errRefresh)
++	}
++	if got := h.presented(); len(got) != 2 || got[0] != "grant-0" || got[1] != "grant-0" {
++		t.Fatalf("grants presented = %v, want the grant sent once and re-sent once", got)
++	}
++	auth, ok := h.manager.GetByID(h.authID())
++	if !ok || auth == nil {
++		t.Fatal("credential missing after the lost answer")
++	}
++	if !auth.RequiresSignIn {
++		t.Fatalf("RequiresSignIn = false after invalid_grant")
++	}
++	if auth.RejectedRefreshToken != "grant-0" {
++		t.Fatalf("rejected grant = %q, want grant-0", auth.RejectedRefreshToken)
++	}
++	h.answer.Store("ok")
++	if _, errForced := h.refresh(); errForced == nil {
++		t.Fatal("a forced refresh of the rejected grant succeeded")
++	}
++	if got := h.presented(); len(got) != 2 {
++		t.Fatalf("a forced refresh re-sent the rejected grant: %v", got)
++	}
++	if _, errStat := os.Stat(filepath.Join(dir, journalOffDir)); !os.IsNotExist(errStat) {
++		t.Fatalf("refresh journal directory present: %v", errStat)
 +	}
 +}

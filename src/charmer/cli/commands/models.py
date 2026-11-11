@@ -70,6 +70,9 @@ def _models_listing(runtime: runtime_mod.Runtime, output_stream: Any) -> int:
     for key in sorted(lcat.retired):
         entry = lcat.retired[key]
         successor = entry.get("successor")
+        if entry.get(catalog.OPERATOR_REMOVED_KEY) is True:
+            output_stream.write(f"{key}\t{entry.get('display', key)}\tremoved (successor {successor})\n")
+            continue
         if key in displaced:
             # A line of yours the catalog now provides (it yields to it).
             output_stream.write(f"{key}\t{entry.get('display', key)}\tnow provided by the catalog as "
@@ -109,7 +112,8 @@ def models_list_document(runtime: runtime_mod.Runtime) -> dict[str, Any]:
         {
             "key": key,
             "display": lcat.retired[key].get("display", key),
-            "since_catalog": lcat.retired[key].get("since_catalog"),
+            "since_catalog": (None if lcat.retired[key].get(catalog.OPERATOR_REMOVED_KEY) is True
+                              else lcat.retired[key].get("since_catalog")),
             "successor": lcat.retired[key].get("successor"),
         }
         for key in sorted(lcat.retired)

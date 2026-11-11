@@ -442,6 +442,7 @@ class EssentialEvidencePrefixTests(unittest.TestCase):
                 "client check refusal-routing-fable: PASS ",
                 "client check refusal-routing-fences: PASS ",
                 "client check mod-authoring: PASS class=AP-closed ",
+                "client check fork-launch: PASS ",
             ),
         )
         # A fail-closed or BOUNDARY print never matches a prefix.

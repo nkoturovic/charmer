@@ -82,3 +82,8 @@ class PreparedLaunch:
     # (``choices.WindowCeiling``); display only.
     workflow_window: tuple[str, profile_mod.RoleWindow] | None = None
     window_ceiling: Any = None
+    # A fork: the parent's managed id and the fingerprint of the parent as
+    # the preparation read it (``sessions.fork_fingerprint``); the commit
+    # re-reads the parent and refuses when it moved. None otherwise.
+    fork_parent: str | None = None
+    fork_fingerprint: str | None = None

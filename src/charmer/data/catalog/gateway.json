@@ -39,7 +39,8 @@
       "cli-proxy-api-initial-registration.patch",
       "cli-proxy-api-terminal-rejection-reload.patch",
       "cli-proxy-api-codex-refresh-without-journal.patch",
-      "cli-proxy-api-native-advisor-beta-order.patch"
+      "cli-proxy-api-native-advisor-beta-order.patch",
+      "cli-proxy-api-private-network-dial.patch"
     ],
     "model_discovery": "disabled",
     "renderer": "restricted-yaml-v1",
