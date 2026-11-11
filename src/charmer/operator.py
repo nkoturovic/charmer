@@ -326,6 +326,8 @@ class OperatorLayer:
     # Presentation inventory only: file ids and declared line keys that
     # passed the same credential screen as diagnostics, even when invalid.
     file_lines: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # Explicit successor intent from the validated ledger, not route data.
+    removed: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
     def problems(self) -> tuple[OperatorProblem, ...]:
@@ -1922,6 +1924,7 @@ def validate_layer(
         route_changes=route_changes,
         marker=marker,
         file_lines=file_lines,
+        removed=copy.deepcopy(ledger.removed) if ledger is not None else {},
     )
 
 
@@ -1996,6 +1999,38 @@ def _displaced_retired_entry(line: ResolvedOperatorLine, successor: str, catalog
     }
 
 
+def _removed_retired_entries(docs: Mapping[str, Any], layer: OperatorLayer) -> dict[str, dict[str, Any]]:
+    """Resolution-only entries for explicitly removed keys with successors.
+
+    The ledger records no provider, context or selector contract. Do not
+    reconstruct any from the successor or the wire: empty selectors cannot
+    seed continuity routes, and an unknown provider never claims a rename
+    preserved the model's route. The ordinary resolver bounds chains and
+    turns a missing, removed or cyclic successor into needs-choice.
+    """
+
+    reserved = set(_docs_lines(docs)) | set(docs.get("retired", {}).get("retired", {}))
+    reserved.update(layer.lines)
+    reserved.update(layer.displaced)
+    for keys in layer.file_lines.values():
+        reserved.update(keys)  # an invalid redeclaration must not revive old intent
+    version = (docs.get("version") or {}).get("catalog_version")
+    return {
+        key: {
+            catalog.OPERATOR_REMOVED_KEY: True,
+            "successor": entry["successor"],
+            "reason": f"Removed with successor {entry['successor']}; applies at the next resume.",
+            "since_catalog": version if isinstance(version, int) else 0,
+            "provider": None,
+            "last_wire": entry["last_wire"],
+            "display": key,
+            "selectors": {},
+        }
+        for key, entry in sorted(layer.removed.items())
+        if MIGRATED_KEY.fullmatch(key) and key not in reserved and entry["successor"] is not None
+    }
+
+
 def merge_docs(
     docs: Mapping[str, Any], layer: OperatorLayer, *, legacy: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -2011,17 +2046,18 @@ def merge_docs(
 
     reserved: Mapping[str, Any] = docs
     successors = displaced_successors(docs, layer)
-    if successors:
-        # A line the catalog now provides (a release shipped its route):
-        # its key resolves to that catalog line like a retired key, so the
-        # profiles, bindings and records that name it keep resolving. The
-        # mapping exists before legacy models merge, so a legacy model under
+    removed = _removed_retired_entries(docs, layer)
+    if successors or removed:
+        # Displaced lines and explicit removal successors keep old profile,
+        # binding and record keys resolvable. The mapping exists before
+        # legacy models merge, so a legacy model under
         # the same key is a collision the merge drops (a live entry would
         # win over the mapping and route the key elsewhere).
         retired_doc = dict(docs.get("retired") or {"version": 1, "retired": {}})
         version = (docs.get("version") or {}).get("catalog_version")
         retired_doc["retired"] = {
             **retired_doc.get("retired", {}),
+            **removed,
             **{key: _displaced_retired_entry(layer.displaced[key], successor, version)
                for key, successor in successors.items() if key not in retired_doc.get("retired", {})},
         }

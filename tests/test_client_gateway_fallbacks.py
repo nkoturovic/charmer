@@ -89,7 +89,7 @@ EFFORT_BETA = "effort-2025-11-24"
 CONTEXT_BETA = "context-management-2025-06-27"
 TOOL_SEARCH_BETA = "advanced-tool-use-2025-11-20"
 CACHING_SCOPE_BETA = "prompt-caching-scope-2026-01-05"
-_LEAD, _SWITCHED, _UNKNOWN = "claude-opus-5-5", "claude-fable-5-1", "gpt-multi-sol-high"
+_LEAD, _SWITCHED, _UNKNOWN = "claude-opus-5-5", "claude-fable-5-2", "gpt-multi-sol-high"
 _EFFORT = "high"
 # The refusals the client recognises (read from the client's own handling):
 # each makes it resend the request once without the named part.
@@ -650,6 +650,35 @@ def gateway_verdict(observed: dict[str, list[dict[str, Any]]], replay: dict[str,
     return list(dict.fromkeys(failed))
 
 
+def _replay_tool_facts(alias: str, sent: list[dict[str, Any]]) -> dict[str, Any]:
+    """Fetched-tool placement, not just presence somewhere in the payload.
+
+    From 8.0.59 Codex offers ToolSearch-discovered tools in an additional_tools
+    input item after the tool result. The Claude key and chat routes keep
+    the fetched tool in their top-level tools list.
+    """
+    def names(tools):
+        return {str(tool.get("name") or (tool.get("function") or {}).get("name"))
+                for tool in tools if isinstance(tool, dict)}
+
+    top = names(tool for body in sent for tool in body.get("tools") or [])
+    inputs = [item for body in sent for item in body.get("input") or [] if isinstance(item, dict)]
+    additional = names(tool for item in inputs if item.get("type") == "additional_tools"
+                       for tool in item.get("tools") or [])
+    top_has, additional_has = "SendMessage" in top, "SendMessage" in additional
+    order = [item.get("type") for item in inputs]
+    if alias == "gwtest-codex-reasoning-effort-high":
+        # The captured conversation can have several initial messages; the
+        # fetched definition must follow the tool result, before the next message.
+        correct = (additional_has and not top_has and bool(order[:-4])
+                   and all(kind == "message" for kind in order[:-4])
+                   and order[-4:] == ["function_call", "function_call_output", "additional_tools", "message"])
+    else:
+        correct = top_has and not additional_has
+    return {"fetched-tool": correct, "top-level": top_has, "additional-tools": additional_has,
+            "input-types": order}
+
+
 class GatewayVerdictTests(unittest.TestCase):
     def observed(self) -> tuple[dict[str, Any], dict[str, Any]]:
         def relayed(**fields) -> dict[str, Any]:
@@ -664,6 +693,27 @@ class GatewayVerdictTests(unittest.TestCase):
         replay = {alias: {"status": 200, "upstream": 1, "fetched-tool": True}
                   for alias in ("gwtest-cc-output-config-high", "gwtest-codex-reasoning-effort-high", "gwtest-compat-plain")}
         return observed, replay
+
+    def test_fetched_tool_placement_is_route_specific(self) -> None:
+        codex = "gwtest-codex-reasoning-effort-high"
+        tools = [{"name": "SendMessage"}]
+        inputs = [{"type": kind} for kind in ("message", "function_call", "function_call_output")]
+        inputs += [{"type": "additional_tools", "tools": tools}, {"type": "message"}]
+        body = {"tools": [{"name": "ToolSearch"}], "input": inputs}
+        self.assertTrue(_replay_tool_facts(codex, [body])["fetched-tool"])
+        self.assertTrue(_replay_tool_facts(codex, [{**body, "input": [{"type": "message"}] * 2 + inputs}])[
+            "fetched-tool"])
+        for broken in ({"tools": tools}, {**body, "tools": tools},
+                       {**body, "input": [*inputs[:2], inputs[3], inputs[2], inputs[4]]},
+                       {**body, "input": [{"type": item["type"]} for item in inputs]}):
+            with self.subTest(broken=broken):
+                self.assertFalse(_replay_tool_facts(codex, [broken])["fetched-tool"])
+        for alias in ("gwtest-cc-output-config-high", "gwtest-compat-plain"):
+            for offered in (tools, [{"function": {"name": "SendMessage"}}]):
+                with self.subTest(alias=alias, offered=offered):
+                    self.assertTrue(_replay_tool_facts(alias, [{"tools": offered}])["fetched-tool"])
+            self.assertFalse(_replay_tool_facts(alias, [body])["fetched-tool"])
+            self.assertFalse(_replay_tool_facts(alias, [{**body, "tools": tools}])["fetched-tool"])
 
     def test_a_clean_run_passes_and_each_loss_names_its_class(self) -> None:
         observed, replay = self.observed()
@@ -802,7 +852,8 @@ class ShapeThroughGatewayTests(_GatedCase):
         tool, tool_reference result, system turns, context_management,
         effort) replayed on the harness gateway's Claude key, Codex and
         OpenAI-compatible routes: the status each answers and whether the
-        fetched deferred tool reaches the upstream's tool list."""
+        fetched deferred tool reaches the route's expected location (the
+        additional_tools input item on Codex; top-level tools otherwise)."""
 
         fixture = self._fixture()
         provider = _Provider(search_once=True)
@@ -826,10 +877,7 @@ class ShapeThroughGatewayTests(_GatedCase):
                                          headers={**forwarded, **gateway.headers()},
                                          body=json.dumps(document).encode(), timeout=45)
             sent = [hit.body for hit in gateway.upstream.hits[before:]]
-            names = {str(tool.get("name") or (tool.get("function") or {}).get("name"))
-                     for body in sent for tool in body.get("tools") or [] if isinstance(tool, dict)}
-            statuses[alias] = {"status": reply.status, "upstream": len(sent),
-                               "fetched-tool": "SendMessage" in names}
+            statuses[alias] = {"status": reply.status, "upstream": len(sent), **_replay_tool_facts(alias, sent)}
         return statuses
 
 

@@ -264,6 +264,7 @@ class SeedLoadTests(unittest.TestCase):
             [
                 "claude-fable-5",
                 "claude-fable-5-1",
+                "claude-fable-5-2",
                 "claude-haiku-5-5",
                 "claude-opus-4-8",
                 "claude-opus-5",
@@ -340,6 +341,50 @@ class SeedLoadTests(unittest.TestCase):
             {legacy.LEGACY_SELECTOR_PREFIX + "qwen38-max[1m]": "reasoning-effort-xhigh"},
         )
 
+    def test_fable_52_definition_and_retained_generations(self) -> None:
+        bundle = catalog.load_catalog(CATALOG_ROOT)
+        line = bundle.lines["fable"]
+        self.assertEqual(line["display"], "Fable 5.2 · 1M selector")
+        self.assertEqual(line["generation"], "5.2")
+        self.assertEqual(line["provider"], "anthropic")
+        self.assertEqual(line["wire_model"], "claude-fable-5-2")
+        self.assertEqual(line["selector"], "claude-fable-5-2[1m]")
+        self.assertEqual(line["efforts"], ["low", "medium", "high", "xhigh", "max"])
+        self.assertEqual(line["default_effort"], "high")
+        self.assertEqual(line["lead"], {"effort": "ultracode", "env": {}})
+        self.assertEqual(line["capabilities"], ["lead", "agents"])
+        self.assertEqual(line["roles"], "all")
+        self.assertEqual(line["status"], "active")
+        self.assertIsNone(line["registry_overlay"])
+        self.assertEqual(line["minimum_tested"], {"claude_code": "2.1.322", "cliproxyapi": "8.0.67"})
+        self.assertNotIn("family", line)
+        self.assertNotIn("key_route", line)
+        context = line["context"]
+        self.assertEqual({key: value for key, value in context.items() if key != "qualification"}, {
+            "client_tokens": 1000000, "provider_tokens": 1000000, "declared_tokens": 1000000,
+            "validated_tokens": 200000, "scalar_tokens": None, "ordinary_profile": "large"})
+        self.assertIn("not a 5.2 measurement", context["qualification"])
+        self.assertIn("no provider or near-limit measurement", context["qualification"])
+        self.assertIn("not performance-equivalent to 5.1", line["routing_note"])
+        self.assertEqual(line["output"], {"declared_tokens": 128000, "source": "docs",
+                         "source_ref": "https://platform.claude.com/docs/en/models/fable-5-2/overview"})
+        self.assertEqual([key for key in bundle.lines if key.startswith("fable")], ["fable"])
+        self.assertEqual(len(bundle.retired), 20)
+        retired = bundle.retired["fable51"]
+        self.assertEqual(retired["generation"], "5.1")
+        self.assertEqual(retired["since_catalog"], 33)
+        self.assertEqual(retired["last_wire"], "claude-fable-5-1")
+        self.assertEqual(retired["selectors"], {"claude-fable-5-1[1m]": None})
+        self.assertEqual(retired["reason"], "Fable 5.1 is no longer the selectable generation: the fable line now "
+                         "carries Fable 5.2. claude-fable-5-1 stays a passthrough route for running sessions; "
+                         "resume resolves to fable.")
+        for key in ("fable51", "fable@5"):
+            self.assertEqual(bundle.resolve_key(key).key, "fable")
+        for wire, key in (("claude-fable-5-1", "fable51"), ("claude-fable-5", "fable@5")):
+            for suffix in ("", "[1m]"):
+                found, entry = bundle.resolve_selector(wire + suffix)
+                self.assertEqual((found, entry["last_wire"], entry["successor"]), (key, wire, "fable"))
+
     def test_deepseek_pro_removal_does_not_claim_an_upstream_redirect(self) -> None:
         bundle = catalog.load_catalog(CATALOG_ROOT)
         retired = bundle.retired["deepseek-pro"]
@@ -378,7 +423,7 @@ class FrozenSelectorCoverageTests(unittest.TestCase):
 
     EXPECTED = {
         "claude-fable-5": {"ii", "iii"},
-        "claude-fable-5-1": {"i", "ii", "iii"},
+        "claude-fable-5-1": {"ii", "iii"},
         "claude-opus-5": {"ii"},
         "claude-opus-5-5": {"i", "ii"},
         "claude-opus-4-8": {"ii"},
@@ -1731,7 +1776,9 @@ class NativeContractTests(unittest.TestCase):
         self.assertEqual(validated, "2.1.322")
         # haiku: the pin its qualification ran on (the 2.2.1 twin on Claude
         # Code 2.1.310; the client documents its haiku alias from 2.1.293).
-        floors = {"opus": "2.1.280", "fable": "2.1.257", "sonnet": "2.1.286", "haiku": "2.1.310"}
+        # Fable 5.2: the exact-client and fake-upstream gateway checks ran on
+        # 2.1.322 / 8.0.67; this is not a provider-capacity measurement.
+        floors = {"opus": "2.1.280", "fable": "2.1.322", "sonnet": "2.1.286", "haiku": "2.1.310"}
         # The OpenRouter lines record the pin their evidence ran on.
         floors.update({key: "2.1.286" for key, line in bundle.lines.items()
                        if line["provider"] in catalog.AGGREGATOR_PROVIDERS})

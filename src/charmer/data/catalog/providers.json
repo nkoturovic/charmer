@@ -15,6 +15,10 @@
         },
         {
           "fork": true,
+          "name": "claude-fable-5-2"
+        },
+        {
+          "fork": true,
           "name": "claude-opus-5"
         },
         {

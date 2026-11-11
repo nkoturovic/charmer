@@ -516,6 +516,10 @@ def line_family(entry: dict[str, Any], providers: dict[str, Any]) -> str:
     return entry.get("family") or providers[entry["provider"]]["independence_family"]
 
 
+# Internal merged-view metadata, never a packaged retirement field.
+OPERATOR_REMOVED_KEY = "operator_removed"
+
+
 def resolve_key_in(
     lines: Mapping[str, Any], retired: Mapping[str, Any], key: str
 ) -> KeyResolution:
@@ -540,19 +544,23 @@ def resolve_key_in(
             break
         current = retired[current]["successor"]
     entry = retired[key]
-    since = entry["since_catalog"]
+    removed = entry.get(OPERATOR_REMOVED_KEY) is True
+    notice = (f"{key} was removed by you with successor {entry['successor']}" if removed else
+              f"{key} was retired in catalog {entry['since_catalog']}")
     if current is None or current not in lines:
+        reason = (" (no successor)" if current is None else
+                  f"; successor {current} is not available (removed, missing or cyclic)")
         return KeyResolution(
             requested=key,
             key=None,
             chain=tuple(chain),
-            notice=f"{key} was retired in catalog {since} (no successor): needs a model choice",
+            notice=f"{notice}{reason}: needs a model choice",
         )
     return KeyResolution(
         requested=key,
         key=current,
         chain=tuple(chain),
-        notice=f"{key} was retired in catalog {since} -> {current}",
+        notice=notice if removed and current == entry["successor"] else f"{notice} -> {current}",
     )
 
 
