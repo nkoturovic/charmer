@@ -399,8 +399,8 @@ class NetworkCommandCase(unittest.TestCase):
         return _getaddrinfo(*self.answers)(host, port)
 
     def command(self, argv: list[str], text: str = "", *, tty: bool = True, **extra: Any) -> tuple[int, str, str]:
-        """Parse ``argv`` like the CLI, add the arguments the parser does not
-        carry yet (``network``), and run the providers command."""
+        """Parse ``argv`` like the CLI, set ``extra`` arguments (``network``,
+        as ``--network`` sets it), and run the providers command."""
 
         import contextlib
         import io
@@ -1551,6 +1551,49 @@ class ReloadEntryPointTests(_proxy_control_case()):
                 if not served:
                     self.assertIn("gateway reloaded without the private-network selector(s) custom-box-chat",
                                   err.getvalue())
+
+
+class NetworkFlagDispatchTests(NetworkCommandCase):
+    """``providers add --network`` and ``providers template --network``
+    through the real entry point."""
+
+    def test_add_with_the_flag_declares_the_network(self) -> None:
+        code, out, err = self.harness.op([*ADD_KEYED, "--network", "tailnet"], "y\n")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn(APPROVAL_TAIL, err)
+        self.assertEqual(self.declaration()["provider"]["network"], "tailnet")
+
+    def test_template_with_the_flag_carries_the_network(self) -> None:
+        code, out, err = self.harness.op(["providers", "template", "--kind", "openai-compatible", "--network", "lan"])
+        self.assertEqual(code, 0, out + err)
+        document = strict_json.loads(out.encode())
+        self.assertEqual(document["provider"]["network"], "lan")
+        self.assertTrue(document["provider"]["base_url"].startswith("http://"), document)
+
+    def test_an_unknown_network_is_a_usage_error(self) -> None:
+        import contextlib
+        import io
+
+        from charmer import cli
+
+        before = self.state_bytes()
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as caught:
+            cli.build_parser().parse_args([*ADD_KEYED, "--network", "wan"])
+        self.assertEqual(caught.exception.code, 2)
+        self.assertIn("--network: invalid choice: 'wan'", err.getvalue())
+        self.assertEqual(self.state_bytes(), before)
+        self.assertIsNone(cli.build_parser().parse_args(ADD_KEYED).network)
+
+    def test_the_help_names_the_flag(self) -> None:
+        from charmer import cli
+
+        parser = cli.build_parser()
+        add = next(action for action in parser._subparsers._group_actions[0].choices["providers"]._subparsers
+                   ._group_actions[0].choices["add"]._actions if "--network" in action.option_strings)
+        self.assertEqual(add.help, "the private network the base URL is on: allows http with a key; the gateway "
+                                   "checks every connection")
+        self.assertEqual(add.choices, ("loopback", "lan", "tailnet"))
 
 
 class CatalogNetworkGateTests(unittest.TestCase):
