@@ -166,6 +166,9 @@ PATCH_ROWS = {
     "cli-proxy-api-terminal-rejection-reload.patch": (
         "tests.test_gateway_patches.PatchOmissionProbeTests.test_terminal_rejection_reload",
     ),
+    "cli-proxy-api-codex-refresh-without-journal.patch": (
+        "tests.test_gateway_patches.PatchOmissionProbeTests.test_codex_refresh_without_journal",
+    ),
 }
 
 
@@ -393,7 +396,7 @@ REQUIRED_EVIDENCE["tests.test_gateway_clamp"] = {
 
 
 REQUIRED_EVIDENCE["tests.test_gateway_patches"] = {
-    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "AL1", "RL1", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2", "CL1", "TI1", "TI2", "TI3", "TIC1", "TIC2", "IR1", "TR1", "RA1", "LR1"},
+    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "AL1", "RL1", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2", "CL1", "TI1", "TI2", "TI3", "TIC1", "TIC2", "IR1", "TR1", "RJ1", "RA1", "LR1", "SI1"},
 }
 
 
@@ -732,33 +735,51 @@ def templates(bundle) -> dict:
 # the harness renders the frozen fixture with the shipped values; gateway
 # traffic then runs the way the product renders it.
 SHIPPED_COMPRESSION_KEYS = ("response-compression", "codex")
+# The shipped catalog's key-value store setting: the gateway keeps its store
+# in memory (a database file in the auth directory when unset), so gateway
+# traffic under test leaves the auth directory holding credentials only.
+SHIPPED_STORE_KEYS = ("kv-store",)
+
+
+def _shipped_static(keys):
+    static = json.loads((RESOURCES_ROOT / "catalog/gateway.json").read_text())["gateway"]["cliproxy_static"]
+    return {key: copy.deepcopy(static[key]) for key in keys}
 
 
 def shipped_compression():
-    static = json.loads((RESOURCES_ROOT / "catalog/gateway.json").read_text())["gateway"]["cliproxy_static"]
-    return {key: copy.deepcopy(static[key]) for key in SHIPPED_COMPRESSION_KEYS}
+    return _shipped_static(SHIPPED_COMPRESSION_KEYS)
+
+
+def shipped_store():
+    return _shipped_static(SHIPPED_STORE_KEYS)
 
 
 def shipped_gateway_doc(gateway_doc):
     """A copy of ``gateway_doc`` (a fixture gateway document) carrying the
-    shipped compression settings."""
+    shipped compression and key-value store settings."""
     document = copy.deepcopy(gateway_doc)
     document["gateway"]["cliproxy_static"].update(shipped_compression())
+    document["gateway"]["cliproxy_static"].update(shipped_store())
     return document
 
 
 def with_shipped_compression(document):
     """A finalized config document that states no compression setting gets
     the shipped ones (a document rendered from another catalog, such as a
-    route test's own render); one that states any is returned unchanged, so
-    a control can render compression on explicitly."""
-    if any(key in document for key in SHIPPED_COMPRESSION_KEYS):
+    route test's own render); one that states any keeps its own, so a
+    control can render compression on explicitly. A document that states no
+    key-value store setting gets the shipped one either way."""
+    compression = not any(key in document for key in SHIPPED_COMPRESSION_KEYS)
+    store = {key: value for key, value in shipped_store().items() if key not in document}
+    if not compression and not store:
         return document
     revised = copy.deepcopy(document)
     if revised["openai-compatibility"][-1]["name"] != render.SENTINEL_NAME:
         raise AssertionError("a harness document must end with its render sentinel")
     revised["openai-compatibility"].pop()
-    revised.update(shipped_compression())
+    if compression:
+        revised.update(shipped_compression())
+    revised.update(store)
     return render.finalize_document(revised)
 
 
@@ -1014,6 +1035,8 @@ def content_chunk_reply(path: str, body: dict, raw: bytes, _headers=None) -> tup
 
 # Byte goldens captured from the admitted series before content-chunk decoding.
 # Both the full series and the single-omission build must match these bytes.
+# Since upstream 8.0.56 (6044c5d1) a non-streaming reply with reasoning carries
+# its thinking block before its text, as a native Messages reply does.
 CONTENT_CHUNK_HTTP_GOLDENS = {'keyed:absent:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
  'keyed:absent:True': 'event: message_start\n'
                       'data: '
@@ -1084,7 +1107,7 @@ CONTENT_CHUNK_HTTP_GOLDENS = {'keyed:absent:False': '{"id":"chatcmpl_fixture","t
                     'event: message_stop\n'
                     'data: {"type":"message_stop"}\n'
                     '\n',
- 'keyed:precedence:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"thought"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
+ 'keyed:precedence:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[{"type":"thinking","thinking":"thought"},{"type":"text","text":"answer"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
  'keyed:precedence:True': 'event: message_start\n'
                           'data: '
                           '{"type":"message_start","message":{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":16,"output_tokens":0}}}\n'
@@ -1117,7 +1140,7 @@ CONTENT_CHUNK_HTTP_GOLDENS = {'keyed:absent:False': '{"id":"chatcmpl_fixture","t
                           'event: message_stop\n'
                           'data: {"type":"message_stop"}\n'
                           '\n',
- 'keyed:reasoning:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"thought"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
+ 'keyed:reasoning:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[{"type":"thinking","thinking":"thought"},{"type":"text","text":"answer"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
  'keyed:reasoning:True': 'event: message_start\n'
                          'data: '
                          '{"type":"message_start","message":{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":16,"output_tokens":0}}}\n'
@@ -1150,7 +1173,7 @@ CONTENT_CHUNK_HTTP_GOLDENS = {'keyed:absent:False': '{"id":"chatcmpl_fixture","t
                          'event: message_stop\n'
                          'data: {"type":"message_stop"}\n'
                          '\n',
- 'keyed:reasoning_content:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"thought"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
+ 'keyed:reasoning_content:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[{"type":"thinking","thinking":"thought"},{"type":"text","text":"answer"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
  'keyed:reasoning_content:True': 'event: message_start\n'
                                  'data: '
                                  '{"type":"message_start","message":{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":17,"output_tokens":0}}}\n'
@@ -1184,7 +1207,7 @@ CONTENT_CHUNK_HTTP_GOLDENS = {'keyed:absent:False': '{"id":"chatcmpl_fixture","t
                                  'event: message_stop\n'
                                  'data: {"type":"message_stop"}\n'
                                  '\n',
- 'keyed:reasoning_details:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"thought"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
+ 'keyed:reasoning_details:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[{"type":"thinking","thinking":"thought"},{"type":"text","text":"answer"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
  'keyed:reasoning_details:True': 'event: message_start\n'
                                  'data: '
                                  '{"type":"message_start","message":{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"custom-chatco-chat","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":17,"output_tokens":0}}}\n'
@@ -1357,7 +1380,7 @@ CONTENT_CHUNK_HTTP_GOLDENS = {'keyed:absent:False': '{"id":"chatcmpl_fixture","t
                       'event: message_stop\n'
                       'data: {"type":"message_stop"}\n'
                       '\n',
- 'keyless:precedence:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"thought"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
+ 'keyless:precedence:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[{"type":"thinking","thinking":"thought"},{"type":"text","text":"answer"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
  'keyless:precedence:True': 'event: message_start\n'
                             'data: '
                             '{"type":"message_start","message":{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":16,"output_tokens":0}}}\n'
@@ -1390,7 +1413,7 @@ CONTENT_CHUNK_HTTP_GOLDENS = {'keyed:absent:False': '{"id":"chatcmpl_fixture","t
                             'event: message_stop\n'
                             'data: {"type":"message_stop"}\n'
                             '\n',
- 'keyless:reasoning:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"thought"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
+ 'keyless:reasoning:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[{"type":"thinking","thinking":"thought"},{"type":"text","text":"answer"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
  'keyless:reasoning:True': 'event: message_start\n'
                            'data: '
                            '{"type":"message_start","message":{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":16,"output_tokens":0}}}\n'
@@ -1423,7 +1446,7 @@ CONTENT_CHUNK_HTTP_GOLDENS = {'keyed:absent:False': '{"id":"chatcmpl_fixture","t
                            'event: message_stop\n'
                            'data: {"type":"message_stop"}\n'
                            '\n',
- 'keyless:reasoning_content:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"thought"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
+ 'keyless:reasoning_content:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[{"type":"thinking","thinking":"thought"},{"type":"text","text":"answer"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
  'keyless:reasoning_content:True': 'event: message_start\n'
                                    'data: '
                                    '{"type":"message_start","message":{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":17,"output_tokens":0}}}\n'
@@ -1457,7 +1480,7 @@ CONTENT_CHUNK_HTTP_GOLDENS = {'keyed:absent:False': '{"id":"chatcmpl_fixture","t
                                    'event: message_stop\n'
                                    'data: {"type":"message_stop"}\n'
                                    '\n',
- 'keyless:reasoning_details:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"thought"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
+ 'keyless:reasoning_details:False': '{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[{"type":"thinking","thinking":"thought"},{"type":"text","text":"answer"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":11,"output_tokens":4}}',
  'keyless:reasoning_details:True': 'event: message_start\n'
                                    'data: '
                                    '{"type":"message_start","message":{"id":"chatcmpl_fixture","type":"message","role":"assistant","model":"gwtest-compat-plain","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":17,"output_tokens":0}}}\n'

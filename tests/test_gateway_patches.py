@@ -10,7 +10,7 @@ import time
 import unittest
 import uuid
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from charmer import probe, render, state
 from _catalog import SHIPPED_ROOT, uses_shipped_catalog
@@ -104,6 +104,51 @@ class LoopbackOAuthListenerTests(unittest.TestCase):
 
     def test_fallback_listener_probe_inside_namespace(self):
         self.check_login("claude", "LO1-A", "A")
+
+    def test_claude_authorize_url_carries_native_state_and_scope(self):
+        # The Claude sign-in's authorize URL, as the built binary prints it:
+        # a 43-character base64url state (32 random bytes, as the native
+        # client sends) and org:create_api_key in the authorize scope; no
+        # other parameter carries that scope.
+        binary = gateway_binary()
+        with tempfile.TemporaryDirectory(prefix="gwtest-login-") as directory:
+            root = Path(directory).resolve()
+            auth = root / "auth"
+            state.ensure_private_dir(auth)
+            port, _ = harness.ports()
+            config = root / "config.yaml"
+            state.atomic_write(config, (f'host: 127.0.0.1\nauth-dir: "{auth}"\n'
+                'discovery: {enabled: false}\nremote-management: {disable-control-panel: true}\n').encode())
+            argv = [binary, "--config", str(config), "--claude-login", "--no-browser",
+                    "--oauth-callback-port", str(port)]
+            log_path = root / "login.log"
+            printed = re.compile(r"Visit the following URL to continue authentication:\n(\S+)\n")
+            with log_path.open("wb") as log:
+                process = probe.start_isolated_process(argv, cwd=root,
+                    env={"HOME": str(root), "PATH": "/usr/bin:/bin"}, stdout=log, stderr=subprocess.STDOUT)
+                try:
+                    deadline = time.monotonic() + 10
+                    match = printed.search(log_path.read_text())
+                    while match is None and time.monotonic() < deadline:
+                        self.assertIsNone(process.poll(), "Claude login exited before printing the authorize URL")
+                        time.sleep(0.02)
+                        match = printed.search(log_path.read_text())
+                    self.assertIsNotNone(match, "the authorize URL was not printed")
+                finally:
+                    probe.stop_isolated_process(process)
+        url = urlsplit(match.group(1))
+        query = parse_qs(url.query, keep_blank_values=True, strict_parsing=True)
+        self.assertEqual(url.scheme, "https")
+        self.assertEqual(len(query.get("state", ())), 1, "one state parameter")
+        self.assertRegex(query["state"][0], r"^[A-Za-z0-9_-]{43}$")
+        self.assertEqual(len(query.get("scope", ())), 1, "one scope parameter")
+        scopes = query["scope"][0].split(" ")
+        self.assertEqual(scopes.count("org:create_api_key"), 1, scopes)
+        self.assertFalse([name for name, values in query.items() if name != "scope"
+                          for value in values if "org:create_api_key" in value])
+        redirect = urlsplit(query["redirect_uri"][0])
+        self.assertTrue(redirect.hostname == "localhost" or harness.loopback_listener(redirect.hostname), redirect)
+        record("SI1", state_length=len(query["state"][0]), scopes=scopes)
 
 
 class GatewayListenerTests(unittest.TestCase):
@@ -373,6 +418,9 @@ class PatchOmissionProbeTests(unittest.TestCase):
 
     def test_terminal_rejection_reload(self):
         self.check_probe("service", "TestOmissionTerminalRejectionReload", "TR1")
+
+    def test_codex_refresh_without_journal(self):
+        self.check_probe("executor", "TestOmissionCodexRefreshWithoutJournal", "RJ1")
 
     def test_relogin_after_refresh_failure(self):
         # Upstream's re-login recovery since 8.0.43 (21553509; local patch 33

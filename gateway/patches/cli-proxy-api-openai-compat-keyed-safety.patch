@@ -1,9 +1,9 @@
 diff --git a/internal/compatsafe/compatsafe.go b/internal/compatsafe/compatsafe.go
 new file mode 100644
-index 00000000..2f8bdaf3
+index 00000000..45fa368b
 --- /dev/null
 +++ b/internal/compatsafe/compatsafe.go
-@@ -0,0 +1,878 @@
+@@ -0,0 +1,883 @@
 +// Package compatsafe is the safe failure representation of the keyed
 +// OpenAI-compatible chat route.
 +//
@@ -218,6 +218,11 @@ index 00000000..2f8bdaf3
 +// IsCredentialScoped reports false: the compatibility executor never marks a
 +// failure credential-scoped.
 +func (e Error) IsCredentialScoped() bool { return false }
++
++// IsStreamTruncated reports whether the failure is the locally synthesized
++// close of an accepted stream before its terminal marker, the one case the
++// executor's unkeyed route also marks truncated. It reads the Kind only.
++func (e Error) IsStreamTruncated() bool { return e.Kind == KindStreamClosedBeforeDone }
 +
 +// ReadErrorBody reads at most MaxErrorBody+1 bytes of r. It returns the
 +// bytes read (never more than MaxErrorBody), whether the body was larger,
@@ -884,10 +889,10 @@ index 00000000..2f8bdaf3
 +}
 diff --git a/internal/compatsafe/compatsafe_cm053_test.go b/internal/compatsafe/compatsafe_cm053_test.go
 new file mode 100644
-index 00000000..f6a1c62c
+index 00000000..ed559ba0
 --- /dev/null
 +++ b/internal/compatsafe/compatsafe_cm053_test.go
-@@ -0,0 +1,315 @@
+@@ -0,0 +1,326 @@
 +package compatsafe
 +
 +import (
@@ -946,6 +951,17 @@ index 00000000..f6a1c62c
 +	*err.RetryAfter() = time.Hour
 +	if got := err.RetryAfter(); *got != 5*time.Second {
 +		t.Fatalf("RetryAfter exposes internal state: %v", *got)
++	}
++}
++
++// Only the local close of an accepted stream before [DONE] is a truncated
++// stream (no pool cooldown); every other kind keeps its ordinary verdict.
++func TestCM053CompatSafeOnlyClosedBeforeDoneIsTruncated(t *testing.T) {
++	for _, kind := range Kinds() {
++		want := kind == KindStreamClosedBeforeDone
++		if got := NewError(kind, http.StatusBadGateway, nil).IsStreamTruncated(); got != want {
++			t.Fatalf("NewError(%s).IsStreamTruncated() = %v, want %v", kind, got, want)
++		}
 +	}
 +}
 +
@@ -1204,18 +1220,18 @@ index 00000000..f6a1c62c
 +	}
 +}
 diff --git a/internal/runtime/executor/helps/usage_helpers.go b/internal/runtime/executor/helps/usage_helpers.go
-index 75a5f989..08dbbd63 100644
+index 8c346c63..848be658 100644
 --- a/internal/runtime/executor/helps/usage_helpers.go
 +++ b/internal/runtime/executor/helps/usage_helpers.go
-@@ -16,6 +16,7 @@ import (
+@@ -19,6 +19,7 @@ import (
  	"github.com/gin-gonic/gin"
  	"github.com/google/uuid"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
 +	"github.com/router-for-me/CLIProxyAPI/v8/internal/compatsafe"
+ 	internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
  	internallogging "github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
- 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-@@ -119,6 +120,11 @@ func NewUsageReporter(ctx context.Context, provider, model string, auth *cliprox
+@@ -125,6 +126,11 @@ func NewUsageReporter(ctx context.Context, provider, model string, auth *cliprox
  				baseURL = strings.TrimSpace(v)
  			}
  		}
@@ -1227,7 +1243,7 @@ index 75a5f989..08dbbd63 100644
  	}
  	traceID := usage.TraceIDFromContext(ctx)
  	if traceID == "" {
-@@ -871,6 +877,14 @@ func AccessProviderFromContext(ctx context.Context) string {
+@@ -919,6 +925,14 @@ func AccessProviderFromContext(ctx context.Context) string {
  
  func resolveUsageSource(auth *cliproxyauth.Auth, ctxAPIKey string) string {
  	if auth != nil {
@@ -1243,18 +1259,18 @@ index 75a5f989..08dbbd63 100644
  		if strings.EqualFold(provider, "vertex") {
  			if auth.Metadata != nil {
 diff --git a/internal/runtime/executor/openai_compat_executor.go b/internal/runtime/executor/openai_compat_executor.go
-index c1953cb4..e1aacb3b 100644
+index 73d9f46d..dedf9d46 100644
 --- a/internal/runtime/executor/openai_compat_executor.go
 +++ b/internal/runtime/executor/openai_compat_executor.go
-@@ -17,6 +17,7 @@ import (
- 	"time"
+@@ -18,6 +18,7 @@ import (
  
+ 	"github.com/MoeForge/moego/ojson"
  	"github.com/google/uuid"
 +	"github.com/router-for-me/CLIProxyAPI/v8/internal/compatsafe"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/misc"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
-@@ -200,7 +201,11 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
+@@ -216,7 +217,11 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
  		authLabel = auth.Label
  		authType, authValue = auth.AccountInfo()
  	}
@@ -1267,7 +1283,7 @@ index c1953cb4..e1aacb3b 100644
  		URL:       url,
  		Method:    http.MethodPost,
  		Headers:   httpReq.Header.Clone(),
-@@ -210,22 +215,33 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
+@@ -226,22 +231,33 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
  		AuthLabel: authLabel,
  		AuthType:  authType,
  		AuthValue: authValue,
@@ -1305,12 +1321,19 @@ index c1953cb4..e1aacb3b 100644
 +			err = openAICompatKeyedHTTPFailure(ctx, e.cfg, httpResp)
 +			return resp, err
 +		}
- 		b, _ := io.ReadAll(httpResp.Body)
+ 		b, errRead := io.ReadAll(httpResp.Body)
  		helps.AppendAPIResponseChunk(ctx, e.cfg, b)
- 		helps.LogWithRequestID(ctx).Debugf("request error, error status: %d, error message: %s", httpResp.StatusCode, helps.SummarizeErrorBody(httpResp.Header.Get("Content-Type"), b))
-@@ -234,9 +250,19 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
+ 		if errRead != nil {
+@@ -252,11 +268,26 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
+ 		return resp, err
  	}
  	body, err := io.ReadAll(httpResp.Body)
+-	helps.AppendAPIResponseChunk(ctx, e.cfg, body)
++	// A keyed body is classified before it is captured: a failure body or a
++	// partial read never reaches the response capture.
++	if !keyed {
++		helps.AppendAPIResponseChunk(ctx, e.cfg, body)
++	}
  	if err != nil {
 +		if keyed {
 +			err = openAICompatKeyedTransportError(err)
@@ -1324,11 +1347,12 @@ index c1953cb4..e1aacb3b 100644
 +			err = failure
 +			return resp, err
 +		}
++		helps.AppendAPIResponseChunk(ctx, e.cfg, body)
 +	}
- 	helps.AppendAPIResponseChunk(ctx, e.cfg, body)
  	reporter.ObserveResponseModel(body)
  	// Ensure we at least record the request even if upstream doesn't return usage
-@@ -250,7 +276,7 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
+ 	// Translate response back to source format when needed
+@@ -269,7 +300,7 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
  	if responseFormat == sdktranslator.FormatOpenAIResponse {
  		out = helps.EnsureResponsesUsageDetails(out)
  	}
@@ -1337,7 +1361,7 @@ index c1953cb4..e1aacb3b 100644
  	return resp, nil
  }
  
-@@ -445,7 +471,11 @@ func (e *OpenAICompatExecutor) executeStreamWithCredentials(ctx context.Context,
+@@ -472,7 +503,11 @@ func (e *OpenAICompatExecutor) executeStreamWithCredentials(ctx context.Context,
  		authLabel = auth.Label
  		authType, authValue = auth.AccountInfo()
  	}
@@ -1350,7 +1374,7 @@ index c1953cb4..e1aacb3b 100644
  		URL:       url,
  		Method:    http.MethodPost,
  		Headers:   httpReq.Header.Clone(),
-@@ -455,16 +485,41 @@ func (e *OpenAICompatExecutor) executeStreamWithCredentials(ctx context.Context,
+@@ -482,16 +517,41 @@ func (e *OpenAICompatExecutor) executeStreamWithCredentials(ctx context.Context,
  		AuthLabel: authLabel,
  		AuthType:  authType,
  		AuthValue: authValue,
@@ -1392,12 +1416,12 @@ index c1953cb4..e1aacb3b 100644
 +	}
  	helps.RecordAPIResponseMetadata(ctx, e.cfg, httpResp.StatusCode, httpResp.Header.Clone())
  	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
- 		b, _ := io.ReadAll(httpResp.Body)
+ 		b, errRead := io.ReadAll(httpResp.Body)
 diff --git a/internal/runtime/executor/openai_compat_executor_compact_test.go b/internal/runtime/executor/openai_compat_executor_compact_test.go
-index ce5922f1..339ab0e5 100644
+index f5f71d4d..026b8d75 100644
 --- a/internal/runtime/executor/openai_compat_executor_compact_test.go
 +++ b/internal/runtime/executor/openai_compat_executor_compact_test.go
-@@ -826,45 +826,79 @@ func TestRewriteOpenAICompatImagesMultipartPayloadPreservesStreamAndFileContentT
+@@ -830,45 +830,79 @@ func TestRewriteOpenAICompatImagesMultipartPayloadPreservesStreamAndFileContentT
  	}
  }
  
@@ -1510,7 +1534,7 @@ index ce5922f1..339ab0e5 100644
  	}
  }
  
-@@ -957,8 +991,16 @@ func TestOpenAICompatExecutorResponsesStreamFailsOnEOFWithoutDone(t *testing.T)
+@@ -1099,8 +1133,16 @@ func TestOpenAICompatMissingDoneDoesNotCooldownPool(t *testing.T) {
  }
  
  func TestOpenAICompatExecutorResponsesStreamPreservesUpstreamDataError(t *testing.T) {
@@ -1529,7 +1553,7 @@ index ce5922f1..339ab0e5 100644
  			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
  				w.Header().Set("Content-Type", "text/event-stream")
  				_, _ = w.Write([]byte(`data: {"id":"chatcmpl_1","object":"chat.completion.chunk","created":1773896263,"model":"deepseek-v4-flash","choices":[{"index":0,"delta":{"role":"assistant","content":"partial"},"finish_reason":null}]}` + "\n\n"))
-@@ -970,10 +1012,7 @@ func TestOpenAICompatExecutorResponsesStreamPreservesUpstreamDataError(t *testin
+@@ -1112,10 +1154,7 @@ func TestOpenAICompatExecutorResponsesStreamPreservesUpstreamDataError(t *testin
  			defer server.Close()
  
  			executor := NewOpenAICompatExecutor("openai-compatibility", &config.Config{})
@@ -1541,7 +1565,7 @@ index ce5922f1..339ab0e5 100644
  			request := []byte(`{"model":"deepseek-v4-flash","input":"hi","stream":true}`)
  			result, err := executor.ExecuteStream(context.Background(), auth, cliproxyexecutor.Request{
  				Model:   "deepseek-v4-flash",
-@@ -999,14 +1038,20 @@ func TestOpenAICompatExecutorResponsesStreamPreservesUpstreamDataError(t *testin
+@@ -1141,14 +1180,20 @@ func TestOpenAICompatExecutorResponsesStreamPreservesUpstreamDataError(t *testin
  			if strings.Contains(streamed.String(), "response.completed") {
  				t.Fatalf("upstream data error was finalized as response.completed: %q", streamed.String())
  			}
@@ -1565,7 +1589,7 @@ index ce5922f1..339ab0e5 100644
  	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
  		w.Header().Set("Content-Type", "text/event-stream")
  		_, _ = w.Write([]byte(`data: {"id":"chatcmpl_1","object":"chat.completion.chunk","created":1773896263,"model":"deepseek-v4-flash","choices":[{"index":0,"delta":{"role":"assistant","content":"partial"},"finish_reason":null}]}` + "\n\n"))
-@@ -1018,10 +1063,7 @@ func TestOpenAICompatExecutorResponsesStreamPreservesNamedErrorEvent(t *testing.
+@@ -1160,10 +1205,7 @@ func TestOpenAICompatExecutorResponsesStreamPreservesNamedErrorEvent(t *testing.
  	defer server.Close()
  
  	executor := NewOpenAICompatExecutor("openai-compatibility", &config.Config{})
@@ -1577,7 +1601,7 @@ index ce5922f1..339ab0e5 100644
  	request := []byte(`{"model":"deepseek-v4-flash","input":"hi","stream":true}`)
  	result, err := executor.ExecuteStream(context.Background(), auth, cliproxyexecutor.Request{
  		Model:   "deepseek-v4-flash",
-@@ -1047,16 +1089,18 @@ func TestOpenAICompatExecutorResponsesStreamPreservesNamedErrorEvent(t *testing.
+@@ -1189,16 +1231,18 @@ func TestOpenAICompatExecutorResponsesStreamPreservesNamedErrorEvent(t *testing.
  	if strings.Contains(streamed.String(), "response.completed") {
  		t.Fatalf("named upstream error event was finalized as response.completed: %q", streamed.String())
  	}
@@ -1602,7 +1626,7 @@ index ce5922f1..339ab0e5 100644
  	}{
  		{
  			name: "response failed payload",
-@@ -1064,7 +1108,8 @@ func TestOpenAICompatExecutorResponsesStreamHandlesAdditionalErrorShapes(t *test
+@@ -1206,7 +1250,8 @@ func TestOpenAICompatExecutorResponsesStreamHandlesAdditionalErrorShapes(t *test
  				`data: {"type":"response.failed","response":{"error":{"type":"server_error","code":"upstream_failed","message":"response failed upstream"}}}` + "\n\n",
  				"data: [DONE]\n\n",
  			},
@@ -1612,7 +1636,7 @@ index ce5922f1..339ab0e5 100644
  		},
  		{
  			name: "data before named error",
-@@ -1073,7 +1118,8 @@ func TestOpenAICompatExecutorResponsesStreamHandlesAdditionalErrorShapes(t *test
+@@ -1215,7 +1260,8 @@ func TestOpenAICompatExecutorResponsesStreamHandlesAdditionalErrorShapes(t *test
  				"event: error\n\n",
  				"data: [DONE]\n\n",
  			},
@@ -1622,7 +1646,7 @@ index ce5922f1..339ab0e5 100644
  		},
  		{
  			name: "done after incomplete error data",
-@@ -1082,7 +1128,8 @@ func TestOpenAICompatExecutorResponsesStreamHandlesAdditionalErrorShapes(t *test
+@@ -1224,7 +1270,8 @@ func TestOpenAICompatExecutorResponsesStreamHandlesAdditionalErrorShapes(t *test
  				`data: {"message":"incomplete upstream failure"` + "\n",
  				"data: [DONE]\n\n",
  			},
@@ -1632,7 +1656,7 @@ index ce5922f1..339ab0e5 100644
  		},
  		{
  			name: "done immediately after error event",
-@@ -1090,7 +1137,8 @@ func TestOpenAICompatExecutorResponsesStreamHandlesAdditionalErrorShapes(t *test
+@@ -1232,7 +1279,8 @@ func TestOpenAICompatExecutorResponsesStreamHandlesAdditionalErrorShapes(t *test
  				"event: error\n",
  				"data: [DONE]\n\n",
  			},
@@ -1642,7 +1666,7 @@ index ce5922f1..339ab0e5 100644
  		},
  		{
  			name: "incomplete data cannot cross frame boundary",
-@@ -1099,46 +1147,47 @@ func TestOpenAICompatExecutorResponsesStreamHandlesAdditionalErrorShapes(t *test
+@@ -1241,46 +1289,47 @@ func TestOpenAICompatExecutorResponsesStreamHandlesAdditionalErrorShapes(t *test
  				`data: "id":"chatcmpl_2","object":"chat.completion.chunk","choices":[]}` + "\n\n",
  				"data: [DONE]\n\n",
  			},
@@ -1659,9 +1683,6 @@ index ce5922f1..339ab0e5 100644
 -				_, _ = w.Write([]byte(`data: {"id":"chatcmpl_1","object":"chat.completion.chunk","created":1773896263,"model":"deepseek-v4-flash","choices":[{"index":0,"delta":{"role":"assistant","content":"partial"},"finish_reason":null}]}` + "\n\n"))
 -				for _, line := range tc.lines {
 -					_, _ = w.Write([]byte(line))
--				}
--			}))
--			defer server.Close()
 +	for _, keyed := range []bool{true, false} {
 +		for _, tc := range tests {
 +			t.Run(fmt.Sprintf("keyed=%t/%s", keyed, tc.name), func(t *testing.T) {
@@ -1673,6 +1694,18 @@ index ce5922f1..339ab0e5 100644
 +					}
 +				}))
 +				defer server.Close()
++
++				executor := NewOpenAICompatExecutor("openai-compatibility", &config.Config{})
++				auth := cm053CompatStreamAuth(server.URL+"/v1", keyed)
++				request := []byte(`{"model":"deepseek-v4-flash","input":"hi","stream":true}`)
++				result, err := executor.ExecuteStream(context.Background(), auth, cliproxyexecutor.Request{Model: "deepseek-v4-flash", Payload: request}, cliproxyexecutor.Options{
++					SourceFormat: sdktranslator.FormatOpenAIResponse, ResponseFormat: sdktranslator.FormatOpenAIResponse, OriginalRequest: request, Stream: true,
++				})
++				if err != nil {
++					t.Fatalf("ExecuteStream error: %v", err)
+ 				}
+-			}))
+-			defer server.Close()
  
 -			executor := NewOpenAICompatExecutor("openai-compatibility", &config.Config{})
 -			auth := &cliproxyauth.Auth{Attributes: map[string]string{"base_url": server.URL + "/v1", "api_key": "test"}}
@@ -1683,16 +1716,7 @@ index ce5922f1..339ab0e5 100644
 -			if err != nil {
 -				t.Fatalf("ExecuteStream error: %v", err)
 -			}
-+				executor := NewOpenAICompatExecutor("openai-compatibility", &config.Config{})
-+				auth := cm053CompatStreamAuth(server.URL+"/v1", keyed)
-+				request := []byte(`{"model":"deepseek-v4-flash","input":"hi","stream":true}`)
-+				result, err := executor.ExecuteStream(context.Background(), auth, cliproxyexecutor.Request{Model: "deepseek-v4-flash", Payload: request}, cliproxyexecutor.Options{
-+					SourceFormat: sdktranslator.FormatOpenAIResponse, ResponseFormat: sdktranslator.FormatOpenAIResponse, OriginalRequest: request, Stream: true,
-+				})
-+				if err != nil {
-+					t.Fatalf("ExecuteStream error: %v", err)
-+				}
- 
+-
 -			var streamed strings.Builder
 -			var streamErr error
 -			for chunk := range result.Chunks {
@@ -3347,10 +3371,10 @@ index 00000000..ad4a6435
 +	})
 +}
 diff --git a/sdk/cliproxy/auth/conductor_execution.go b/sdk/cliproxy/auth/conductor_execution.go
-index 4f8bf2de..7d99806b 100644
+index d6441a39..a291de91 100644
 --- a/sdk/cliproxy/auth/conductor_execution.go
 +++ b/sdk/cliproxy/auth/conductor_execution.go
-@@ -1909,6 +1909,10 @@ func debugLogAuthSelection(entry *log.Entry, auth *Auth, provider string, model
+@@ -2030,6 +2030,10 @@ func debugLogAuthSelection(entry *log.Entry, auth *Auth, provider string, model
  	}
  	switch accountType {
  	case "api_key":
@@ -3361,7 +3385,7 @@ index 4f8bf2de..7d99806b 100644
  		entry.Debugf("Use API key %s for model %s%s", util.HideAPIKey(accountInfo), model, suffix)
  	case "oauth":
  		ident := formatOauthIdentity(auth, provider, accountInfo)
-@@ -1947,6 +1951,27 @@ func formatOauthIdentity(auth *Auth, provider string, accountInfo string) string
+@@ -2068,6 +2072,27 @@ func formatOauthIdentity(auth *Auth, provider string, accountInfo string) string
  	return strings.Join(parts, " ")
  }
  
@@ -3389,7 +3413,7 @@ index 4f8bf2de..7d99806b 100644
  func formatAuthIdentity(auth *Auth, provider string) string {
  	if auth == nil {
  		return "auth=nil"
-@@ -1954,6 +1979,9 @@ func formatAuthIdentity(auth *Auth, provider string) string {
+@@ -2075,6 +2100,9 @@ func formatAuthIdentity(auth *Auth, provider string) string {
  	accountType, accountInfo := auth.AccountInfo()
  	switch accountType {
  	case "api_key":

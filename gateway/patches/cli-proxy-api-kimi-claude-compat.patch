@@ -77,10 +77,10 @@ index 00000000..3db8da4b
 +	}
 +}
 diff --git a/internal/config/config_types.go b/internal/config/config_types.go
-index 8a7f1030..e9b57471 100644
+index 48dc6d28..1e0b8777 100644
 --- a/internal/config/config_types.go
 +++ b/internal/config/config_types.go
-@@ -653,6 +653,10 @@ type ClaudeKey struct {
+@@ -748,6 +748,10 @@ type ClaudeKey struct {
  	// If empty, the default Claude API URL will be used.
  	BaseURL string `yaml:"base-url" json:"base-url"`
  
@@ -91,7 +91,7 @@ index 8a7f1030..e9b57471 100644
  	// ProxyURL overrides the global proxy setting for this API key if provided.
  	ProxyURL string `yaml:"proxy-url" json:"proxy-url"`
  
-@@ -739,16 +743,28 @@ type ClaudeModel struct {
+@@ -839,16 +843,28 @@ type ClaudeModel struct {
  
  	// Thinking configures the thinking/reasoning capability for this model.
  	Thinking *registry.ThinkingSupport `yaml:"thinking,omitempty" json:"thinking,omitempty"`
@@ -125,10 +125,10 @@ index 8a7f1030..e9b57471 100644
  func (m ClaudeModel) GetThinking() *registry.ThinkingSupport { return m.Thinking }
  
 diff --git a/internal/runtime/executor/claude_executor.go b/internal/runtime/executor/claude_executor.go
-index c8029732..bf665fb6 100644
+index a90251d9..2f6c593d 100644
 --- a/internal/runtime/executor/claude_executor.go
 +++ b/internal/runtime/executor/claude_executor.go
-@@ -371,9 +371,10 @@ func (e *ClaudeExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Au
+@@ -543,9 +543,10 @@ func (e *ClaudeExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Au
  	}
  	apiKey, _ := claudeCreds(auth)
  	useAPIKey := auth != nil && (auth.AuthKind() == cliproxyauth.AuthKindAPIKey || (auth.Attributes != nil && strings.TrimSpace(auth.Attributes["api_key"]) != ""))
@@ -140,7 +140,7 @@ index c8029732..bf665fb6 100644
  			req.Header.Del("Authorization")
  			req.Header.Set("x-api-key", apiKey)
  		} else {
-@@ -389,9 +390,28 @@ func (e *ClaudeExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Au
+@@ -561,9 +562,28 @@ func (e *ClaudeExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Au
  		attrs = auth.Attributes
  	}
  	util.ApplyCustomHeadersFromAttrs(req, attrs)
@@ -171,7 +171,7 @@ index c8029732..bf665fb6 100644
  	if req == nil {
 diff --git a/internal/runtime/executor/claude_executor_auth_header_test.go b/internal/runtime/executor/claude_executor_auth_header_test.go
 new file mode 100644
-index 00000000..00607cd2
+index 00000000..275b21d4
 --- /dev/null
 +++ b/internal/runtime/executor/claude_executor_auth_header_test.go
 @@ -0,0 +1,227 @@
@@ -288,7 +288,7 @@ index 00000000..00607cd2
 +	const userID = `{"device_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","account_uuid":"","session_id":"11111111-2222-4333-8444-555555555555"}`
 +	payload := []byte(`{"model":"k3","messages":[{"role":"user","content":"hello"}],"metadata":{"user_id":` + fmt.Sprintf("%q", userID) + `}}`)
 +	incoming := http.Header{
-+		"User-Agent":               {"claude-cli/2.1.280 (external, cli)"},
++		"User-Agent":               {"claude-cli/2.1.321 (external, cli)"},
 +		"X-App":                    {"cli"},
 +		"Anthropic-Beta":           {"claude-code-20250219"},
 +		"X-Claude-Code-Session-Id": {sessionID},
@@ -403,10 +403,10 @@ index 00000000..00607cd2
 +	}
 +}
 diff --git a/internal/runtime/executor/claude_executor_request.go b/internal/runtime/executor/claude_executor_request.go
-index b0541229..797f05ac 100644
+index 82bd6c81..6b331a3e 100644
 --- a/internal/runtime/executor/claude_executor_request.go
 +++ b/internal/runtime/executor/claude_executor_request.go
-@@ -1090,8 +1090,9 @@ func applyClaudeHeadersWithNativeProfile(
+@@ -1231,8 +1231,9 @@ func applyClaudeHeadersWithNativeProfile(
  	preserveCallerFingerprint := !applyCLIFingerprint && !confirmedClaudeCode
  	useOAuthBetas := fp.UseOAuthBetas
  	isAnthropicBase := isAnthropicUpstreamURL(r.URL)
@@ -417,7 +417,7 @@ index b0541229..797f05ac 100644
  			r.Header.Del("Authorization")
  			r.Header.Set("x-api-key", apiKey)
  		} else {
-@@ -1326,6 +1327,7 @@ func applyClaudeHeadersWithNativeProfile(
+@@ -1467,6 +1468,7 @@ func applyClaudeHeadersWithNativeProfile(
  			attrs = auth.Attributes
  		}
  		util.ApplyCustomHeadersFromAttrs(r, attrs, incomingHeaders)
@@ -425,7 +425,7 @@ index b0541229..797f05ac 100644
  		// Scope the custom-header escape hatch exactly like the CLI path below, which
  		// claws overrides back on api.anthropic.com (an operator Anthropic-Beta reaches
  		// a first-party API that rejects unknown values) and on any streaming request
-@@ -1492,6 +1494,7 @@ func applyClaudeHeadersWithNativeProfile(
+@@ -1633,6 +1635,7 @@ func applyClaudeHeadersWithNativeProfile(
  		attrs = auth.Attributes
  	}
  	util.ApplyCustomHeadersFromAttrs(r, attrs, incomingHeaders)
@@ -434,18 +434,18 @@ index b0541229..797f05ac 100644
  	// gateways, so they keep the last word there. On api.anthropic.com they must
  	// not rewrite the reconstructed identity: an overridden Anthropic-Beta yields a
 diff --git a/internal/watcher/synthesizer/config.go b/internal/watcher/synthesizer/config.go
-index ab0f2a77..a8d4d284 100644
+index 6f829b65..9b38d1bd 100644
 --- a/internal/watcher/synthesizer/config.go
 +++ b/internal/watcher/synthesizer/config.go
-@@ -148,6 +148,7 @@ func (s *ConfigSynthesizer) synthesizeClaudeKeys(ctx *SynthesisContext) []*corea
+@@ -207,6 +207,7 @@ func (s *ConfigSynthesizer) synthesizeClaudeKeys(ctx *SynthesisContext) []*corea
  		}
  		prefix := strings.TrimSpace(ck.Prefix)
  		proxyURL := strings.TrimSpace(ck.ProxyURL)
 +		authHeader := strings.TrimSpace(ck.AuthHeader)
- 		id, token := idGen.Next("claude:apikey", key, base, proxyURL, prefix, config.FormatSortedHeaders(ck.Headers))
- 		attrs := map[string]string{
- 			"source":       fmt.Sprintf("config:claude[%s]", token),
-@@ -156,6 +157,9 @@ func (s *ConfigSynthesizer) synthesizeClaudeKeys(ctx *SynthesisContext) []*corea
+ 		idParts := []string{key, base, proxyURL, prefix, config.FormatSortedHeaders(ck.Headers)}
+ 		if poolID := config.FormatConnectionPoolDedupID(ck.ConnectionPool); poolID != "" {
+ 			idParts = append(idParts, poolID)
+@@ -219,6 +220,9 @@ func (s *ConfigSynthesizer) synthesizeClaudeKeys(ctx *SynthesisContext) []*corea
  		if key != "" {
  			attrs["api_key"] = key
  		}
@@ -456,7 +456,7 @@ index ab0f2a77..a8d4d284 100644
  		if ck.DisableCooling != nil {
  			metadata["disable_cooling"] = *ck.DisableCooling
 diff --git a/internal/watcher/synthesizer/config_test.go b/internal/watcher/synthesizer/config_test.go
-index 8e407191..0fba2e59 100644
+index 96207ba6..ec46b7b5 100644
 --- a/internal/watcher/synthesizer/config_test.go
 +++ b/internal/watcher/synthesizer/config_test.go
 @@ -296,6 +296,34 @@ func TestConfigSynthesizer_ClaudeKeys_NativeToolSearchDefaultOff(t *testing.T) {

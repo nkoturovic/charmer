@@ -1,8 +1,8 @@
 diff --git a/internal/watcher/dispatcher.go b/internal/watcher/dispatcher.go
-index 1e165b45..c914fae8 100644
+index 026a917a..cc2d8b96 100644
 --- a/internal/watcher/dispatcher.go
 +++ b/internal/watcher/dispatcher.go
-@@ -483,6 +483,45 @@ func (w *Watcher) dispatchAuthUpdates(updates []AuthUpdate) {
+@@ -523,6 +523,45 @@ func (w *Watcher) dispatchAuthUpdates(updates []AuthUpdate) {
  	w.dispatchMu.Unlock()
  }
  
@@ -121,10 +121,10 @@ index 00000000..dcbc7031
 +	}
 +}
 diff --git a/internal/watcher/watcher.go b/internal/watcher/watcher.go
-index 9436b273..94233543 100644
+index 60c74fa5..d57bab5b 100644
 --- a/internal/watcher/watcher.go
 +++ b/internal/watcher/watcher.go
-@@ -79,6 +79,9 @@ const (
+@@ -84,6 +84,9 @@ const (
  	AuthUpdateActionAdd    AuthUpdateAction = "add"
  	AuthUpdateActionModify AuthUpdateAction = "modify"
  	AuthUpdateActionDelete AuthUpdateAction = "delete"
@@ -134,7 +134,7 @@ index 9436b273..94233543 100644
  )
  
  // AuthUpdate describes an incremental change to auth configuration.
-@@ -88,6 +91,8 @@ type AuthUpdate struct {
+@@ -93,6 +96,8 @@ type AuthUpdate struct {
  	Auth        *coreauth.Auth
  	revision    uint64 // Watcher-local ordering, independent of runtime auth generations.
  	fileRemoval bool   // The source file was removed, not just an ID from its content.
@@ -143,7 +143,7 @@ index 9436b273..94233543 100644
  }
  
  // IsFileRemoval reports whether this delete was observed as a whole-file removal.
-@@ -102,6 +107,21 @@ func (u *AuthUpdate) SetFileRemoval(fileRemoval bool) {
+@@ -107,6 +112,21 @@ func (u *AuthUpdate) SetFileRemoval(fileRemoval bool) {
  	}
  }
  
@@ -165,7 +165,7 @@ index 9436b273..94233543 100644
  // Revision returns the monotonic watcher revision assigned to this update.
  func (u AuthUpdate) Revision() uint64 {
  	return u.revision
-@@ -215,6 +235,14 @@ func (w *Watcher) RereadDiscardedFileSnapshot(auth *coreauth.Auth) {
+@@ -287,6 +307,14 @@ func (w *Watcher) RereadDiscardedFileSnapshot(auth *coreauth.Auth) {
  	w.rereadDiscardedFileSnapshot(auth)
  }
  
@@ -181,18 +181,10 @@ index 9436b273..94233543 100644
  func (w *Watcher) SnapshotCoreAuths() []*coreauth.Auth {
  	w.clientsMutex.RLock()
 diff --git a/sdk/cliproxy/service.go b/sdk/cliproxy/service.go
-index b64c3e05..7e709ca7 100644
+index 69893b79..df103ff7 100644
 --- a/sdk/cliproxy/service.go
 +++ b/sdk/cliproxy/service.go
-@@ -6,6 +6,7 @@ package cliproxy
- import (
- 	"context"
- 	"sync"
-+	"sync/atomic"
- 	"time"
- 
- 	"github.com/router-for-me/CLIProxyAPI/v8/internal/api"
-@@ -87,6 +88,14 @@ type Service struct {
+@@ -95,6 +95,14 @@ type Service struct {
  	// authQueueStop cancels the auth update queue processing.
  	authQueueStop context.CancelFunc
  
@@ -208,7 +200,7 @@ index b64c3e05..7e709ca7 100644
  	authManager *sdkAuth.Manager
  
 diff --git a/sdk/cliproxy/service_auth.go b/sdk/cliproxy/service_auth.go
-index 92e2693a..104c2691 100644
+index acc0d28a..d1423305 100644
 --- a/sdk/cliproxy/service_auth.go
 +++ b/sdk/cliproxy/service_auth.go
 @@ -45,7 +45,12 @@ func (s *Service) ensureAuthUpdateQueue(ctx context.Context) {
@@ -259,10 +251,10 @@ index 92e2693a..104c2691 100644
  
  func (s *Service) emitAuthUpdate(ctx context.Context, update watcher.AuthUpdate) {
 diff --git a/sdk/cliproxy/service_lifecycle.go b/sdk/cliproxy/service_lifecycle.go
-index f08eb1b4..118388d7 100644
+index 3da93345..7cf485cc 100644
 --- a/sdk/cliproxy/service_lifecycle.go
 +++ b/sdk/cliproxy/service_lifecycle.go
-@@ -58,7 +58,9 @@ func (s *Service) Run(ctx context.Context) error {
+@@ -59,7 +59,9 @@ func (s *Service) Run(ctx context.Context) error {
  	usage.StartDefault(ctx)
  	cfg := s.currentConfig()
  	homeEnabled := cfg != nil && cfg.Home.Enabled
@@ -272,7 +264,7 @@ index f08eb1b4..118388d7 100644
  		s.cfgMu.Lock()
  		forceHomeRuntimeConfig(s.cfg)
  		cfg = s.cfg
-@@ -88,6 +90,7 @@ func (s *Service) Run(ctx context.Context) error {
+@@ -91,6 +93,7 @@ func (s *Service) Run(ctx context.Context) error {
  		if errLoad := s.coreManager.Load(ctx); errLoad != nil {
  			log.Warnf("failed to load auth store: %v", errLoad)
  		}
@@ -280,7 +272,7 @@ index f08eb1b4..118388d7 100644
  		s.registerConfigAPIKeyAuths(coreauth.WithSkipPersist(ctx), cfg)
  		if cfg != nil && cfg.SaveCooldownStatus {
  			if errRestoreCooldown := s.coreManager.RestoreCooldownStates(ctx); errRestoreCooldown != nil {
-@@ -133,7 +136,8 @@ func (s *Service) Run(ctx context.Context) error {
+@@ -136,7 +139,8 @@ func (s *Service) Run(ctx context.Context) error {
  	}
  
  	// handlers no longer depend on legacy clients; pass nil slice initially
@@ -290,7 +282,7 @@ index f08eb1b4..118388d7 100644
  	s.syncPluginRuntimeConfig(ctx)
  	if homeEnabled {
  		s.configRuntimeMu.Lock()
-@@ -225,6 +229,7 @@ func (s *Service) Run(ctx context.Context) error {
+@@ -228,6 +232,7 @@ func (s *Service) Run(ctx context.Context) error {
  			return fmt.Errorf("cliproxy: failed to start watcher: %w", errStart)
  		}
  		log.Info("file watcher started for config and auth directory changes")
@@ -298,7 +290,7 @@ index f08eb1b4..118388d7 100644
  		s.configRuntimeMu.Lock()
  		s.syncPluginModelRuntime(ctx)
  		s.configRuntimeMu.Unlock()
-@@ -262,6 +267,10 @@ func (s *Service) Shutdown(ctx context.Context) error {
+@@ -265,6 +270,10 @@ func (s *Service) Shutdown(ctx context.Context) error {
  		if ctx == nil {
  			ctx = context.Background()
  		}
@@ -309,7 +301,7 @@ index f08eb1b4..118388d7 100644
  
  		s.homeMu.Lock()
  		runCancel := s.runCancel
-@@ -371,6 +380,16 @@ func (s *Service) Shutdown(ctx context.Context) error {
+@@ -374,6 +383,16 @@ func (s *Service) Shutdown(ctx context.Context) error {
  			}
  		}
  
