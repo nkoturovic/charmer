@@ -1156,7 +1156,7 @@ def apply_proxy(runtime: Any, plan: ProxyPlan, confirmation: model.Confirmation)
 
 @dataclass(frozen=True)
 class Blocker:
-    kind: str  # admitted | bound-profile | bound-binding | live | unknown-liveness
+    kind: str  # admitted | bound-profile | bound-binding | live | unknown-liveness | gated-*
     subject: str
     detail: str
     fix_tui: str
@@ -1198,9 +1198,20 @@ def plan_remove_provider(runtime: Any, provider_id: str) -> RemoveProviderPlan:
     if previous is None and not os.path.lexists(target):
         raise model.Refused(texts.NO_DECLARATION.format(id=provider_id))
     keys = _provider_keys(ctx, provider_id)
+    file_display = operator_mod.file_label(provider_id)
+    # A declaration a closed gate refuses was never screened against stored
+    # values: its line keys still drive every check below, but no blocker
+    # names them (fixed texts; profile and binding names are the user's).
+    gated = provider_id in operator_mod.gated_file_ids(ctx.layer)
     admitted = set(cmd.admitted_keys(runtime)) | (set(ctx.ledger.admissions) if ctx.ledger is not None else set())
-    blockers: list[Blocker] = [_blocker("admitted", key, key=key) for key in sorted(keys & admitted)]
+    if gated:
+        count = len(keys & admitted)
+        blockers: list[Blocker] = ([_blocker("gated-admitted", provider_id, count=str(count), file=file_display)]
+                                   if count else [])
+    else:
+        blockers = [_blocker("admitted", key, key=key) for key in sorted(keys & admitted)]
     references = cmd.key_references(runtime)
+    gated_users: dict[tuple[str, str], set[str]] = {}
     for key in sorted(keys):
         by_profile: dict[str, list[str]] = {}
         for user in references.get(key, ()):
@@ -1208,10 +1219,20 @@ def plan_remove_provider(runtime: Any, provider_id: str) -> RemoveProviderPlan:
             if kind == "profile":
                 name, _space, slot = rest.partition(" ")
                 by_profile.setdefault(name, []).append(slot)
+            elif gated:
+                gated_users.setdefault(("binding", rest), set())
             else:
                 blockers.append(_blocker("bound-binding", key, b=rest, key=key))
         for name, slots in sorted(by_profile.items()):
-            blockers.append(_blocker("bound-profile", key, p=name, key=key, slots=", ".join(slots)))
+            if gated:
+                gated_users.setdefault(("profile", name), set()).update(slots)
+            else:
+                blockers.append(_blocker("bound-profile", key, p=name, key=key, slots=", ".join(slots)))
+    for (kind, name), slots in sorted(gated_users.items()):
+        if kind == "profile":
+            blockers.append(_blocker("gated-bound-profile", provider_id, p=name, slots=", ".join(sorted(slots))))
+        else:
+            blockers.append(_blocker("gated-bound-binding", provider_id, b=name))
     scan = cmd.record_scan(runtime)
     if scan.directory_error is not None or scan.unreadable:
         for stem in sorted(scan.unreadable) or ["records"]:
@@ -1230,7 +1251,6 @@ def plan_remove_provider(runtime: Any, provider_id: str) -> RemoveProviderPlan:
     if not blockers:
         served = preflight(runtime, f"providers rm {provider_id}", changes={provider_id: None},
                            ledger_edit=lambda doc: doc["routes"].pop(provider_id, None))
-    file_display = operator_mod.file_label(provider_id)
     lines = ((texts.REMOVE_PROVIDER_BODY.format(file=file_display),) if not blockers
              else tuple(blocker.fix_tui for blocker in blockers))
     digest = model.digest_of("remove-provider", provider_id, strict_json.sha256_hex(previous or b""),

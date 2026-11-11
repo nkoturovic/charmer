@@ -283,7 +283,7 @@ class SessionsRowTests(_SessionsCase):
         self.assertEqual(down.selected, 0)
 
     def test_empty_and_the_filtered_empty_state(self) -> None:
-        self.assertIn(cli.SESSIONS_EMPTY, self.frame(self.screen()))
+        self.assertIn(cli.SESSIONS_EMPTY, " ".join(self.frame(self.screen()).split()))
         record = self.record(transcript=False)
         record["cwd"] = str(self.tmp)
         self.runtime.session_store.save(record)
@@ -386,8 +386,8 @@ class SessionsRowTests(_SessionsCase):
         # The selected row (no end event, not running, a v4 record) adds M and P.
         self.assertEqual(
             self.screen()._keybar().text(),
-            "Enter resume · T lineup · V details · F follow/pin · R rename · X forget · M mark ended · P repair "
-            "· Space mark · * all · / filter · Q save · C all dirs · L link · B filters · ? help · Esc back")
+            "Enter resume · T lineup · V details · F follow/pin · X forget · M mark ended · P repair · R rename "
+            "· Q save · L link · Space mark · * all · / filter · B filters · C all dirs · ? help · Esc back")
         self.assertIn("Enter resume · T lineup · V details · F follow/pin", win.frames[0])
 
     def test_the_root_screen_quits_with_esc(self) -> None:

@@ -36,5 +36,5 @@
 
 
 
-  Enter connect · L sign in/out · T test · Space on/off · V details · N new · F key file · O orphan keys · D list all
-  ? help · Esc back
+  Enter connect · A add models · L sign in/out · K API key · Space on/off · V details · N new · R refresh · W gateway
+  F key file · O orphan keys · D list all · ? help · Esc back

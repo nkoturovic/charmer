@@ -185,7 +185,9 @@ class KeybarTests(ProfilesCase):
         seed = next(row for row in rows.values() if row.origin == "seed" and row.loadable)
         self.assertEqual(seed.seed_state, "current")
         self.assertNotIn(("U", "reseed"), self.bar(seed), "U only when the seed is not current")
-        self.assertEqual(self.bar(rows["broken"]), cli_text.PROFILES_KEYBAR_UNLOADABLE)
+        self.assertEqual(self.bar(rows["broken"]),
+                         (("N", "new"), ("E", "edit file"), ("X", "delete"), ("F", "fallback only"),
+                          ("B", "bindings"), ("W", "get started"), ("?", "help"), ("Esc", "back")))
         unloadable_seed = self.bar(rows[catalog.DEFAULT_SEED])
         self.assertIn(cli_text.PROFILES_RESTORE_BINDING, unloadable_seed)
         self.assertNotIn(("X", "delete"), unloadable_seed)
@@ -363,7 +365,7 @@ class NewTests(ProfilesCase):
         self.assertTrue(any(cli_text.MAKE_DEFAULT_TITLE.format(name="starter") in f for f in win.frames))
         # Make default has the focus: Enter makes it the default.
         self.assertEqual(self.default_profile(), "starter")
-        self.assertIn(cli_text.DEFAULT_SET.format(name="starter"), win.frames[-1])
+        self.assertIn(cli_text.DEFAULT_SET.format(name="starter"), _flat(win.frames[-1]))
 
     def test_starter_takes_the_next_free_name_and_not_now_keeps_the_default(self) -> None:
         self.yours("starter")

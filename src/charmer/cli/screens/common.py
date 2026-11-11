@@ -55,6 +55,8 @@ def _run_choice_list(
 
     picker = tui.SelectList(title, [tui.SelectItem(label) for label in labels], footer=footer, selected=selected)
     picker.message = message
+    keys = "\n".join(f"{key} — {label}" for key, label in picker.footer.bindings)
+    help_text = keys + "\n\n" + help_text
     index = picker.run(
         win,
         palette,

@@ -300,6 +300,9 @@ class RenderResult:
     overlay_conflicts: tuple["OverlayConflict", ...] = ()
     # Every public selector the document serves (``rendered_selectors``).
     served: frozenset[str] = frozenset()
+    # The selectors it puts on a private network, sorted; every reload
+    # check requires them served (``rendered_private_network_selectors``).
+    private_aliases: tuple[str, ...] = ()
 
 
 # ------------------------------------------------------------ outbound proxy
@@ -536,6 +539,26 @@ def rendered_oauth_aliases(document: dict[str, Any]) -> tuple[str, ...]:
         for entry in entries
         if not entry["alias"].startswith(SENTINEL_PREFIX)
     }))
+
+
+# The ``openai-compatibility`` entry key of a provider on a private network.
+PRIVATE_NETWORK_KEY = "private-network"
+
+
+def rendered_private_network_selectors(document: Mapping[str, Any]) -> tuple[str, ...]:
+    """The selectors of the ``openai-compatibility`` entries a rendered
+    document puts on a private network, sorted: a gateway without that
+    support drops those entries while it still loads the rest, so a reload
+    check requires them served."""
+
+    found: set[str] = set()
+    for section in document.get("openai-compatibility") or ():
+        if not isinstance(section, Mapping) or not isinstance(section.get(PRIVATE_NETWORK_KEY), Mapping):
+            continue
+        for model in section.get("models") or ():
+            if isinstance(model, Mapping) and isinstance(model.get("alias"), str):
+                found.add(model["alias"])
+    return tuple(sorted(found))
 
 
 # ------------------------------------------------------------ keyed compat
@@ -1468,4 +1491,5 @@ def render_config(
         captures_rendered=info["captures_rendered"],
         overlay_conflicts=info["overlay_conflicts"],
         served=rendered_selectors(document),
+        private_aliases=rendered_private_network_selectors(document),
     )

@@ -16,9 +16,9 @@
 
 
 
-
   ─────────────────────────────────────────────────────────────────────────────
   ~/.config/charmer/profiles/broken.json line 3: $: invalid JSON at line 3 col…
   cannot be loaded — E edits the file, X deletes it (a copy is kept)
 
-  E edit file · X delete · N new · ? help · Esc back
+  N new · E edit file · X delete · F fallback only · B bindings
+  W get started · ? help · Esc back

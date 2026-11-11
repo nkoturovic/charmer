@@ -21,4 +21,4 @@
   admission: not admitted (optional)
   qualification: reviewed with the catalog · family: anthropic (recognized)
 
-  Enter inspect · V details · ? help · Esc back
+  Enter inspect · A add model · V details · ? help · Esc back

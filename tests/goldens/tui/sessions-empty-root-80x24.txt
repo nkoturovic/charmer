@@ -1,0 +1,24 @@
+
+  sessions — project (cwd) · 0 total
+  ─────────────────────────────────────────────────────────────────────────────
+  (no recorded sessions — Esc quits; run charmer to launch one; L links a
+  session started without charmer)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  L link · / filter · B filters · C all dirs · ? help · Esc quit
