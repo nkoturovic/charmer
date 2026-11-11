@@ -37,7 +37,7 @@ import os
 import re
 import stat
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable, Mapping
 
@@ -49,9 +49,10 @@ _VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 # two builds of the pinned size before calling the disk low.
 LOW_DISK_BUILDS = 2
 _PROC_SCAN_LIMIT = 65536
+HOLDER_LIMIT = 8  # displayed observations per version; the total count is kept
 # Keep reasons.
 IN_USE = "in use"
-RUNNING = "a running session uses it"
+RUNNING = "a running process uses it"
 LOCK_UNKNOWN = "its use lock cannot be checked"
 
 
@@ -102,6 +103,7 @@ class PrunePlan:
     keep: Mapping[str, str]
     remove: tuple[tuple[str, int], ...] = ()
     blocked: str | None = None
+    processes: ProcessScan | None = None
 
 
 def owned_versions(environ: Mapping[str, str]) -> list[str]:
@@ -118,10 +120,24 @@ def owned_versions(environ: Mapping[str, str]) -> list[str]:
 
 
 @dataclass(frozen=True)
+class ProcessHolder:
+    """An observed PID and safe executable basename, never arguments or a path."""
+
+    pid: int
+    name: str
+
+
+@dataclass(frozen=True)
 class ProcessScan:
-    """The owned versions live processes are seen to execute."""
+    """Owned versions observed in use, with bounded in-memory holder details.
+
+    Details describe this observation, not a later PID's identity or liveness.
+    They never authorize removing a version the scan or a use lock keeps.
+    """
 
     versions: frozenset[str] = frozenset()
+    holders: Mapping[str, tuple[ProcessHolder, ...]] = field(default_factory=dict)
+    counts: Mapping[str, int] = field(default_factory=dict)
 
 
 def _platform() -> str:
@@ -130,8 +146,8 @@ def _platform() -> str:
     return sys.platform
 
 
-def _proc_executables(proc_root: Path) -> list[Path] | None:
-    """Every readable ``/proc/<pid>/exe`` target; None when the table cannot
+def _proc_executables(proc_root: Path) -> list[tuple[int, Path]] | None:
+    """Every readable ``/proc/<pid>/exe`` target and PID; None when the table cannot
     be listed in full. A process that exited meanwhile, has no executable (a
     kernel thread) or whose link cannot be read (another user's, or a
     non-dumpable one) is skipped: the use lock, not this scan, protects what
@@ -146,29 +162,35 @@ def _proc_executables(proc_root: Path) -> list[Path] | None:
     targets = []
     for entry in entries:
         try:
-            targets.append(Path(os.readlink(Path(entry.path) / "exe")))
+            target = os.readlink(Path(entry.path) / "exe").removesuffix(" (deleted)")
+            targets.append((int(entry.name), Path(target)))
         except OSError:
             continue
     return targets
 
 
-def _darwin_executables(runner: Callable | None) -> list[Path] | None:
-    """The executable path of every process ``ps`` names (macOS has no
-    ``/proc``), symlinks resolved; None when the table cannot be read."""
+def _darwin_executables(runner: Callable | None) -> list[tuple[int, Path]] | None:
+    """Every process's PID and executable path (macOS has no ``/proc``),
+    symlinks resolved; None when the table cannot be read."""
 
     from .platform import darwin_process
 
-    found = (darwin_process.executable_paths() if runner is None
-             else darwin_process.executable_paths(runner=runner))
+    found = (darwin_process.executable_processes() if runner is None
+             else darwin_process.executable_processes(runner=runner))
     if found is None:
         return None
     targets = []
-    for path in found:
-        if Path(path).name in ("claude", "claude.exe"):
-            try:
-                targets.append(Path(os.path.realpath(path)))
-            except (OSError, ValueError):
-                continue
+    for pid, path in found:
+        candidate = Path(path)
+        # Preserve client symlinks and versioned helper paths without resolving
+        # unrelated processes' paths (which can live on stalled network mounts).
+        if candidate.name not in ("claude", "claude.exe") and not any(
+                _VERSION.fullmatch(part) for part in candidate.parts):
+            continue
+        try:
+            targets.append((pid, Path(os.path.realpath(path))))
+        except (OSError, ValueError):
+            continue
     return targets
 
 
@@ -189,10 +211,41 @@ def scan_processes(
     if targets is None:
         return None
     owned = Path(os.path.realpath(owned_root))
-    return ProcessScan(frozenset(
-        target.parent.name for target in targets
-        if target.parent.parent == owned and _VERSION.fullmatch(target.parent.name)
-    ))
+    holders: dict[str, list[ProcessHolder]] = {}
+    counts: dict[str, int] = {}
+    for pid, target in sorted(targets):
+        try:
+            relative = target.relative_to(owned)
+        except ValueError:
+            continue
+        if len(relative.parts) < 2 or not _VERSION.fullmatch(relative.parts[0]):
+            continue
+        version = relative.parts[0]
+        counts[version] = counts.get(version, 0) + 1
+        sample = holders.setdefault(version, [])
+        if len(sample) < HOLDER_LIMIT and pid > 0:
+            # Only the executable's basename is shown, never argv, a process
+            # title, environment or cwd. Bound it and neutralize terminal controls.
+            name = re.sub(r"[^A-Za-z0-9._+-]", "?", target.name)[:64]
+            sample.append(ProcessHolder(pid, name or "unknown"))
+    return ProcessScan(frozenset(counts), {name: tuple(rows) for name, rows in holders.items()}, counts)
+
+
+def holder_detail(version: str, processes: ProcessScan | None) -> str:
+    """A snapshot description; a PID may already have exited or been reused."""
+
+    if processes is None or not processes.holders.get(version):
+        return "the holder could not be identified"
+    holders = processes.holders[version]
+    count = processes.counts[version]
+    names = ", ".join(f"pid {holder.pid} {holder.name}" for holder in holders)
+    if count > len(holders):
+        names += f", {count - len(holders)} more"
+    return f"{count} {'process' if count == 1 else 'processes'} observed using it ({names})"
+
+
+def _holder_line(version: str, processes: ProcessScan | None) -> str:
+    return f"Claude Code {version} kept: {holder_detail(version, processes)}."
 
 
 def use_state(environ: Mapping[str, str], name: str) -> bool | None:
@@ -291,7 +344,7 @@ def prune_plan(
     (:func:`use_state`; an unsafe lock file keeps its version too); and
     every version a live process is seen to run. A pin keeps its pin reason
     while it is in use too (doctor adds the use), so only the use-based
-    reasons (:data:`IN_USE`, :data:`RUNNING`) end when the sessions do.
+    reasons (:data:`IN_USE`, :data:`RUNNING`) end when the processes do.
     When the process table or the gateway's pin cannot be known, nothing is
     removed. ``held``: the versions whose use locks the caller holds itself
     (pruning), never probed. ``running`` (tests): the versions live
@@ -344,9 +397,12 @@ def prune_plan(
             if lock_state is not False:
                 keep[name] = IN_USE if lock_state else LOCK_UNKNOWN
     blocked: str | None = None
+    processes = None
     if running is ...:
         scan = scan_processes(pin.owned_root(environ), proc_root)
         live = None if scan is None else scan.versions
+        if scan is not None and scan.holders:
+            processes = scan
     else:
         live = running
     if live is None:
@@ -356,9 +412,9 @@ def prune_plan(
             keep.setdefault(name, RUNNING)
     blocked = blocked or gateway_blocked or installed_blocked
     if blocked is not None:
-        return PrunePlan(keep, (), blocked)
+        return PrunePlan(keep, (), blocked, processes)
     return PrunePlan(keep, tuple((name, _tree_size(pin.owned_root(environ) / name))
-                                 for name in present if name not in keep), None)
+                                 for name in present if name not in keep), None, processes)
 
 
 def _tree_size(directory: Path) -> int:
@@ -450,6 +506,7 @@ class PruneOutcome:
     in_use: tuple[str, ...] = ()
     failed: tuple[str, ...] = ()
     blocked: str | None = None
+    processes: ProcessScan | None = None
 
 
 def _version_order(name: str) -> tuple[int, ...]:
@@ -483,6 +540,7 @@ def prune_copies(
     if first.blocked is not None:
         return PruneOutcome(blocked=first.blocked)
     present = set(owned_versions(environ))
+    processes = first.processes
     in_use = {name for name, reason in first.keep.items() if reason in (RUNNING, IN_USE) and name in present}
     root = pin.owned_root(environ)
     held: dict[str, list] = {}
@@ -504,8 +562,13 @@ def prune_copies(
                 held[name] = locks
         if held:
             fresh = prune_plan(contract, environ, held=held, **facts)
+            if fresh.processes is not None:
+                previous = processes or ProcessScan()
+                processes = ProcessScan(previous.versions | fresh.processes.versions,
+                                        {**previous.holders, **fresh.processes.holders},
+                                        {**previous.counts, **fresh.processes.counts})
             if fresh.blocked is not None:
-                return PruneOutcome(in_use=ordered(in_use), blocked=fresh.blocked)
+                return PruneOutcome(in_use=ordered(in_use), blocked=fresh.blocked, processes=processes)
             allowed = {name for name, _size in fresh.remove}
             for name in held:
                 if name in allowed:
@@ -518,7 +581,7 @@ def prune_copies(
                         failed.add(name)
                 elif fresh.keep.get(name) in (RUNNING, IN_USE):
                     in_use.add(name)
-        return PruneOutcome(ordered(removed), ordered(in_use), ordered(failed))
+        return PruneOutcome(ordered(removed), ordered(in_use), ordered(failed), processes=processes)
     finally:
         # The acquisition lock first: a launch waiting for the use lock may
         # copy a retained copy back into place as soon as it wakes.
@@ -538,7 +601,8 @@ def prune_lines(outcome: PruneOutcome, environ: Mapping[str, str]) -> list[str]:
         lines.append("Removed Claude Code copies no release here needs: " + ", ".join(outcome.removed) + ".")
     if outcome.in_use:
         lines.append("Kept Claude Code copies in use: " + ", ".join(outcome.in_use)
-                     + f" — once no session runs them, `{pin.SETUP_COMMAND}` removes them.")
+                     + f" — once no process uses them, `{pin.SETUP_COMMAND}` removes them.")
+        lines.extend(_holder_line(name, outcome.processes) for name in outcome.in_use)
     if outcome.failed:
         lines.append("Could not remove Claude Code copies: " + ", ".join(outcome.failed)
                      + f" — check {paths.display(pin.owned_root(environ), environ)}, then run "
@@ -576,15 +640,24 @@ def retention_report(
         return [f"Claude Code copies cannot be listed ({exc})"], []
     present = set(owned_versions(environ))
     kept = []
+    details = []
     for name, reason in plan.keep.items():
         if name not in present:
             continue
-        # A pin keeps its pin reason; a charmer session using it shows too.
-        if reason not in (IN_USE, RUNNING, LOCK_UNKNOWN) and use_state(environ, name):
+        observed = plan.processes is not None and name in plan.processes.versions
+        in_use = reason in (IN_USE, RUNNING)
+        # A pin keeps its pin reason; process evidence or a use lock adds detail.
+        # An unreadable lock alone is not evidence that a holder exists.
+        if reason != LOCK_UNKNOWN and not in_use and (observed or use_state(environ, name)):
             reason = f"{reason}, {IN_USE}"
+            in_use = True
         kept.append(f"{name} ({reason})")
+        if in_use or observed:
+            # This prefix is routine detail in both doctor and the card.
+            details.append(f"Claude Code copies kept: {name} — {holder_detail(name, plan.processes)}.")
     if kept:
         info.append("Claude Code copies kept by charmer: " + ", ".join(kept) + ".")
+    info.extend(details)
     if plan.blocked is not None:
         attention.append(blocked_line(plan.blocked))
     if plan.remove:
