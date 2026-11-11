@@ -306,6 +306,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual({row[0]: row[1] for row in rows}, expected)
         self.assertEqual({row[2] for row in rows}, {"2026-11-11"})
 
+    @requires_checkout
     def test_nix_pins_match_the_reviewed_inputs(self) -> None:
         tables = _pin_tables(PINS.read_text())
         locked = json.loads((REPO_ROOT / "flake.lock").read_text())["nodes"]["nixpkgs"]["locked"]

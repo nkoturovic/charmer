@@ -409,6 +409,7 @@ jobs:
             --require 'test_client_fence_substitution\b'
             --require 'test_client_mod_policy\b'
             --require 'test_client_fork\b'
+            --require 'test_client_gateway_refusals\b'
             --require 'test_compaction_window_probe\b'
             --require 'test_auto_mode_model_probe\b'
             --require 'RealPinnedBinaryTests(?!\.(test_real_takeover_probe_stop_gate|test_real_adoption_onto_newer_plain_claude)$)'
