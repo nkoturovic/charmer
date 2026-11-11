@@ -1764,7 +1764,7 @@ class NetworkTuiTests(NetworkCommandCase):
         self.assertEqual(seen["confirms"], [])
         self.assertEqual(self.state_bytes(), before)
 
-    def test_the_manual_and_preset_forms_forward_the_network(self) -> None:
+    def test_the_manual_form_forwards_the_network(self) -> None:
         from unittest import mock
 
         from test_tui import FakeWindow
@@ -1782,24 +1782,127 @@ class NetworkTuiTests(NetworkCommandCase):
 
         actions = screens_common.OnboardingActions(self.runtime, FakeWindow([]), tui.MONO_PALETTE)
         with mock.patch.object(screens_common._ProviderForm, "run", autospec=True, side_effect=form), \
-                mock.patch.object(tui.OnboardingForm, "run", autospec=True, side_effect=form), \
                 mock.patch.object(actions, "preview", return_value=True), \
                 mock.patch.object(actions, "invoke", side_effect=lambda argv: invoked.append(argv) or 1):
-            actions.new_provider(manual_only=True)
-            with mock.patch.object(tui.SelectList, "run", return_value=1):
-                actions.new_provider()
-        manual, preset = invoked
-        self.assertEqual(manual[manual.index("--network") + 1], "tailnet")
-        self.assertEqual(preset[:3], ["providers", "add", "--preset"])
-        self.assertEqual(preset[preset.index("--network") + 1], "tailnet")
+            actions.new_provider()
+        self.assertEqual(invoked[0][invoked[0].index("--network") + 1], "tailnet")
         # Without the private-network routes, no network is asked or sent.
         invoked.clear()
         self.runtime.catalog.docs["gateway"][catalog.AUDITS_KEY][operator.PRIVATE_NETWORK_AUDIT] = False
         with mock.patch.object(screens_common._ProviderForm, "run", autospec=True, side_effect=form), \
                 mock.patch.object(actions, "preview", return_value=True), \
                 mock.patch.object(actions, "invoke", side_effect=lambda argv: invoked.append(argv) or 1):
-            actions.new_provider(manual_only=True)
+            actions.new_provider()
         self.assertNotIn("--network", invoked[0])
+
+    # -- a reviewed OpenAI-compatible preset with an API key ---------------------
+
+    PRESET = "mistral"
+    PRESET_SECRET = "MISTRAL_API_KEY"
+
+    def preset_display(self) -> str:
+        return operator.presets(self.runtime.asset_root)[self.PRESET].display
+
+    def test_n_adds_a_keyed_preset_on_the_tailnet(self) -> None:
+        import charmer.cli.text as cli_text
+        from charmer import views
+        from charmer.setup import texts as setup_texts
+
+        from test_tui import FakeWindow
+
+        stack, seen = self.answered({"id": KEYED_ID, "url": "http://box.example.test:8010/v1", "network": "tailnet"},
+                                    key="box-preset-dummy-key")
+        screen = self.providers_screen()
+        with stack:
+            screen.run(FakeWindow(["n", *self.to_entry(f"preset:{self.PRESET}"), "\n", "\x1b", "\x1b"]))
+        self.assertTrue(screen.message.startswith(f"Added {KEYED_ID}"), screen.message)
+        title, fields, help_text = seen["forms"][0]
+        self.assertEqual(title, cli_text.PRESET_FORM_TITLE.format(display=self.preset_display()))
+        self.assertEqual([field[0] for field in fields], ["id", "url", "network"])
+        self.assertEqual(fields[1][1], views.PRESET_NETWORK_ADDRESS_LABEL)
+        self.assertEqual(fields[2][2], "none", "a preset is on no private network unless chosen")
+        self.assertEqual([value for value, _label in fields[2][3]], ["none", "loopback", "lan", "tailnet"])
+        self.assertIn(cli_text.PRESET_NETWORK_FORM_HELP + "\n" + cli_text.NETWORK_FORM_HELP, help_text)
+        approval = "\n".join(seen["confirms"][0][1])
+        self.assertIn("plain HTTP: the key is encrypted only while the connection runs through your tailnet", approval)
+        self.assertIn("now resolves to: 100.88.12.34 (tailnet)", approval)
+        self.assertTrue(approval.endswith(setup_texts.NETWORK_SCOPE), approval)
+        provider = self.declaration()["provider"]
+        self.assertEqual((provider["network"], provider["base_url"], provider["kind"], provider["auth"]["secret_ref"]),
+                         ("tailnet", "http://box.example.test:8010/v1", operator.KEYED_KIND,
+                          f"env:{self.PRESET_SECRET}"))
+        self.assertEqual(self.runtime.operator_snapshot().layer.route_status[KEYED_ID], "approved")
+        self.assertNotIn("box-preset-dummy-key", repr(seen))
+
+    def test_get_started_a_adds_a_preset_whose_https_address_opts_into_a_network(self) -> None:
+        from test_tui import FakeWindow
+
+        from charmer import tui
+        import charmer.cli.screens.get_started as get_started
+
+        self.answers = ("192.168.1.10",)
+        stack, seen = self.answered({"id": KEYED_ID, "url": "https://box.example.test:8443/v1", "network": "lan"},
+                                    key="box-preset-dummy-key")
+        screen = get_started._GetStartedScreen(self.runtime, tui.MONO_PALETTE)
+        with stack:
+            screen.run(FakeWindow(["a", *self.to_entry(f"preset:{self.PRESET}", only=None), "\n", "\x1b", "\x1b"]))
+        self.assertTrue(screen.message.startswith(f"Added {KEYED_ID}"), screen.message)
+        approval = "\n".join(seen["confirms"][0][1])
+        self.assertIn("network: lan (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7) — HTTPS", approval)
+        self.assertIn("now resolves to: 192.168.1.10 (lan)", approval)
+        provider = self.declaration()["provider"]
+        self.assertEqual((provider["network"], provider["base_url"]), ("lan", "https://box.example.test:8443/v1"))
+        self.assertEqual(self.runtime.operator_snapshot().layer.route_status[KEYED_ID], "approved")
+
+    def test_a_preset_sharing_its_key_keeps_the_network_when_replanned(self) -> None:
+        from unittest import mock
+
+        from test_tui import FakeWindow
+
+        import charmer.cli.screens.providers as screens_providers
+        from charmer import secret_store
+        from charmer.setup import model, providers as layer
+
+        # A shared key stays with one origin: the first instance is the same
+        # server, so the replan without its network would be refused (http).
+        first = layer.plan_add_preset(self.runtime, self.PRESET, "first", "http://box.example.test:8010/v1",
+                                      network="tailnet")
+        layer.apply_add_preset(self.runtime, first, model.Confirmation.given(first), model.Secret("first-dummy-key"))
+        # The preset's key is in use: reuse it (item 1), then replace it (item 2).
+        for provider_id, choice, key in ((KEYED_ID, 1, ""), ("box-two", 2, "second-dummy-key")):
+            with self.subTest(choice=choice):
+                stack, seen = self.answered({"id": provider_id, "url": "http://box.example.test:8010/v1",
+                                             "network": "tailnet"}, key=key)
+                stack.enter_context(mock.patch.object(screens_providers.ConnectActions, "_choose", autospec=True,
+                                                      return_value=choice))
+                screen = self.providers_screen()
+                with stack:
+                    screen.run(FakeWindow(["n", *self.to_entry(f"preset:{self.PRESET}"), "\n", "\x1b", "\x1b"]))
+                self.assertTrue(screen.message.startswith(f"Added {provider_id}"), screen.message)
+                approval = "\n".join(seen["confirms"][0][1])
+                self.assertIn("now resolves to: 100.88.12.34 (tailnet)", approval)
+                provider = self.declaration(provider_id)["provider"]
+                self.assertEqual((provider["network"], provider["base_url"], provider["auth"]["secret_ref"]),
+                                 ("tailnet", "http://box.example.test:8010/v1", f"env:{self.PRESET_SECRET}"))
+                self.assertEqual(self.runtime.operator_snapshot().layer.route_status[provider_id], "approved")
+        self.assertEqual(secret_store.default_store(self.runtime.environ).get(self.PRESET_SECRET), "second-dummy-key")
+
+    def test_with_the_network_routes_closed_a_preset_asks_no_network(self) -> None:
+        from charmer import views
+
+        from test_tui import FakeWindow
+
+        self.runtime.catalog.docs["gateway"][catalog.AUDITS_KEY][operator.PRIVATE_NETWORK_AUDIT] = False
+        stack, seen = self.answered({"id": KEYED_ID, "network": "tailnet"}, key="box-preset-dummy-key")
+        screen = self.providers_screen()
+        with stack:
+            screen.run(FakeWindow(["n", *self.to_entry(f"preset:{self.PRESET}"), "\n", "\x1b", "\x1b"]))
+        self.assertTrue(screen.message.startswith(f"Added {KEYED_ID}"), screen.message)
+        _title, fields, _help = seen["forms"][0]
+        self.assertEqual([field[0] for field in fields], ["id", "url"])
+        self.assertEqual(fields[1][1], views.PRESET_ADDRESS_LABEL)
+        self.assertNotIn("network", self.declaration()["provider"])
+        self.assertEqual(self.lookups, [], "no network, no lookup")
 
     def test_the_row_detail_names_transport_network_and_key_state(self) -> None:
         from charmer import tui

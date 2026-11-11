@@ -3060,18 +3060,27 @@ def lan_form_fields(*, network_offered: bool = False):
 
 
 PRESET_ADDRESS_LABEL = "Address (https://…; Enter keeps the preset's)"
+PRESET_NETWORK_ADDRESS_LABEL = "Address (https://…, or http:// on a private network; Enter keeps the preset's)"
 
 
-def preset_form_fields(name: str, base_url: str = ""):
+def preset_form_fields(name: str, base_url: str = "", *, network_kind: str | None = None):
     """The form of a reviewed preset with an API key: its name (the
     preset's own by default) and its address (the preset's base URL by
     default; another address its vendor documents, such as a workspace
     endpoint, is checked like ``providers add --preset --base-url``);
-    everything else comes from the preset."""
+    everything else comes from the preset. ``network_kind``: the preset's
+    kind while the private-network routes are open; an OpenAI-compatible
+    preset then also chooses its network (none by default)."""
 
+    if network_kind not in NETWORK_KINDS:
+        return (
+            ("id", "Name for this provider (a–z, 0–9, -)", name, ()),
+            ("url", PRESET_ADDRESS_LABEL, base_url, ()),
+        )
     return (
         ("id", "Name for this provider (a–z, 0–9, -)", name, ()),
-        ("url", PRESET_ADDRESS_LABEL, base_url, ()),
+        ("url", PRESET_NETWORK_ADDRESS_LABEL, base_url, ()),
+        network_field(network_kind),
     )
 
 
