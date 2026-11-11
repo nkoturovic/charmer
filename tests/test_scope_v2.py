@@ -19,6 +19,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from charmer import catalog, cli, compiler, custom, lineup_files, paths, profile, scope, settings, state, strict_json
 from charmer import lineup as lineup_mod
@@ -1071,6 +1072,23 @@ class DenyTests(unittest.TestCase):
                 "Edit(~/.config/charmer/**)",
             ],
         )
+
+    def test_the_compiled_permissions_are_a_closed_set(self) -> None:
+        """The closed allowlist one level down: only the deny list and the
+        default mode are compiled; the newer nested permission settings stay
+        the user's own."""
+
+        self.assertEqual(scope.COMPILED_PERMISSIONS_KEYS, frozenset({"deny", "defaultMode"}))
+        for nested in ("blockWritesOutsideWorkingDirectories", "denyInsteadOfPrompting", "allow", "ask"):
+            self.assertNotIn(nested, scope.COMPILED_PERMISSIONS_KEYS)
+        for name in catalog.SEED_PROFILE_NAMES:
+            for no_subagents in (False, True):
+                _, plan = _plan(name, no_subagents=no_subagents)
+                with self.subTest(seed=name, no_subagents=no_subagents):
+                    self.assertLessEqual(set(plan.settings["permissions"]), scope.COMPILED_PERMISSIONS_KEYS)
+        with mock.patch.object(scope, "COMPILED_PERMISSIONS_KEYS", frozenset({"defaultMode"})):
+            with self.assertRaisesRegex(ScopeError, "compiled permissions carry keys outside the closed allowlist"):
+                _plan("balanced")
 
     def test_the_mod_folder_and_the_authoring_skill_are_denied(self) -> None:
         """The model can neither write a mod into the session's dev-mods

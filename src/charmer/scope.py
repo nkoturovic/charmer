@@ -104,6 +104,12 @@ COMPILED_SETTINGS_KEYS = frozenset(
     }
 )
 
+# The same closed doctrine one level down: the compiled ``permissions`` carry
+# only these keys. Claude Code's permissions.blockWritesOutsideWorkingDirectories
+# and permissions.denyInsteadOfPrompting stay the user's own: each only
+# narrows what a session may do.
+COMPILED_PERMISSIONS_KEYS = frozenset({"deny", "defaultMode"})
+
 # The three workflow keys the package base settings.json must supply.
 _BASE_WORKFLOW_KEYS = ("disableWorkflows", "workflowSizeGuideline", "workflowKeywordTriggerEnabled")
 
@@ -1778,6 +1784,15 @@ FEEDBACK_DRAFTS_VALUES = settings_mod.FEEDBACK_DRAFTS_VALUES
 # it, so the flag settings (which win over those layers) state it as well.
 FAST_MODE_ENV = "CLAUDE_CODE_DISABLE_FAST_MODE"
 
+# Claude Code's agent view and its background service: ``claude agents``,
+# ``--bg``, ``/background``, the exit dialog's "Move to background and exit",
+# the fleet ``/fork`` and the on-demand daemon. A session handed to it runs on
+# the daemon's own binary and environment, without the lead prompt or the
+# launch environment, so every managed session turns it off; like the
+# fast-mode disable, the flag settings state it as well. The real-binary
+# proof is tests/test_client_background (client check background-service).
+AGENT_VIEW_ENV = "CLAUDE_CODE_DISABLE_AGENT_VIEW"
+
 
 # Claude Code 2.1.296+ runs every workflow agent on
 # CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL when it is set, over a cm-* agentType's
@@ -1936,6 +1951,7 @@ def compile_lineup_scope(
     env[compiler.FORK_SUBAGENT_ENV] = compiler.FORK_SUBAGENT_OFF
     env.update(feedback_drafts_env(feedback_drafts))
     env[FAST_MODE_ENV] = "1"
+    env[AGENT_VIEW_ENV] = "1"
     env[MODEL_CAPABILITIES_ENV] = refusal_fallback_capabilities(fence)
 
     _, denies = compiler.compile_native_policy(
@@ -1988,6 +2004,11 @@ def compile_lineup_scope(
     if unknown:
         raise ScopeError(
             f"compiled settings carry keys outside the closed allowlist: {unknown}"
+        )
+    unknown = sorted(set(settings["permissions"]) - COMPILED_PERMISSIONS_KEYS)
+    if unknown:
+        raise ScopeError(
+            f"compiled permissions carry keys outside the closed allowlist: {unknown}"
         )
     missing = [key for key in _BASE_WORKFLOW_KEYS if key not in settings]
     if missing:

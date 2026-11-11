@@ -30,6 +30,7 @@ from charmer import (
     compiler,
     composition,
     custom,
+    legacy_migration,
     lineup_files,
     managed,
     profile,
@@ -430,6 +431,30 @@ class EnvTests(unittest.TestCase):
         entry["lead"]["env"][key] = "0"
         errors = catalog.validate_catalog(raw)
         self.assertTrue(any(key in error and "compiler-owned and reserved" in error for error in errors), errors)
+
+    def test_the_background_service_is_off_in_every_launch(self) -> None:
+        """Every managed launch turns Claude Code's agent view off (no
+        ``/background``, no exit-dialog background choice, no on-demand
+        daemon), in the process env and the flag settings env; a lead env
+        never switches it back, and the legacy hand-back leaves the key out.
+        The real-client proof is ``tests/test_client_background``."""
+
+        key = scope.AGENT_VIEW_ENV
+        self.assertEqual(key, "CLAUDE_CODE_DISABLE_AGENT_VIEW")
+        self.assertIn(key, catalog.RESERVED_LEAD_ENV_KEYS)
+        self.assertIn(key, legacy_migration.LATER_ENV_KEYS)
+        for seed in ("balanced", "direct"):
+            for no_subagents in (False, True):
+                _lineup, result = _seed_launch(seed, no_subagents=no_subagents)
+                with self.subTest(seed=seed, no_subagents=no_subagents):
+                    self.assertEqual(result.env_set[key], "1")
+                    self.assertNotIn(key, result.env_unset)
+                    self.assertEqual(result.scope_plan.settings["env"][key], "1")
+                    self.assertNotIn("disableAgentView", result.scope_plan.settings)
+        bundle, _l, eff, lineup = _seed("balanced")
+        bad = dataclasses.replace(lineup, lead=dataclasses.replace(lineup.lead, env={key: "0"}))
+        with self.assertRaisesRegex(CompilerError, "compiler-owned and reserved"):
+            _launch(bad, eff, bundle=bundle)
 
     def test_workflow_model_is_compiled_neutral_in_every_scope(self) -> None:
         """Claude Code 2.1.296+ runs every workflow agent on

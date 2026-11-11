@@ -1027,6 +1027,9 @@ def compile_lineup_launch(
         # the helper's gateway key to api.anthropic.com) and no cached
         # fast-mode speed on managed requests; reserved against lead.env.
         "CLAUDE_CODE_DISABLE_FAST_MODE": "1",
+        # No background service (agent view, /background, the exit dialog's
+        # background choice, the on-demand daemon); reserved against lead.env.
+        "CLAUDE_CODE_DISABLE_AGENT_VIEW": "1",
     }
     if context.scalar is not None:
         env_set["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(context.scalar)
