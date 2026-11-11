@@ -1,8 +1,56 @@
+diff --git a/internal/runtime/executor/codex_executor_claude_output_budget_test.go b/internal/runtime/executor/codex_executor_claude_output_budget_test.go
+index 6afbf4f4..d8a1396a 100644
+--- a/internal/runtime/executor/codex_executor_claude_output_budget_test.go
++++ b/internal/runtime/executor/codex_executor_claude_output_budget_test.go
+@@ -17,6 +17,8 @@ import (
+ 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
+ )
+ 
++// The budget tests run on a Sign in with ChatGPT credential, which keeps the
++// forwarded budget; an account request carries none (output-cap patch).
+ func TestCodexClaudeModelSelectionMinimumOutputBudget(t *testing.T) {
+ 	for _, stream := range []bool{false, true} {
+ 		t.Run(fmt.Sprintf("stream=%t", stream), func(t *testing.T) {
+@@ -47,7 +49,7 @@ func TestCodexClaudeModelSelectionMinimumOutputBudget(t *testing.T) {
+ 			}
+ 			opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatClaude, Stream: stream}
+ 			if stream {
+-				result, errStream := executor.ExecuteStream(context.Background(), codexOAuthTestAuth(server.URL), req, opts)
++				result, errStream := executor.ExecuteStream(context.Background(), codexBudgetSIWCAuth(server.URL), req, opts)
+ 				if errStream != nil {
+ 					t.Fatalf("ExecuteStream: %v", errStream)
+ 				}
+@@ -56,7 +58,7 @@ func TestCodexClaudeModelSelectionMinimumOutputBudget(t *testing.T) {
+ 						t.Fatalf("stream chunk: %v", chunk.Err)
+ 					}
+ 				}
+-			} else if _, errExecute := executor.Execute(context.Background(), codexOAuthTestAuth(server.URL), req, opts); errExecute != nil {
++			} else if _, errExecute := executor.Execute(context.Background(), codexBudgetSIWCAuth(server.URL), req, opts); errExecute != nil {
+ 				t.Fatalf("Execute: %v", errExecute)
+ 			}
+ 
+@@ -161,7 +163,7 @@ func TestCodexClaudeOutputBudgetBoundariesAndPayloadRules(t *testing.T) {
+ 					}
+ 					req := cliproxyexecutor.Request{Model: "gpt-5.6-sol", Payload: []byte(payload)}
+ 					opts := cliproxyexecutor.Options{SourceFormat: from, Stream: stream}
+-					auth := codexOAuthTestAuth(server.URL)
++					auth := codexBudgetSIWCAuth(server.URL)
+ 					auth.ID = "codex-output-budget-test"
+ 					if stream {
+ 						result, errStream := executor.ExecuteStream(context.Background(), auth, req, opts)
 diff --git a/internal/runtime/executor/codex_executor_execute.go b/internal/runtime/executor/codex_executor_execute.go
-index 77a2df92..83d6873e 100644
+index 77a2df92..ef7b616e 100644
 --- a/internal/runtime/executor/codex_executor_execute.go
 +++ b/internal/runtime/executor/codex_executor_execute.go
-@@ -156,6 +156,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+@@ -149,6 +149,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
+ 	originalTranslated = helps.SetStringIfDifferent(originalTranslated, "model", baseModel)
+ 	doc := ojson.NewDoc(body)
+ 	normalizeCodexOutputBudgetDoc(doc)
++	originalTranslated = dropCodexAccountOutputCap(doc, originalTranslated, auth)
+ 	helps.SetStringIfDifferentDoc(doc, "model", baseModel)
+ 
+ 	if err = helps.ApplyRequestThinkingDoc(doc, req, opts, from.String(), to.String(), e.Identifier(), updatesChanged); err != nil {
+@@ -156,6 +157,7 @@ func (e *CodexExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
  	}
  
  	ctx = helps.WithPayloadFinalizer(ctx, helps.NewPayloadFinalizer(e.cfg, e.Identifier(), baseModel, to.String(), "", originalTranslated, req, opts, auth))
@@ -10,11 +58,77 @@ index 77a2df92..83d6873e 100644
  	helps.SetStringIfDifferentDoc(doc, "model", baseModel)
  	helps.SetBoolIfDifferentDoc(doc, "stream", true)
  	_ = doc.Delete("previous_response_id")
+diff --git a/internal/runtime/executor/codex_executor_output_budget_issue7304_test.go b/internal/runtime/executor/codex_executor_output_budget_issue7304_test.go
+index 855d0dcd..a89e0cbc 100644
+--- a/internal/runtime/executor/codex_executor_output_budget_issue7304_test.go
++++ b/internal/runtime/executor/codex_executor_output_budget_issue7304_test.go
+@@ -118,15 +118,18 @@ func TestCodexVerifyInferenceMinimumOutputBudget_Issue7304(t *testing.T) {
+ 	if verified == nil || !verified.InferenceVerified {
+ 		t.Fatalf("expected InferenceVerified=true after verification, got %+v", verified)
+ 	}
++	// An account request carries no client budget at all (output-cap patch).
+ 	body := <-requests
+-	if got := ojson.GetBytes(body, "max_output_tokens").Raw; got != "16" {
+-		t.Fatalf("upstream max_output_tokens = %q, want 16; body=%s", got, body)
++	if got := ojson.GetBytes(body, "max_output_tokens"); got.Exists() {
++		t.Fatalf("upstream max_output_tokens = %q, want none on the account route; body=%s", got.Raw, body)
+ 	}
+ }
+ 
+ // Issue 7304: small positive integer budgets from every Codex source format must be
+ // normalized to the upstream minimum before user payload rules; invalid budgets
+ // (0, negative, fractional, non-numeric) stay untouched and no budget is injected.
++// The rows run on a Sign in with ChatGPT credential, which keeps the forwarded
++// budget; an account request carries none (output-cap patch).
+ func TestCodexSmallOutputBudgetsAllSourceFormats_Issue7304(t *testing.T) {
+ 	modelRule := []config.PayloadModelRule{{Name: "gpt-5.6-sol", Protocol: "codex"}}
+ 	matchedRule := []config.PayloadModelRule{{
+@@ -185,7 +188,7 @@ func TestCodexSmallOutputBudgetsAllSourceFormats_Issue7304(t *testing.T) {
+ 					}
+ 					req := cliproxyexecutor.Request{Model: "gpt-5.6-sol", Payload: []byte(tc.payload)}
+ 					opts := cliproxyexecutor.Options{SourceFormat: tc.from, Stream: stream}
+-					auth := codexOAuthTestAuth(server.URL)
++					auth := codexBudgetSIWCAuth(server.URL)
+ 					auth.ID = "codex-output-budget-7304-test"
+ 
+ 					// wantAccept mirrors the simplified upstream model above: any
+diff --git a/internal/runtime/executor/codex_executor_sse_events_test.go b/internal/runtime/executor/codex_executor_sse_events_test.go
+index 7555e5b4..db731a55 100644
+--- a/internal/runtime/executor/codex_executor_sse_events_test.go
++++ b/internal/runtime/executor/codex_executor_sse_events_test.go
+@@ -576,7 +576,7 @@ func TestCodexVerifyInferenceTranslatesPayloadAndRequiresCompletedEvent_Issue578
+ 	}
+ 	cfg.Codex.StreamBootstrapBuffering = false
+ 
+-	// 2. Real completed stream succeeds and the translated body carries VerifyInference's max_output_tokens=16 while setting stream=true.
++	// 2. Real completed stream succeeds and the translated account body carries no max_output_tokens while setting stream=true.
+ 	sseResponse = "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"r2\",\"model\":\"gpt-5.4\"}}\n\n" +
+ 		"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"pong\"}\n\n" +
+ 		"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"r2\",\"model\":\"gpt-5.4\",\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"pong\"}]}]}}\n\n"
+@@ -594,8 +594,8 @@ func TestCodexVerifyInferenceTranslatesPayloadAndRequiresCompletedEvent_Issue578
+ 	if upstreamJSON["stream"] != true || upstreamJSON["store"] != false {
+ 		t.Fatalf("expected translated Codex body with stream=true and store=false, got: %s", string(capturedBody))
+ 	}
+-	if maxOutputTokens := upstreamJSON["max_output_tokens"]; maxOutputTokens != float64(16) {
+-		t.Fatalf("translated Codex body must carry max_output_tokens=16, got: %s", string(capturedBody))
++	if _, hasMaxOutput := upstreamJSON["max_output_tokens"]; hasMaxOutput {
++		t.Fatalf("translated Codex account body must carry no max_output_tokens, got: %s", string(capturedBody))
+ 	}
+ }
+ 
 diff --git a/internal/runtime/executor/codex_executor_stream.go b/internal/runtime/executor/codex_executor_stream.go
-index eacf2349..52fdab79 100644
+index eacf2349..5d8be5ea 100644
 --- a/internal/runtime/executor/codex_executor_stream.go
 +++ b/internal/runtime/executor/codex_executor_stream.go
-@@ -79,6 +79,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -72,6 +72,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+ 	originalTranslated = helps.SetStringIfDifferent(originalTranslated, "model", baseModel)
+ 	doc := ojson.NewDoc(body)
+ 	normalizeCodexOutputBudgetDoc(doc)
++	originalTranslated = dropCodexAccountOutputCap(doc, originalTranslated, auth)
+ 	helps.SetStringIfDifferentDoc(doc, "model", baseModel)
+ 
+ 	if err = helps.ApplyRequestThinkingDoc(doc, req, opts, from.String(), to.String(), e.Identifier(), updatesChanged); err != nil {
+@@ -79,6 +80,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  	}
  
  	ctx = helps.WithPayloadFinalizer(ctx, helps.NewPayloadFinalizer(e.cfg, e.Identifier(), baseModel, to.String(), "", originalTranslated, req, opts, auth))
@@ -24,10 +138,10 @@ index eacf2349..52fdab79 100644
  	_ = doc.Delete("prompt_cache_retention")
 diff --git a/internal/runtime/executor/codex_key_output_cap.go b/internal/runtime/executor/codex_key_output_cap.go
 new file mode 100644
-index 00000000..5729cb1c
+index 00000000..7b05d888
 --- /dev/null
 +++ b/internal/runtime/executor/codex_key_output_cap.go
-@@ -0,0 +1,82 @@
+@@ -0,0 +1,104 @@
 +package executor
 +
 +import (
@@ -55,9 +169,10 @@ index 00000000..5729cb1c
 +// model check (max_tokens 1) stays bounded instead of being refused; every
 +// other valid cap is sent as supplied. A client value that is absent or not
 +// a positive plain integer adds nothing, and an invalid limit already in the
-+// body is left to the upstream. Accounts and Sign in with ChatGPT
-+// credentials keep the translation's result unchanged; compact and image
-+// requests never pass through here.
++// body is left to the upstream. An account request carries no client cap
++// (dropCodexAccountOutputCapDoc), a Sign in with ChatGPT credential keeps
++// the translation's result unchanged, and compact and image requests never
++// pass through here.
 +func withCodexKeyOutputCap(ctx context.Context, auth *cliproxyauth.Auth, from sdktranslator.Format, payload []byte) context.Context {
 +	if !codexAuthUsesAPIKey(auth) || codexUseSIWC(auth) {
 +		return ctx
@@ -110,12 +225,33 @@ index 00000000..5729cb1c
 +	}
 +	return capped
 +}
++
++// dropCodexAccountOutputCap keeps the client's output cap off a ChatGPT
++// account request: a credential that is neither an API key nor Sign in with
++// ChatGPT, on the HTTP and the websocket executor alike. The translations
++// forward the client's limit (max_tokens, max_completion_tokens,
++// max_output_tokens, maxOutputTokens) as max_output_tokens on every route;
++// the account backend is sent none, as before that forwarding. It removes the
++// limit from the request body and from the original translation the payload
++// rules consult, right after the translation, so configured payload rules
++// still decide the final body as they did then. It returns the original
++// translation to use.
++func dropCodexAccountOutputCap(doc *ojson.Doc, original []byte, auth *cliproxyauth.Auth) []byte {
++	if doc == nil || codexAuthUsesAPIKey(auth) || codexUseSIWC(auth) {
++		return original
++	}
++	_ = doc.Delete("max_output_tokens")
++	if dropped, err := ojson.DeleteBytes(original, "max_output_tokens"); err == nil {
++		return dropped
++	}
++	return original
++}
 diff --git a/internal/runtime/executor/codex_key_output_cap_test.go b/internal/runtime/executor/codex_key_output_cap_test.go
 new file mode 100644
-index 00000000..5aaa985d
+index 00000000..29f94d8c
 --- /dev/null
 +++ b/internal/runtime/executor/codex_key_output_cap_test.go
-@@ -0,0 +1,329 @@
+@@ -0,0 +1,433 @@
 +package executor
 +
 +import (
@@ -130,6 +266,7 @@ index 00000000..5aaa985d
 +	"time"
 +
 +	"github.com/MoeForge/moego/ojson"
++	"github.com/gorilla/websocket"
 +	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 +	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 +	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
@@ -168,6 +305,14 @@ index 00000000..5aaa985d
 +	return &cliproxyauth.Auth{ID: "codex-output-cap-siwc", Provider: "codex",
 +		Attributes: map[string]string{"base_url": baseURL, "api_key": codexOutputCapKey, "use_siwc": "true"},
 +		Metadata:   map[string]any{"siwc": map[string]any{"access_token": "codex-output-cap-fixture-siwc"}}}
++}
++
++// codexBudgetSIWCAuth is a Sign in with ChatGPT credential without an api_key
++// attribute: the upstream budget tests run on it, because it keeps the
++// translations' forwarded budget, which an account request no longer carries.
++func codexBudgetSIWCAuth(baseURL string) *cliproxyauth.Auth {
++	return &cliproxyauth.Auth{Provider: "codex", Attributes: map[string]string{"base_url": baseURL},
++		Metadata: map[string]any{"type": "codex", "use_siwc": true, "siwc": map[string]any{"access_token": "siwc-budget-token"}}}
 +}
 +
 +// codexOutputCapRequest sends one request through the real executor to a fake
@@ -391,24 +536,13 @@ index 00000000..5aaa985d
 +	}
 +}
 +
-+// Negative controls: an account, a Sign in with ChatGPT credential, compact
-+// and image requests get nothing from the gateway's cap. The account and
-+// SIWC bodies carry the translation's own forwarding of the client's
-+// max_tokens (32000), and a payload override there is not bounded by it.
++// Negative controls: a Sign in with ChatGPT credential, compact and image
++// requests get nothing from the gateway's cap. The SIWC body carries the
++// translation's own forwarding of the client's max_tokens (32000), and a
++// payload override there is not bounded by it.
 +func TestCodexKeyOutputCapLeavesOtherRoutes(t *testing.T) {
 +	withCap := `{"model":"gpt-5.5","max_tokens":32000,` + codexOutputCapMessage + `}`
 +	for _, stream := range []bool{false, true} {
-+		t.Run(fmt.Sprintf("account/stream=%t", stream), func(t *testing.T) {
-+			hit := codexOutputCapTurn(t, &config.Config{}, codexOutputCapAccountAuth, "claude", withCap, stream)
-+			if hit.header.Get("Chatgpt-Account-Id") != codexOutputCapAccount {
-+				t.Fatalf("request did not take the account route: %v", hit.header)
-+			}
-+			codexOutputCapWant(t, hit.body, "32000")
-+		})
-+		t.Run(fmt.Sprintf("account override/stream=%t", stream), func(t *testing.T) {
-+			hit := codexOutputCapTurn(t, codexOutputCapPayloadConfig("override", 64000), codexOutputCapAccountAuth, "claude", withCap, stream)
-+			codexOutputCapWant(t, hit.body, "64000")
-+		})
 +		t.Run(fmt.Sprintf("siwc/stream=%t", stream), func(t *testing.T) {
 +			hit := codexOutputCapTurn(t, &config.Config{}, codexOutputCapSIWCAuth, "claude", withCap, stream)
 +			if hit.header.Get("Authorization") != "Bearer codex-output-cap-fixture-siwc" {
@@ -445,3 +579,133 @@ index 00000000..5aaa985d
 +		}
 +	})
 +}
++
++// An account request carries no output cap from the client, whatever the
++// client format, the codex cloaking setting or the execution mode: the
++// translations forward the client's limit, and the account backend is sent
++// none. A configured payload rule still sets the final body.
++func TestCodexAccountOutputCapIsNotForwarded(t *testing.T) {
++	withCap := `{"model":"gpt-5.5","max_tokens":32000,` + codexOutputCapMessage + `}`
++	cases := []struct{ name, from, payload string }{
++		{"messages", "claude", withCap},
++		{"messages one", "claude", `{"model":"gpt-5.5","max_tokens":1,` + codexOutputCapMessage + `}`},
++		{"responses", "openai-response", `{"model":"gpt-5.5","max_output_tokens":2048,` + codexOutputCapInput + `}`},
++		{"responses legacy field", "openai-response", `{"model":"gpt-5.5","max_completion_tokens":2048,` + codexOutputCapInput + `}`},
++		{"chat", "openai", `{"model":"gpt-5.5","max_completion_tokens":2048,` + codexOutputCapMessage + `}`},
++		{"chat max_tokens", "openai", `{"model":"gpt-5.5","max_tokens":2048,` + codexOutputCapMessage + `}`},
++		{"gemini", "gemini", `{"model":"gpt-5.5","contents":[{"role":"user","parts":[{"text":"fixture"}]}],"generationConfig":{"maxOutputTokens":2048}}`},
++		{"interactions", "interactions", `{"model":"gpt-5.5","input":"fixture","max_output_tokens":2048}`},
++	}
++	for _, tc := range cases {
++		for _, plain := range []bool{false, true} {
++			for _, stream := range []bool{false, true} {
++				t.Run(fmt.Sprintf("%s/plain=%t/stream=%t", tc.name, plain, stream), func(t *testing.T) {
++					cfg := &config.Config{}
++					cfg.Codex.DisableCodexCloaking = plain
++					hit := codexOutputCapTurn(t, cfg, codexOutputCapAccountAuth, tc.from, tc.payload, stream)
++					if hit.header.Get("Chatgpt-Account-Id") != codexOutputCapAccount {
++						t.Fatalf("request did not take the account route: %v", hit.header)
++					}
++					codexOutputCapWant(t, hit.body, "")
++				})
++			}
++		}
++	}
++	for _, stream := range []bool{false, true} {
++		t.Run(fmt.Sprintf("override/stream=%t", stream), func(t *testing.T) {
++			hit := codexOutputCapTurn(t, codexOutputCapPayloadConfig("override", 64000), codexOutputCapAccountAuth, "claude", withCap, stream)
++			codexOutputCapWant(t, hit.body, "64000")
++		})
++		t.Run(fmt.Sprintf("default/stream=%t", stream), func(t *testing.T) {
++			hit := codexOutputCapTurn(t, codexOutputCapPayloadConfig("default", 4096), codexOutputCapAccountAuth, "claude", withCap, stream)
++			codexOutputCapWant(t, hit.body, "4096")
++		})
++	}
++}
++
++// codexOutputCapWebsocketFrame sends one request through the websocket
++// executor to a fake upstream and returns the first frame it received.
++func codexOutputCapWebsocketFrame(t *testing.T, makeAuth func(string) *cliproxyauth.Auth, payload string, stream bool) []byte {
++	t.Helper()
++	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
++	frames := make(chan []byte, 1)
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		conn, err := upgrader.Upgrade(w, r, nil)
++		if err != nil {
++			t.Errorf("upgrade websocket: %v", err)
++			return
++		}
++		defer func() { _ = conn.Close() }()
++		_, frame, err := conn.ReadMessage()
++		if err != nil {
++			t.Errorf("read upstream frame: %v", err)
++			return
++		}
++		frames <- frame
++		_ = conn.WriteMessage(websocket.TextMessage, []byte(codexOutputCapCompleted))
++	}))
++	defer server.Close()
++	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
++	defer cancel()
++	executor := NewCodexWebsocketsExecutor(&config.Config{})
++	req := cliproxyexecutor.Request{Model: "gpt-5.5", Payload: []byte(payload)}
++	opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatClaude, Stream: stream}
++	if stream {
++		result, err := executor.ExecuteStream(ctx, makeAuth(server.URL), req, opts)
++		if err != nil {
++			t.Fatalf("ExecuteStream: %v", err)
++		}
++		for chunk := range result.Chunks {
++			if chunk.Err != nil {
++				t.Fatalf("stream chunk: %v", chunk.Err)
++			}
++		}
++	} else if _, err := executor.Execute(ctx, makeAuth(server.URL), req, opts); err != nil {
++		t.Fatalf("Execute: %v", err)
++	}
++	select {
++	case frame := <-frames:
++		return frame
++	case <-ctx.Done():
++		t.Fatal("no upstream frame")
++		return nil
++	}
++}
++
++// The websocket executor keeps the account route's body free of the client's
++// cap too; on an API key it still carries the translation's forwarding.
++func TestCodexAccountOutputCapIsNotForwardedOverWebsockets(t *testing.T) {
++	withCap := `{"model":"gpt-5.5","max_tokens":32000,` + codexOutputCapMessage + `}`
++	for _, stream := range []bool{false, true} {
++		t.Run(fmt.Sprintf("account/stream=%t", stream), func(t *testing.T) {
++			codexOutputCapWant(t, codexOutputCapWebsocketFrame(t, codexOutputCapAccountAuth, withCap, stream), "")
++		})
++		t.Run(fmt.Sprintf("key/stream=%t", stream), func(t *testing.T) {
++			codexOutputCapWant(t, codexOutputCapWebsocketFrame(t, codexOutputCapKeyAuth, withCap, stream), "32000")
++		})
++	}
++}
+diff --git a/internal/runtime/executor/codex_websockets_execute.go b/internal/runtime/executor/codex_websockets_execute.go
+index ffbf6f44..1b9bc1cc 100644
+--- a/internal/runtime/executor/codex_websockets_execute.go
++++ b/internal/runtime/executor/codex_websockets_execute.go
+@@ -70,6 +70,7 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
+ 	originalTranslated = helps.SetStringIfDifferent(originalTranslated, "model", baseModel)
+ 	doc := ojson.NewDoc(body)
+ 	normalizeCodexOutputBudgetDoc(doc)
++	originalTranslated = dropCodexAccountOutputCap(doc, originalTranslated, auth)
+ 	helps.SetStringIfDifferentDoc(doc, "model", baseModel)
+ 
+ 	if err = helps.ApplyRequestThinkingDoc(doc, req, opts, from.String(), to.String(), e.Identifier(), updatesChanged); err != nil {
+diff --git a/internal/runtime/executor/codex_websockets_stream.go b/internal/runtime/executor/codex_websockets_stream.go
+index 4aadf3d2..de388c7a 100644
+--- a/internal/runtime/executor/codex_websockets_stream.go
++++ b/internal/runtime/executor/codex_websockets_stream.go
+@@ -915,6 +915,7 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
+ 	originalTranslated = helps.SetStringIfDifferent(originalTranslated, "model", baseModel)
+ 	doc := ojson.NewDoc(body)
+ 	normalizeCodexOutputBudgetDoc(doc)
++	originalTranslated = dropCodexAccountOutputCap(doc, originalTranslated, auth)
+ 	helps.SetStringIfDifferentDoc(doc, "model", baseModel)
+ 
+ 	if err = helps.ApplyRequestThinkingDoc(doc, req, opts, from.String(), to.String(), e.Identifier(), updatesChanged); err != nil {

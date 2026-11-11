@@ -157,12 +157,12 @@
     },
     {
       "basename": "cli-proxy-api-output-cap.patch",
-      "sha256": "4d6d1920554dfa64d66a13dbe878e5dd920594909b73c54ea868e7f4fd63d284",
+      "sha256": "4daca00e7711fa0d3d949483667ee492c34bd26670291d6b4715eb18bee8a550",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-context-error-normalization.patch",
-      "sha256": "87cd2bb362132e895c48d96a6a13625cf958635a10c48f3cbf9b36c6504ec884",
+      "sha256": "ef6b852fcd79a90d1cf1e492a20a9020246de161511004e0f4eef01177a5e2e3",
       "admitted": true
     },
     {

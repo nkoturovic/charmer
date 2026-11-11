@@ -146,9 +146,13 @@ PATCH_ROWS = {
     "cli-proxy-api-charmer-model-ids.patch": (
         "tests.test_gateway_patches.CharmerModelListingTests.test_both_listing_formats",
     ),
+    # The account-route rows discriminate too: upstream forwards the client's
+    # cap on every route, and the patch keeps it off the account route.
     "cli-proxy-api-output-cap.patch": (
         "tests.test_openai_key_route.PinnedGatewayKeyRouteTurnTests.test_the_clients_output_cap_reaches_the_responses_request",
         "tests.test_openai_key_route_client.PinnedClientKeyRouteTests.test_the_actual_clients_output_cap_reaches_the_key_route",
+        "tests.test_openai_key_route.PinnedGatewayAccountRouteTurnTests.test_the_clients_output_cap_does_not_reach_the_account_route",
+        "tests.test_openai_key_route_client.PinnedClientAccountRouteTests.test_the_actual_clients_output_cap_does_not_reach_the_account_route",
     ),
     "cli-proxy-api-context-error-normalization.patch": (
         "tests.test_openai_key_route_client.PinnedClientKeyRouteTests.test_the_actual_client_compacts_on_an_overflow_before_headers",
@@ -177,10 +181,6 @@ PATCH_ROWS = {
 # Regression controls travel with a patch's omission proof, but are not its
 # discriminating rows: their bytes must stay green even when it is omitted.
 PATCH_CONTROL_ROWS = {
-    "cli-proxy-api-output-cap.patch": (
-        "tests.test_openai_key_route.PinnedGatewayAccountRouteTurnTests.test_the_clients_output_cap_does_not_reach_the_account_route",
-        "tests.test_openai_key_route_client.PinnedClientAccountRouteTests.test_the_actual_clients_output_cap_does_not_reach_the_account_route",
-    ),
     "cli-proxy-api-context-error-normalization.patch": (
         "tests.test_openai_key_route_client.PinnedClientKeyRouteTests.test_an_unidentified_context_error_is_not_compacted",
     ),
@@ -284,7 +284,7 @@ def gateway_check_selections():
 PATCH_DEPENDENCIES = {
     "cli-proxy-api-context-error-normalization.patch": {
         "cli-proxy-api-codex-api-key-safety.patch": {
-            "file": "internal/runtime/executor/codex_executor_execute.go", "hunk": 256,
+            "file": "internal/runtime/executor/codex_executor_execute.go", "hunk": 257,
             "reason": "the key route's overflow is marked where 20 rebuilds its failures (also the stream)",
         },
     },
@@ -406,6 +406,11 @@ REQUIRED_EVIDENCE["tests.test_packaging"] = {"patches": {"AG1"}}
 
 
 WATCHER_READY = "file watcher started for config and auth directory changes"
+# The pinned gateway's native Claude Code baseline: a request is native only
+# with complete client signals and a client of this minor at this patch or
+# later (claude-cli/2.1.321 since 8.0.67). The fixture identity rows send it,
+# so they do not depend on the fixture catalog's older recorded client.
+NATIVE_CLIENT_BASELINE = "2.1.321"
 MARKER = "x-gwtest-upstream-marker"
 NONCE = re.compile(r"gwtest-case-[0-9a-f]{12}")
 
@@ -899,7 +904,7 @@ def build_document(bundle, egress: int, gateway: int, home: Path, variant="main"
     document["payload"]["override"].append({"models": [{"name": "gwtest-compat-override", "protocol": "openai"}],
                                             "params": {"reasoning_effort": "low"}})  # S3
     if variant == "ua":
-        major, minor, _ = map(int, bundle.docs["native-contract"]["verified"][0]["version"].split("."))
+        major, minor, _ = map(int, NATIVE_CLIENT_BASELINE.split("."))
         document["claude-header-defaults"] = {"user-agent": f"claude-cli/{major}.{minor + 1}.0 (external, cli)"}  # S6
     return document, aliases, info
 

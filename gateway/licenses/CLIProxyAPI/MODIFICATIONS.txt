@@ -300,14 +300,19 @@ Before the modules are vendored, this patch updates the module requirements:
       added     internal/client/claude/models/models_charmer_test.go
 
 22. cli-proxy-api-output-cap.patch
-    sha256 4d6d1920554dfa64d66a13dbe878e5dd920594909b73c54ea868e7f4fd63d284
+    sha256 4daca00e7711fa0d3d949483667ee492c34bd26670291d6b4715eb18bee8a550
+      modified  internal/runtime/executor/codex_executor_claude_output_budget_test.go
       modified  internal/runtime/executor/codex_executor_execute.go
+      modified  internal/runtime/executor/codex_executor_output_budget_issue7304_test.go
+      modified  internal/runtime/executor/codex_executor_sse_events_test.go
       modified  internal/runtime/executor/codex_executor_stream.go
       added     internal/runtime/executor/codex_key_output_cap.go
       added     internal/runtime/executor/codex_key_output_cap_test.go
+      modified  internal/runtime/executor/codex_websockets_execute.go
+      modified  internal/runtime/executor/codex_websockets_stream.go
 
 23. cli-proxy-api-context-error-normalization.patch
-    sha256 87cd2bb362132e895c48d96a6a13625cf958635a10c48f3cbf9b36c6504ec884
+    sha256 ef6b852fcd79a90d1cf1e492a20a9020246de161511004e0f4eef01177a5e2e3
       added     internal/runtime/executor/codex_context_error_normalization.go
       added     internal/runtime/executor/codex_context_error_normalization_test.go
       modified  internal/runtime/executor/codex_executor_execute.go
