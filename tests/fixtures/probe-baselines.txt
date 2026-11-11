@@ -312,3 +312,50 @@ client check resume-twice: PASS
 # Terminal session, terminal resume with one turn exited right after its
 # reply, headless resume: the second resume carries both replies, three
 # trials (2.1.311 the same).
+#
+# Fable 5.2 on the moved catalog (44), measured 2026-11-11 with Claude Code
+# 2.1.322 (sha256 bfb3703ad538) and CLIProxyAPI 8.0.67 (sha256 a1f7596211f3).
+# Earlier generation-specific observations above remain historical evidence.
+# Client rows use fake providers; the gateway rows use the built gateway
+# against fake upstreams. No provider capacity or genuine signature is proven.
+client check fable-5-2-selectors: PASS
+# Both claude-fable-5-2 and claude-fable-5-2[1m]: wire claude-fable-5-2,
+# max_tokens 128000, default effort medium, adaptive thinking, no context-1m
+# beta. Explicit low/medium/high/xhigh/max reach the wire unchanged; resume
+# keeps explicit xhigh, the output cap and adaptive thinking.
+client check fable-5-2-agents: PASS
+# Under session xhigh the five named agent efforts reach the wire unchanged;
+# unnamed inherits xhigh, explicit override wins (max), omitted uses low.
+client check fable-5-2-thinking: PASS
+# alwaysThinkingEnabled=false, MAX_THINKING_TOKENS=0 and
+# CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1 do not turn adaptive thinking off.
+# Speed was absent with and without the compiled disable: no positive
+# Fable-specific fast-mode control, so this is not proof of fast-mode support.
+client check fable-5-2-window: PASS
+# Both forms book 1000000 fresh and after a model switch, cap output at
+# 128000 and send no Models API limit query; /effort low sends low.
+client check refusal-routing-fable: PASS
+# Twelve cases: cyber -> claude-opus-4-8; bio/frontier_llm -> claude-opus-5;
+# reasoning_extraction, uncategorized and unknown stay refused. A lead-only
+# fence never switches. The suffixless form follows the same category table.
+client check S7: PASS
+# Bare fable -> claude-fable-5-2; the family override retargets it. Canonical
+# Fable requests 128000 at its client default medium (charmer's explicit
+# catalog default remains high). A 404 retries the same wire, not another model.
+# Fence substitution re-run: FS-fenced. Both the historical 5.1 404 control
+# and the current 5.2 control stay on their own wire despite a fenced predecessor.
+client probe FM: PASS class=FM-prefetch-off
+client probe FM-layers: PASS class=FM-flag-settings
+# Synthetic fast-capable controls send speed fast; the compiled disable
+# omits speed and defeats user/project/local settings on fresh start and resume.
+# The final gateway's Fable rows pass static registry/reload/overlay precedence,
+# native fingerprint and beta ordering, background identity, retention and
+# synthetic replay/binding controls, literal model/effort preservation, the
+# exact replay-classifier set, and absence of a shipped keyed Fable route.
+# Gateway-fallback replay re-run: GFG-accepted-once, including a terminal
+# /model to claude-fable-5-2. Every managed request is answered 200 once.
+# The fetched SendMessage is only in an additional_tools input item on Codex,
+# after function_call_output and before the next message; its preceding
+# message-only prefix can vary in length. The Claude key and compat routes
+# keep SendMessage only in top-level tools. The placement controls reject
+# the old Codex placement, duplicate placement and a displaced input item.

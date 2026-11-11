@@ -122,7 +122,7 @@
         "declared_tokens": 1000000,
         "ordinary_profile": "large",
         "provider_tokens": 1000000,
-        "qualification": "Fable 5.2, released 2026-11-09: Anthropic documents 1M context, 128K synchronous output, $8/$40 per MTok, adaptive thinking always on and default effort high (overview checked 2026-11-11). Provider capacity is docs-only; no provider or near-limit measurement. validated_tokens is a conservative 200,000 floor, not a 5.2 measurement. The inherited minimum_tested pair describes 5.1 only; 5.2 client/gateway requalification is pending.",
+        "qualification": "Fable 5.2, released 2026-11-09: Anthropic documents 1M context, 128K synchronous output, $8/$40 per MTok, adaptive thinking always on and default effort high (overview checked 2026-11-11). Offline checks on Claude Code 2.1.322 and CLIProxyAPI 8.0.67 cover client recognition, window/output classification, explicit efforts, adaptive thinking, refusal routing and synthetic gateway replay/binding controls. Provider capacity is docs-only; no provider or near-limit measurement. validated_tokens is a conservative 200,000 floor, not a 5.2 measurement.",
         "scalar_tokens": null,
         "validated_tokens": 200000
       },
@@ -141,8 +141,8 @@
         "env": {}
       },
       "minimum_tested": {
-        "claude_code": "2.1.257",
-        "cliproxyapi": "7.2.80"
+        "claude_code": "2.1.322",
+        "cliproxyapi": "8.0.67"
       },
       "output": {
         "declared_tokens": 128000,

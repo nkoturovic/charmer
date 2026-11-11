@@ -356,6 +356,7 @@ class SeedLoadTests(unittest.TestCase):
         self.assertEqual(line["roles"], "all")
         self.assertEqual(line["status"], "active")
         self.assertIsNone(line["registry_overlay"])
+        self.assertEqual(line["minimum_tested"], {"claude_code": "2.1.322", "cliproxyapi": "8.0.67"})
         self.assertNotIn("family", line)
         self.assertNotIn("key_route", line)
         context = line["context"]
@@ -1775,7 +1776,9 @@ class NativeContractTests(unittest.TestCase):
         self.assertEqual(validated, "2.1.322")
         # haiku: the pin its qualification ran on (the 2.2.1 twin on Claude
         # Code 2.1.310; the client documents its haiku alias from 2.1.293).
-        floors = {"opus": "2.1.280", "fable": "2.1.257", "sonnet": "2.1.286", "haiku": "2.1.310"}
+        # Fable 5.2: the exact-client and fake-upstream gateway checks ran on
+        # 2.1.322 / 8.0.67; this is not a provider-capacity measurement.
+        floors = {"opus": "2.1.280", "fable": "2.1.322", "sonnet": "2.1.286", "haiku": "2.1.310"}
         # The OpenRouter lines record the pin their evidence ran on.
         floors.update({key: "2.1.286" for key, line in bundle.lines.items()
                        if line["provider"] in catalog.AGGREGATOR_PROVIDERS})

@@ -101,9 +101,9 @@ _MULTI_FABLE = "charmer-" + _FABLE.removeprefix("claude-")
 # the client's built-in catalog seed, which expires 2026-11-16, still named
 # Fable 5.1 and did not apply).
 _CLIENT_FABLE = "claude-fable-5-2"
-# Fable 5.2 by its canonical selector, the one an operator line on the
-# Anthropic pool and a catalog line naming it both compile; the refusal
-# matrix adds it to a compiled fence (a no-op once the shipped line names it).
+# The shipped Fable line and an operator declaration on the Anthropic pool
+# compile this canonical selector; the refusal matrix also exercises its
+# suffixless spelling.
 _FABLE52 = "claude-fable-5-2[1m]"
 # A managed scope configured nowhere compiles this default mode;
 # without it 2.1.284+ starts in auto mode, which (through a gateway) cannot
@@ -1155,12 +1155,13 @@ class _SpeedResponder(_SpikeResponder):
 
 
 class Fable52Probe(_SpikeTestCase):
-    """Fable 5.2 by its canonical selector, in both forms, whatever the
-    shipped ``fable`` line names: the same lanes run unchanged once the
-    catalog moves. Each expectation is the pinned client's own model row
-    (native 1M window, 128K default output cap, ``medium`` default effort,
-    adaptive thinking that cannot be turned off, fast-mode capable) and is
-    stated before the run. The lines: ``client check fable-5-2-<part>: PASS``."""
+    """The shipped Fable 5.2 line's canonical selector, in both forms.
+
+    Expectations pin the client's native 1M window, 128K default output cap,
+    ``medium`` default effort and always-adaptive thinking. Fast-mode
+    observations explicitly retain their positive-control limitation.
+    The lines: ``client check fable-5-2-<part>: PASS``.
+    """
 
     _FORMS = (_wire(_FABLE52), _FABLE52)
     _LEVELS = ("low", "medium", "high", "xhigh", "max")
@@ -2226,9 +2227,9 @@ class RefusalRoutingMatrixProbe(_SpikeTestCase):
         lead-set row of the compiled balanced fence (the row an operator line on
         the Anthropic pool and a catalog line naming it both compile), every
         refusal category, and in a lead-only fence. The specified outcome is the
-        client's general route table, Fable 5.1's (Fable 5.1 keeps its rows in
-        the lead part); the switched request carries the refused request's
-        conversation."""
+        client's general route table; the switched request carries the refused
+        request's conversation. The historical Fable 5.1 404 control remains
+        in the fence-substitution probe."""
 
         extra = (_FABLE52, _wire(_FABLE52))
         routes = {"cyber": "claude-opus-4-8", "bio": "claude-opus-5", "frontier_llm": "claude-opus-5"}
