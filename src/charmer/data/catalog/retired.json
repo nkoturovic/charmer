@@ -151,9 +151,10 @@
       ],
       "context_tokens": 1000000,
       "display": "Fable 5.1 · 1M selector",
+      "generation": "5.1",
       "last_wire": "claude-fable-5-1",
       "provider": "anthropic",
-      "reason": "Renamed: the fable line carries Fable 5.1 (stable line keys).",
+      "reason": "Fable 5.1 is no longer the selectable generation: the fable line now carries Fable 5.2. claude-fable-5-1 stays a passthrough route for running sessions; resume resolves to fable.",
       "roles": "all",
       "selectors": {
         "claude-fable-5-1[1m]": null

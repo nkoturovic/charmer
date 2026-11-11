@@ -119,15 +119,15 @@
       ],
       "context": {
         "client_tokens": 1000000,
-        "declared_tokens": 1048576,
+        "declared_tokens": 1000000,
         "ordinary_profile": "large",
         "provider_tokens": 1000000,
-        "qualification": "Fable 5.1 (docs GA 1M/128K, $10/$50) on the canonical first-party selector; the 1M window is documented plus selector-classified, not near-limit measured, so the validated floor stays conservative.",
+        "qualification": "Fable 5.2, released 2026-11-09: Anthropic documents 1M context, 128K synchronous output, $8/$40 per MTok, adaptive thinking always on and default effort high (overview checked 2026-11-11). Provider capacity is docs-only; no provider or near-limit measurement. validated_tokens is a conservative 200,000 floor, not a 5.2 measurement. The inherited minimum_tested pair describes 5.1 only; 5.2 client/gateway requalification is pending.",
         "scalar_tokens": null,
         "validated_tokens": 200000
       },
       "default_effort": "high",
-      "display": "Fable 5.1 · 1M selector",
+      "display": "Fable 5.2 · 1M selector",
       "efforts": [
         "low",
         "medium",
@@ -135,7 +135,7 @@
         "xhigh",
         "max"
       ],
-      "generation": "5.1",
+      "generation": "5.2",
       "lead": {
         "effort": "ultracode",
         "env": {}
@@ -144,13 +144,18 @@
         "claude_code": "2.1.257",
         "cliproxyapi": "7.2.80"
       },
+      "output": {
+        "declared_tokens": 128000,
+        "source": "docs",
+        "source_ref": "https://platform.claude.com/docs/en/models/fable-5-2/overview"
+      },
       "provider": "anthropic",
       "registry_overlay": null,
       "roles": "all",
-      "routing_note": "Fable line (currently 5.1): sustained long-horizon, high-complexity synthesis and coordination. Canonical selector; retired fable (5) and fable51 resolve here.",
-      "selector": "claude-fable-5-1[1m]",
+      "routing_note": "Fable line (currently 5.2): demanding reasoning and long-horizon coordination. Canonical selector; earlier Fable keys resolve here. Fable 5.1 stays served until resume. Effort names are retained, not performance-equivalent to 5.1.",
+      "selector": "claude-fable-5-2[1m]",
       "status": "active",
-      "wire_model": "claude-fable-5-1"
+      "wire_model": "claude-fable-5-2"
     },
     "haiku": {
       "capabilities": [
