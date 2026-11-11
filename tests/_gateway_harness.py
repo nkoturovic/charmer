@@ -583,6 +583,7 @@ KEYED_RELEVANT_SOURCES = (
     "src/charmer/served_plan.py", "src/charmer/qualify.py", "src/charmer/discovery.py",
     "src/charmer/profile.py", "src/charmer/compiler.py", "src/charmer/scope.py",
     "src/charmer/cli/commands/models.py", "src/charmer/cli/commands/providers.py",
+    "src/charmer/netclass.py", "src/charmer/proxy.py", "src/charmer/cli/commands/discover.py",
     "schemas/gateway.schema.json", "schemas/providers.schema.json", "schemas/operator-provider.schema.json",
     "schemas/operator-ledger.schema.json", "schemas/models.schema.json",
 )
