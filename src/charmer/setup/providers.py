@@ -877,7 +877,8 @@ def plan_approve(runtime: Any, provider_id: str) -> ApprovePlan:
     listing = provider.listing_origin
     body = texts.APPROVE_BODY.format(name=provider.secret_name, present=texts.APPROVE_PRESENT[present],
                                      origin=provider.origin, auth_text=auth_text, listing=listing or "none")
-    lines = body.split("\n")
+    lines = body.split("\n") + list(_network_lines(runtime, cmd, provider, f"providers approve {provider_id}",
+                                                   "nothing approved"))
     changed = status == "changed"
     if changed and previous_origin:
         lines.append(texts.APPROVE_PREVIOUS.format(previous_origin=previous_origin))
@@ -885,6 +886,17 @@ def plan_approve(runtime: Any, provider_id: str) -> ApprovePlan:
     return ApprovePlan("approve", provider_id, tuple(lines), "approve-route", True, digest,
                        ("operator-ledger.json",), provider_id, provider.origin, auth_text, provider.secret_name,
                        present, listing, changed, previous_origin, provider.route_digest, served)
+
+
+def _network_lines(runtime: Any, cmd: Any, provider: Any, verb: str, outcome: str) -> tuple[str, ...]:
+    """The route approval's network lines of a provider declared on a
+    private network (what plain HTTP means there, what its host resolves
+    to now); an answer outside the network refuses the plan."""
+
+    try:
+        return tuple(line.strip() for line in cmd.network_approval(runtime, provider, verb, outcome))
+    except cmd.OperatorCommandError as exc:
+        raise model.Refused(str(exc)) from None
 
 
 def apply_approve(runtime: Any, plan: ApprovePlan, confirmation: model.Confirmation) -> model.Applied:
@@ -1356,6 +1368,18 @@ def _new_declaration_checks(runtime: Any, ctx: Any, provider_id: str) -> None:
                             f"charmer providers edit {provider_id}")
 
 
+def _network_gate(runtime: Any, cmd: Any, kind: str | None, network: str | None) -> None:
+    """A declared private network before any store access: the closed gate,
+    a kind that takes none, a value outside the vocabulary."""
+
+    try:
+        refusal = cmd.network_gate_refusal(runtime, kind, network)
+    except cmd.OperatorUsageError as exc:
+        raise model.Refused(str(exc)) from None
+    if refusal is not None:
+        raise model.Refused(refusal)
+
+
 def _layer_problems(cmd: Any, ctx: Any, provider_id: str, raw: bytes) -> Any:
     layer = cmd.proposed(ctx, {provider_id: raw})
     own = operator_mod.file_problems(layer, provider_id)
@@ -1382,6 +1406,8 @@ def plan_add_endpoint(runtime: Any, values: Mapping[str, str]) -> EndpointPlan:
     base_url = str(values.get("url") or "").strip()
     family = str(values.get("family") or "unknown").strip() or "unknown"
     listing = str(values.get("listing") or "").strip() or None
+    network = str(values.get("network") or "").strip() or None
+    _network_gate(runtime, cmd, kind, network)
     ctx = cmd.operator_context(runtime)
     _new_declaration_checks(runtime, ctx, provider_id)
     secret_name = derived_secret_name(provider_id)
@@ -1390,6 +1416,8 @@ def plan_add_endpoint(runtime: Any, values: Mapping[str, str]) -> EndpointPlan:
         auth_block["header"] = operator_mod.MIGRATION_HEADER
     block: dict[str, Any] = {"display": provider_id, "kind": kind, "base_url": base_url, "auth": auth_block,
                              "independence_family": family}
+    if network is not None:
+        block["network"] = network
     if listing is not None:
         block["listing"] = {"url": listing, "shape": "anthropic" if kind == "anthropic-compatible" else "openai",
                             "auth": "provider"}
@@ -1425,7 +1453,8 @@ def _keyed_declaration_plan(runtime: Any, cmd: Any, ctx: Any, provider_id: str, 
                                             secret_name=secret_name, auth_text=texts.AUTH_TEXT[auth],
                                             origin=resolved.origin, family=family, host=host)
     lines = ((head,) if head else ()) + tuple(preview.split("\n")) + _key_use_lines(
-        provider_id, secret_name, key_use, shared, preset_secret, preset_sharers)
+        provider_id, secret_name, key_use, shared, preset_secret, preset_sharers) + _network_lines(
+        runtime, cmd, resolved, f"providers add {provider_id}", "nothing written")
     digest = model.digest_of("add-endpoint", provider_id, strict_json.sha256_hex(raw), resolved.route_digest,
                              list(location), served.sample, preset, key_use, secret_name, length, list(shared),
                              preset_secret, list(preset_sharers))
@@ -1503,7 +1532,7 @@ class PresetPlan(model.Plan):
 
 
 def plan_add_preset(runtime: Any, preset: str, provider_id: str, base_url: str | None, *,
-                    key: str = KEY_OWN) -> PresetPlan | EndpointPlan:
+                    key: str = KEY_OWN, network: str | None = None) -> PresetPlan | EndpointPlan:
     """A reviewed preset as a new provider named ``provider_id``: a keyless
     server is a :class:`PresetPlan` (declare only); a preset with an API key
     is the :class:`EndpointPlan` of your own endpoint with the preset's
@@ -1516,18 +1545,21 @@ def plan_add_preset(runtime: Any, preset: str, provider_id: str, base_url: str |
     :func:`instance_secret_name`, so the saved key is never touched;
     ``reuse`` shares the saved key (no key is typed); ``replace`` shares the
     name and the typed key replaces the saved one for every provider in
-    ``shared_with`` (a surface confirms that first, naming them)."""
+    ``shared_with`` (a surface confirms that first, naming them).
+    ``network`` declares the private network the address is on."""
 
     cmd = _cmd()
+    network = network or None
     try:
         raw_preset = operator_mod.load_preset(preset, runtime.asset_root)
-        document = operator_mod.preset_document(raw_preset, base_url=base_url or None)
+        document = operator_mod.preset_document(raw_preset, base_url=base_url or None, network=network)
     except operator_mod.OperatorError as exc:
         raise _refusal(exc) from exc
     block = document.get("provider")
     auth = block.get("auth") if isinstance(block, Mapping) else None
     if not isinstance(block, Mapping) or not isinstance(auth, Mapping):
         raise model.Refused(f"preset {preset} declares no provider")
+    _network_gate(runtime, cmd, str(block.get("kind")), network)
     if key not in KEY_USES:
         raise model.Refused(f"unknown key choice {key!r}")
     if auth.get("kind") != "none":
@@ -1539,7 +1571,9 @@ def plan_add_preset(runtime: Any, preset: str, provider_id: str, base_url: str |
     served = preflight(runtime, f"providers add --preset {preset}", changes={provider_id: raw})
     url = str(block.get("base_url"))
     digest = model.digest_of("add-preset", preset, provider_id, strict_json.sha256_hex(raw), served.sample)
-    return PresetPlan("add-preset", provider_id, (texts.LAN_PREVIEW.format(id=provider_id, base_url=url),),
+    preview = (texts.LAN_PREVIEW.format(id=provider_id, base_url=url) if network is None else
+               texts.NETWORK_PREVIEW.format(id=provider_id, base_url=url, network=network))
+    return PresetPlan("add-preset", provider_id, (preview,),
                       "confirm", False, digest, (operator_mod.file_label(provider_id),), preset, provider_id, url,
                       raw, served)
 

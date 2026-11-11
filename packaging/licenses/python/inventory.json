@@ -1,10 +1,10 @@
 {
   "format": 1,
   "python": "3.15.2",
-  "release": "20261026",
+  "release": "20261110",
   "source": {
     "flavor": "pgo+lto-full",
-    "versions": "pythonbuild/downloads.json of 20261026 (sha256 8b0e472c66797dcd58dfa461171c7f416602503924091e5e4629e776221b8a27)"
+    "versions": "pythonbuild/downloads.json of 20261110 (sha256 d48f25ee30c3ba8006c9a3046d4d3c5ec061a3f1fd831a1e44562f2e8547ef60)"
   },
   "targets": {
     "darwin-arm64": {
@@ -17,13 +17,13 @@
         "_ctypes_test"
       ],
       "full_archive": {
-        "filename": "cpython-3.15.2+20261026-aarch64-apple-darwin-pgo+lto-full.tar.zst",
-        "sha256": "17a41099bba8c18c45c527580014e75dc7a77300f619d7f5cdfecc57aca06f39",
-        "size": 69311061
+        "filename": "cpython-3.15.2+20261110-aarch64-apple-darwin-pgo+lto-full.tar.zst",
+        "sha256": "53af18af034de253bac9b08d95c861d5b08a6d46a87ec5c9d8b34577fe48b4ad",
+        "size": 69684047
       },
       "install_only": {
-        "filename": "cpython-3.15.2+20261026-aarch64-apple-darwin-install_only_stripped.tar.gz",
-        "sha256": "1b1b03fca8aa351698403f3d100ee83db7a5d99748fc7707681ac31a6a846ad9"
+        "filename": "cpython-3.15.2+20261110-aarch64-apple-darwin-install_only_stripped.tar.gz",
+        "sha256": "7e58607647b5b4832092a339ff1c55eeeccee128221232509b8fc8d27957065e"
       },
       "libraries": [
         {
@@ -50,7 +50,7 @@
           "texts": [
             "LICENSE.expat.txt"
           ],
-          "version": "2.9.0"
+          "version": "2.10.0"
         },
         {
           "extensions": [
@@ -230,13 +230,13 @@
         "_ctypes_test"
       ],
       "full_archive": {
-        "filename": "cpython-3.15.2+20261026-x86_64-apple-darwin-pgo+lto-full.tar.zst",
-        "sha256": "f3ded442ab28d88ef625b54e936a5c45c9a444763d3f9f02c8653e11f0d99688",
-        "size": 68198003
+        "filename": "cpython-3.15.2+20261110-x86_64-apple-darwin-pgo+lto-full.tar.zst",
+        "sha256": "15807b2f364aa77636ff87760ab60e12f3fb547022232d54d0334bbf9b3eb2d3",
+        "size": 68607843
       },
       "install_only": {
-        "filename": "cpython-3.15.2+20261026-x86_64-apple-darwin-install_only_stripped.tar.gz",
-        "sha256": "6ec04346b578656b5d5597144cbe0f4773acea6af6048cb8fe0cac3e92c702ac"
+        "filename": "cpython-3.15.2+20261110-x86_64-apple-darwin-install_only_stripped.tar.gz",
+        "sha256": "11143c2a2556b14619e8241d3f74bb43ad97181c0eb4909bab87d7aad1154e49"
       },
       "libraries": [
         {
@@ -263,7 +263,7 @@
           "texts": [
             "LICENSE.expat.txt"
           ],
-          "version": "2.9.0"
+          "version": "2.10.0"
         },
         {
           "extensions": [
@@ -443,13 +443,13 @@
         "_ctypes_test"
       ],
       "full_archive": {
-        "filename": "cpython-3.15.2+20261026-aarch64-unknown-linux-gnu-pgo+lto-full.tar.zst",
-        "sha256": "b3fc351d2271f6c0b3c6d2b423043771dfcb5267053512b8aebba195dad110e9",
-        "size": 106685012
+        "filename": "cpython-3.15.2+20261110-aarch64-unknown-linux-gnu-pgo+lto-full.tar.zst",
+        "sha256": "56246cc19968bbfc32a92a2c7887fa2fd4ba1917976dccb2d0ee3e43468b1b3d",
+        "size": 106958114
       },
       "install_only": {
-        "filename": "cpython-3.15.2+20261026-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
-        "sha256": "0f23351c03b39beb880de668976074fcc3c082d9c3b03d0b43185632b2b270a0"
+        "filename": "cpython-3.15.2+20261110-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
+        "sha256": "d1367a6c3cd86a9e35712072841f1376859f3b47a2a54e224421a0f9fd169047"
       },
       "libraries": [
         {
@@ -476,7 +476,7 @@
           "texts": [
             "LICENSE.expat.txt"
           ],
-          "version": "2.9.0"
+          "version": "2.10.0"
         },
         {
           "extensions": [
@@ -489,7 +489,7 @@
           "texts": [
             "LICENSE.libedit.txt"
           ],
-          "version": "20240808-3.1"
+          "version": "20260512-3.1"
         },
         {
           "extensions": [
@@ -596,7 +596,7 @@
           "texts": [
             "LICENSE.zlib.txt"
           ],
-          "version": "1.3.2"
+          "version": "1.4"
         },
         {
           "extensions": [
@@ -673,7 +673,7 @@
                 "MIT",
                 "X11"
               ],
-              "version": "1.8.13"
+              "version": "1.8.14"
             },
             {
               "name": "libXau",
@@ -708,7 +708,7 @@
               "spdx": [
                 "Zlib"
               ],
-              "version": "1.3.2"
+              "version": "1.4"
             }
           ],
           "pattern": "lib/python3.15/lib-dynload/_tkinter*",
@@ -735,13 +735,13 @@
         "_ctypes_test"
       ],
       "full_archive": {
-        "filename": "cpython-3.15.2+20261026-x86_64-unknown-linux-gnu-pgo+lto-full.tar.zst",
-        "sha256": "3488eafeae3c25a44895df9fd52a9be1f2fa11a45cb0580279e03c2bce5339b4",
-        "size": 122721644
+        "filename": "cpython-3.15.2+20261110-x86_64-unknown-linux-gnu-pgo+lto-full.tar.zst",
+        "sha256": "a61124f187ea3b379d6b78806ac06edd43db524eef411925eca05fb9357589d5",
+        "size": 122949768
       },
       "install_only": {
-        "filename": "cpython-3.15.2+20261026-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
-        "sha256": "7b03163a980c607ba8194709d4a4086735a7a9c488cc475b098157306927b36b"
+        "filename": "cpython-3.15.2+20261110-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+        "sha256": "ad23d1b73fac26440b0306ae06911031344c49a90ec19716c8362e7fa40cae43"
       },
       "libraries": [
         {
@@ -768,7 +768,7 @@
           "texts": [
             "LICENSE.expat.txt"
           ],
-          "version": "2.9.0"
+          "version": "2.10.0"
         },
         {
           "extensions": [
@@ -781,7 +781,7 @@
           "texts": [
             "LICENSE.libedit.txt"
           ],
-          "version": "20240808-3.1"
+          "version": "20260512-3.1"
         },
         {
           "extensions": [
@@ -888,7 +888,7 @@
           "texts": [
             "LICENSE.zlib.txt"
           ],
-          "version": "1.3.2"
+          "version": "1.4"
         },
         {
           "extensions": [
@@ -965,7 +965,7 @@
                 "MIT",
                 "X11"
               ],
-              "version": "1.8.13"
+              "version": "1.8.14"
             },
             {
               "name": "libXau",
@@ -1000,7 +1000,7 @@
               "spdx": [
                 "Zlib"
               ],
-              "version": "1.3.2"
+              "version": "1.4"
             }
           ],
           "pattern": "lib/python3.15/lib-dynload/_tkinter*",
@@ -1060,7 +1060,7 @@
       "source": "python/licenses/LICENSE.sqlite.txt of each pgo+lto-full archive"
     },
     "LICENSE.zlib.txt": {
-      "sha256": "818922b2620f12801a12bf78e399644a30990e66824abd8ca8ec24d451d6f92c",
+      "sha256": "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2",
       "source": "python/licenses/LICENSE.zlib.txt of each pgo+lto-full archive"
     },
     "LICENSE.zstd.txt": {

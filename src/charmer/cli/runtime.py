@@ -198,6 +198,7 @@ class Runtime:
         execve: Callable[[str, list[str], dict[str, str]], Any] | None = None,
         qualify_transport: Callable[[str, str, str], operator_mod.SmokeOutcome] | None = None,
         lan_probe: Callable[[str], Any] | None = None,
+        host_resolver: Callable[[str, int], Any] | None = None,
         listing_transport: Callable[..., Any] | None = None,
         qualify_http: Callable[..., Any] | None = None,
         exact_client_runner: Callable[..., Any] | None = None,
@@ -369,6 +370,11 @@ class Runtime:
         # The LAN reachability seam (None = one short-timeout
         # probe; with the gateway seams injected, never a real dial).
         self.lan_probe = lan_probe
+        # The name-resolution seam of private-network providers, (host,
+        # port) -> getaddrinfo entries: what route approval and doctor show
+        # (None = one bounded lookup; with the gateway or LAN seams injected,
+        # a name is not looked up). Diagnostic only: it never holds a key.
+        self.host_resolver = host_resolver
         # The warning of the default-profile choice, shown by the next fresh
         # prepare.
         self.selection_notices: list[str] = []
@@ -917,6 +923,26 @@ class Runtime:
             custom.load_registry(self.environ), asset_root=self.asset_root,
         )
 
+    def resolve_provider_host(self, url: str) -> proxy_mod.HostResolution:
+        """What a private-network provider's host resolves to now (route
+        approval): the ``host_resolver`` seam; with the gateway or LAN test
+        seams injected and no resolver, a name is not looked up (a literal
+        is always classified). Diagnostic only: no key, no connection."""
+
+        if self.host_resolver is None and (self.lan_probe is not None or self.health_get is not None
+                                           or self.served_models_callback is not None):
+            return proxy_mod.resolve_host(url, lookup=False)
+        return proxy_mod.resolve_host(url, resolve=self.host_resolver)
+
+    def declares_private_network(self) -> bool:
+        """Whether a resolved provider is declared on a private network."""
+
+        try:
+            layer = self.operator_snapshot().layer
+        except (errors.CharmerError, OSError, ValueError):
+            return False
+        return any(provider.network is not None for provider in layer.providers.values())
+
     def operator_render_plan(self) -> operator_mod.RenderPlan:
         """What the gateway render serves from the operator layer (start
         policy: a corrupt ledger drops every T2 contribution)."""
@@ -980,6 +1006,9 @@ class Runtime:
             gateway, proxy_mod.gateway_api_keys(self.home)[-1], sentinel,
             models_get=None if self.served_models_callback is None else models_get,
             owner_check=self.listener_owner,
+            # A gateway without private-network support loads the render
+            # (sentinel included) but drops those entries: not a reload.
+            private_aliases=proxy_mod.published_private_network_selectors(self.home),
         )
 
     def smoke(self, alias: str) -> operator_mod.SmokeOutcome:
@@ -1313,7 +1342,8 @@ class Runtime:
         served set (one loopback ``/v1/models``; None when the gateway is not
         observable), OAuth credential-record counts (None when the auth
         directory is not observable) and one short LAN probe per keyless LAN
-        provider the ``lineups`` bind (the ``lan_probe`` seam). Never a
+        provider, or provider declared on a private network, the ``lineups``
+        bind (the ``lan_probe`` seam; a TCP connect, never a key). Never a
         provider call, never a write; every failure is an unknown.
         ``lan_observed`` (base URL -> observation), when given, is shared
         with another report of the same refresh (doctor): a URL already
@@ -1345,12 +1375,12 @@ class Runtime:
             bindings = [lineup.lead.binding, *(agent.binding for agent in lineup.agents.values())]
             for binding in bindings:
                 provider = providers.get(binding.provider) or {}
-                if binding.provider in lan or not readiness_mod.is_lan(provider):
+                if binding.provider in lan or not readiness_mod.probes_reachability(provider):
                     continue
                 url = str(provider["transport"].get("base_url", ""))
                 observed = lan_observed.get(url) if lan_observed is not None else None
                 if observed is None:
-                    observed = gateway_facts.lan_reachability(self, url)
+                    observed = gateway_facts.lan_reachability(self, url, provider["transport"].get("network"))
                     if lan_observed is not None:
                         lan_observed[url] = observed
                 lan[binding.provider] = (observed.state, observed.text())

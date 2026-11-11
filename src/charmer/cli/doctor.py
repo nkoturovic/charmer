@@ -683,11 +683,14 @@ def _doctor_lan_report(
     lan_observed: dict[str, gateway_facts.LanReachability] | None = None,
 ) -> list[str]:
     """One short-timeout reachability observation per keyless LAN
-    provider with declared lines. Network-scoped Info, never BLOCK; with
-    ``attention`` given, a live session bound to an unreachable
-    provider's line adds one Attention line per session. Each observation
-    is recorded in ``lan_observed`` (base URL -> observation) for the
-    readiness report of the same refresh (no second probe)."""
+    provider, and per provider declared on a private network (keyed too),
+    with declared lines: a TCP connect, never a key. Network-scoped Info,
+    never BLOCK; with ``attention`` given, a live session bound to an
+    unreachable provider's line adds one Attention line per session, and a
+    private-network provider's host that resolves outside its network one
+    Attention line per such address. Each observation is recorded in
+    ``lan_observed`` (base URL -> observation) for the readiness report of
+    the same refresh (no second probe)."""
 
     try:
         layer = runtime.operator_snapshot().layer
@@ -696,16 +699,29 @@ def _doctor_lan_report(
     info: list[str] = []
     for pid in sorted(layer.providers):
         resolved = layer.providers[pid]
-        if resolved.kind != operator_mod.LAN_KIND:
+        network = resolved.network
+        if resolved.kind != operator_mod.LAN_KIND and network is None:
             continue
         keys = {key for key, line in layer.lines.items() if line.provider_id == pid}
         if not keys:
             continue
         observation = (lan_observed or {}).get(resolved.base_url)
         if observation is None:
-            observation = gateway_facts.lan_reachability(runtime, resolved.base_url)
+            observation = gateway_facts.lan_reachability(runtime, resolved.base_url, network)
             if lan_observed is not None:
                 lan_observed[resolved.base_url] = observation
+        if network is not None:
+            transport = operator_mod.credential_transport(resolved)
+            if observation.answers:
+                shown = ", ".join(f"{address} ({cls})" for address, cls in observation.answers)
+                info.append(f"provider {pid}: {transport}; {observation.host} resolves to {shown}")
+            else:
+                info.append(f"provider {pid}: {transport}")
+            for address, cls in observation.answers:
+                if cls != network:
+                    (attention if attention is not None else info).append(
+                        f"provider {pid}: {observation.host} resolves to {address} ({cls}), outside its network "
+                        f"({network}): the gateway refuses those connections")
         if observation.state == "unreachable":
             info.append(f"provider {pid}: {observation.text()} — {gateway_facts.LAN_UNREACHABLE_REMEDY} "
                         "(network-scoped; its lines are unusable from here)")
