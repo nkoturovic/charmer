@@ -67,8 +67,14 @@ compiled settings and routes until their next launch or resume.
   holder.
 - Key bars put row actions first and end with `? N more`; Providers
   refreshes from one observation.
-- The gateway's key-value store is turned off in the shipped
-  configuration.
+- The gateway is CLIProxyAPI 8.0.67 with 30 local patches, built with Go
+  1.27.4. Its key-value store and plugins are off in the shipped
+  configuration. A Codex refresh whose answer is lost is sent once more in
+  the same call and then ends in a new sign-in, as in 2.4.0. The ChatGPT
+  account route sends no client output cap on messages, chat and
+  responses requests (a compact request passes it through, as in 2.4.0).
+  GPT lines never get a hosted image tool. A Claude Code that sends the
+  advisor beta keeps its beta order.
 - The bundled CPython is built from python-build-standalone 20261110
   (Expat 2.10.0; on Linux zlib 1.4 and libedit); the Nix channel lane,
   release journey images and CI tools follow their newest releases.
