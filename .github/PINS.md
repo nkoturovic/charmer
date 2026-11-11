@@ -257,9 +257,9 @@ workflow, actionlint 1.7.12 (ShellCheck 0.11.0 on the path) and zizmor 1.31.1
 `sha256-ziZn2PvCJE5JEEpqTdxXwJpPB+L3YqoCpTAMCzyaP3U=`). The
 [channel revision](https://channels.nixos.org/nixos-unstable/git-revision)
 and [branch head](https://api.github.com/repos/NixOS/nixpkgs/commits/nixos-unstable)
-agreed; `nix flake update nixpkgs` recorded the content hash. The lead's
-`nix eval` of the new lock returned the six versions below. The lead also
-built `gateway-linux-amd64`: sha256
+agreed; `nix flake update nixpkgs` recorded the content hash. A
+`nix eval` of the new lock returned the six versions below. A Nix build of
+`gateway-linux-amd64` at the new lock gave sha256
 `092bb347b763d00fc58e8b18ba4199b8deadfe68d3dc36793d1c58068af991d6`,
 identical to the native content-bound build and the signed 2.4.0 manifest.
 Thus the lock move alone leaves the gateway bytes unchanged. This is the
@@ -394,7 +394,7 @@ aliases `[]`, revision `2026-11-11T10:47:25.104930807Z`, version `3.15.2`
 and re-review date `2026-12-01`. The nanoseconds are part of that exact
 revision. Re-review also occurs at the release candidate, on a changed
 advisory/runtime, or if cookie processing, unpickling, external dependencies
-or dynamic loading are added. The lead's watch run
+or dynamic loading are added. Watch run
 [43037446186](https://github.com/nkoturovic/charmer/actions/runs/43037446186)
 reported the new CPython finding on the published 2.4.0 release; this review
 does not suppress any of that run's separate gateway findings.
@@ -428,7 +428,7 @@ are qualified together, separately from the runtime and workflow refresh.
 | ubuntu:22.04, ubuntu:24.04 | the image table | indexes pushed 2026-10-29 | registry header, index-byte hash and Docker Hub tag API agree | moved | 2026-11-11 |
 | debian:12 | the image table | index pushed 2026-11-05 | registry header, index-byte hash and Docker Hub tag API agree | moved | 2026-11-11 |
 | fedora:44 | the image table | index pushed 2026-11-02 | registry header, index-byte hash and Docker Hub tag API agree | moved | 2026-11-11 |
-| nixpkgs (nixos-unstable) | f4a03c008967841f2a0b3cb7c436fc6fc31671f6 | the same revision | channel git-revision and branch head | moved from 31ecbaca; lead's version evaluation and baseline Nix/native byte comparison passed | 2026-11-11 |
+| nixpkgs (nixos-unstable) | f4a03c008967841f2a0b3cb7c436fc6fc31671f6 | the same revision | channel git-revision and branch head | moved from 31ecbaca; version evaluation and baseline Nix/native byte comparison passed | 2026-11-11 |
 
 With the moved pins, actionlint 1.7.12 (ShellCheck 0.11.0 on the path) and
 zizmor 1.32.0 (`--offline`, default persona, and pedantic at
