@@ -823,6 +823,10 @@ SCREEN_TITLES: dict[str, str] = {
     "providers": "providers (G)", "models": "models (M)", "settings": "settings (O)", "profiles": "profiles (P)",
     "get-started": "get started (W)", "editor": "profile editor (E)",
     "binding-picker": "binding picker (editor → Enter on an agent)", "named-bindings": "named bindings (P → B)",
+    "propagation": "apply a saved profile (editor → save)", "lineup-per-agent": "per-agent edit (S → T → agents)",
+    "provider-picker": "connect a provider (G → N or W → A)", "form": "profile General form (E → General)",
+    "native-form": "native agents and workflows (E → Native)", "routing": "review routing (E → R)",
+    "transition": "transition confirmation", "onboarding-form": "provider and model declaration forms",
 }
 
 

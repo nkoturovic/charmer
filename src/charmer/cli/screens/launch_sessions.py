@@ -47,6 +47,7 @@ import charmer.cli.gateway_facts as gateway_facts
 import charmer.cli.parser as parser_mod
 import charmer.cli.resume_checks as resume_checks
 import charmer.cli.runtime as runtime_mod
+import charmer.cli.screens.actions as screen_actions
 import charmer.cli.screens.common as screens_common
 import charmer.cli.screens.direct as screens_direct
 import charmer.cli.screens.gateway_actions as screens_gateway
@@ -59,6 +60,14 @@ import charmer.cli.session_actions as session_actions
 import charmer.cli.session_facts as session_facts
 import charmer.cli.text as cli_text
 import charmer.cli.types as cli_types
+
+
+CARD_HELP = screen_actions.help_text("card", termtext.CHEATSHEET_HINT + "\n" + cli_text._HELP_MODEL + cli_text._HELP_SESSION)
+RESUME_HELP = screen_actions.help_text("resume-card", "{sign_in}\n" + termtext.CHEATSHEET_HINT + "\n"
+                                       + cli_text._HELP_MODEL + cli_text._HELP_SESSION)
+SESSIONS_HELP = screen_actions.help_text("sessions", cli_text.SESSIONS_HELP)
+LINEUP_HELP = screen_actions.help_text("lineup-dialog", cli_text.LINEUP_DIALOG_HELP)
+PER_AGENT_HELP = screen_actions.help_text("lineup-per-agent", cli_text.LINEUP_PER_AGENT_HELP)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -427,7 +436,7 @@ class _PerAgentScreen:
     def min_size(self, width: int) -> tuple[int, int]:
         return views.ScreenFloor.compute(
             chrome=4, list_rows=len(self.ids), detail_reserve=0,
-            bar_rows=tui.KeyBar(cli_text.LINEUP_PER_AGENT_KEYBAR).rows(width), cols=cli_text.LINEUP_PER_AGENT_MIN_COLS,
+            bar_rows=tui.KeyBar(screen_actions.bar("lineup-per-agent")).rows(width), cols=cli_text.LINEUP_PER_AGENT_MIN_COLS,
         ).as_tuple()
 
     def _draw(self, win: Any) -> None:
@@ -438,7 +447,7 @@ class _PerAgentScreen:
             screens_common._screen_too_small(win, palette, self.what, rows, cols)
             return
         win.erase()
-        bar = tui.KeyBar(cli_text.LINEUP_PER_AGENT_KEYBAR)
+        bar = tui.KeyBar(screen_actions.bar("lineup-per-agent"))
         m8 = sessions.managed_id(self.record)[:8]
         tui.safe_add(win, 1, 2, views.clip(cli_text.LINEUP_PER_AGENT_TITLE.format(m8=m8), width - 3),
                      palette.attr("accent") | tui.curses.A_BOLD)
@@ -489,6 +498,8 @@ class _PerAgentScreen:
         tui.hide_cursor()
         while True:
             self._draw(win)
+            if tui.message_modal(win, self):
+                continue
             key = tui.read_key(win)
             if key.kind == "resize":
                 continue
@@ -510,7 +521,7 @@ class _PerAgentScreen:
             elif key.kind == "end":
                 self.selected = len(self.ids) - 1
             elif key.kind == "char" and key.ch == "?":
-                screens_common._help_modal(win, self.palette, "per-agent edit — help", cli_text.LINEUP_PER_AGENT_HELP, self._draw)
+                screens_common._help_modal(win, self.palette, "per-agent edit — help", PER_AGENT_HELP, self._draw)
             elif key.kind == "char" and key.ch in ("u", "U"):
                 return ["unset", self.ids[self.selected]]
             elif key.kind == "enter":
@@ -719,21 +730,21 @@ class _LineupDialog:
     def min_size(self, width: int) -> tuple[int, int]:
         return views.ScreenFloor.compute(
             chrome=cli_text.LINEUP_DIALOG_CHROME, list_rows=3, detail_reserve=0,
-            bar_rows=tui.KeyBar(cli_text.LINEUP_DIALOG_KEYBAR).rows(width), cols=cli_text.LINEUP_DIALOG_MIN_COLS,
+            bar_rows=tui.KeyBar(screen_actions.bar("lineup-dialog")).rows(width), cols=cli_text.LINEUP_DIALOG_MIN_COLS,
         ).as_tuple()
 
     def _to_segments(self) -> list[tuple[str, str]]:
-        per_agent = "per-agent edit ▸"
+        per_agent = "per-agent ▸"
         if self.agent_words is not None:
             per_agent += " " + " ".join(self.agent_words)
-        direct = "direct (no agents)"
+        direct = "direct"
         if len(self.direct_words) > 1:
             direct += " " + self.direct_words[1]
         return [
             ("profile", f"[{self.profile_name or '—'} ▾]"),
             ("per-agent", per_agent),
             ("direct", direct),
-            ("keep", "keep current"),
+            ("keep", "keep"),
             ("fallback", f"fallback [{self.provider_name or '—'} ▾]"),
         ]
 
@@ -762,7 +773,7 @@ class _LineupDialog:
             screens_common._screen_too_small(win, palette, self.what, rows, cols)
             return
         win.erase()
-        bar = tui.KeyBar(cli_text.LINEUP_DIALOG_KEYBAR)
+        bar = tui.KeyBar(screen_actions.bar("lineup-dialog"))
         model = self.model()
         tui.safe_add(win, 1, 2, views.clip(model.title, width - 3), palette.attr("accent") | tui.curses.A_BOLD)
         tui.safe_add(win, 2, 2, views.rule(width), palette.attr("dim"))
@@ -939,6 +950,8 @@ class _LineupDialog:
         tui.hide_cursor()
         while True:
             self._draw(win)
+            if tui.message_modal(win, self):
+                continue
             key = tui.read_key(win)
             if key.kind == "resize":
                 continue
@@ -963,7 +976,7 @@ class _LineupDialog:
                 self._choose(win)
                 self._preview()
             elif key.kind == "char" and key.ch == "?":
-                screens_common._help_modal(win, self.palette, "lineup — help", cli_text.LINEUP_DIALOG_HELP, self._draw)
+                screens_common._help_modal(win, self.palette, "lineup — help", LINEUP_HELP, self._draw)
             elif key.kind == "enter":
                 if self._apply(win):
                     return True
@@ -1193,11 +1206,14 @@ class _SessionsScreen:
         return state_ != "live" and record.get("last_event_source") != "end"
 
     def _keybar(self) -> tui.KeyBar:
-        base = cli_text.SESSIONS_KEYBAR if self.cwd_filter else cli_text.SESSIONS_KEYBAR_ALL
-        bindings = list(_with_row_actions(base, self._row_actions()))
-        if self.root:
-            bindings[-1] = ("Esc", "quit")
-        return tui.KeyBar(bindings)
+        conditional = {key for key, _label in self._row_actions()}
+        ids = [row.id for row in screen_actions.ACTIONS["sessions"]
+               if row.key not in ("E", "M", "P") or row.key in conditional]
+        if not self.records:
+            ids = ["link", "filter", "filters", "directories", "help", "back"]
+        return tui.KeyBar(screen_actions.bar("sessions", ids,
+                         labels={"directories": "all dirs" if self.cwd_filter else "this dir",
+                                 "back": "quit" if self.root else "back"}))
 
     def _actions(self) -> str:
         if self._on_banner():
@@ -1244,17 +1260,22 @@ class _SessionsScreen:
         win.erase()
         keybar = self._keybar()
         bar_rows = keybar.rows(width)
-        actions_row = height - bar_rows - 2
         message_row = height - bar_rows - 1
         model = self._model(width)
+        extra_rows = (1 if model.banner else 0) + (1 if model.native else 0)
+        self._message_detail_rows = tui.message_detail_rows(self.message, width, 1,
+                                                            message_row - 4 - min(3, len(self.records)) - extra_rows)
+        actions_row = message_row - self._message_detail_rows
         tui.safe_add(win, 1, 2, views.clip(model.title, width - 3), palette.attr("accent") | tui.curses.A_BOLD)
         tui.safe_add(win, 2, 2, views.rule(width), palette.attr("dim"))
         y = 3
         if not self.records:
             empty = (cli_text.SESSIONS_EMPTY_SELECTION if self.filter_mode not in ("all", "here") else
-                     cli_text.SESSIONS_EMPTY_FILTERED if self.empty_elsewhere else cli_text.SESSIONS_EMPTY)
-            tui.safe_add(win, y, 2, views.clip(empty, width - 3), palette.attr("dim"))
-            y += 1
+                     cli_text.SESSIONS_EMPTY_FILTERED if self.empty_elsewhere else
+                     cli_text.SESSIONS_EMPTY_ROOT if self.root else cli_text.SESSIONS_EMPTY)
+            for line in tui.message_lines(empty, width):
+                tui.safe_add(win, y, 2, line, palette.attr("dim"))
+                y += 1
         else:
             extra = (1 if model.banner else 0) + (1 if model.native else 0)
             visible = max(1, actions_row - (y + 1) - extra)
@@ -1287,9 +1308,7 @@ class _SessionsScreen:
         actions = self._actions()
         if actions:
             tui.safe_add(win, actions_row, 2, views.clip(actions, width - 3), palette.attr("dim"))
-        if self.message:
-            tui.safe_add(win, message_row, 2, views.clip(self.message.replace("\n", " "), width - 3),
-                         palette.attr(self.message_role))
+        tui.draw_message(win, self.message, palette, self.message_role, message_row, detail_rows=self._message_detail_rows)
         keybar.draw(win, height - 1, palette)
         win.refresh()
 
@@ -1933,7 +1952,7 @@ class _SessionsScreen:
 
     def _help(self, win: Any) -> None:
         wrap = max(20, min(100, win.getmaxyx()[1] - 8))
-        screens_common._ScrollModal(cli_text.SESSIONS_HELP_TITLE, screens_common._wrap_help_lines(cli_text.SESSIONS_HELP, wrap)).run(
+        screens_common._ScrollModal(cli_text.SESSIONS_HELP_TITLE, screens_common._wrap_help_lines(SESSIONS_HELP, wrap)).run(
             win, self.palette, background=self._draw
         )
 
@@ -1943,6 +1962,8 @@ class _SessionsScreen:
         tui.hide_cursor()
         while True:
             self._draw(win)
+            if tui.message_modal(win, self):
+                continue
             key = tui.read_key(win)
             if key.kind == "resize":
                 continue
@@ -2682,7 +2703,14 @@ class _LaunchCardScreen(_CardHealthActions):
     # -- layout --------------------------------------------------------------
 
     def _keybar(self) -> tui.KeyBar:
-        return tui.KeyBar(self.card.keys)
+        screen = "resume-card" if self.resume else "card"
+        offered = dict(self.card.keys)
+        ids = [row.id for row in screen_actions.ACTIONS[screen] if row.key in offered]
+        if not self.resume and self.not_connected:
+            ids.extend(("edit", "next-profile"))
+        labels = {"resume" if self.resume else "launch": offered.get("Enter", "resume" if self.resume else "launch"),
+                  "cancel" if self.resume else "quit": offered.get("Esc", "")}
+        return tui.KeyBar(screen_actions.bar(screen, ids, labels=labels))
 
     def min_size(self, width: int) -> tuple[int, int]:
         """(rows, cols) floor (§3.4): the chrome plus the longest bar (fresh, with ``U``)."""
@@ -2763,8 +2791,11 @@ class _LaunchCardScreen(_CardHealthActions):
         status = views.card_status(model)
         badge = tui.Badge("Status  " + views.CARD_STATUS_TEXT[status], views.CARD_STATUS_ROLE[status])
         used = badge.draw(win, y, 2, palette)
+        col = 2 + used + 3
+        # The status badge shares this line: overflow is measured against
+        # the actual message space, not the full terminal width.
+        self._message_width = width + 3 - col
         if self.message:
-            col = 2 + used + 3
             tui.safe_add(win, y, col, views.clip(self.message, width - 1 - col), palette.attr(self.message_role))
         y += 1
         wrap_width = max(20, width - 6)
@@ -3111,9 +3142,9 @@ class _LaunchCardScreen(_CardHealthActions):
         )
         if self.way_back is not None:
             how = cli_text.RESUME_SIGN_IN_HELP_BACK if self.way_back.card else cli_text.RESUME_SIGN_IN_HELP_REOPEN
-            quick = cli_text.RESUME_QUICK_HELP.replace("{sign_in}", how.format(route=self.sign_in_route))
+            quick = RESUME_HELP.replace("{sign_in}", how.format(route=self.sign_in_route))
         else:
-            quick = cli_text.QUICK_HELP
+            quick = CARD_HELP
         text = quick + "\n" + workflow_guarantee_panel(workflows)
         screens_common._ScrollModal(cli_text.CARD_HELP_TITLE, screens_common._wrap_help_lines(text, wrap)).run(
             win, self.palette, background=self._draw
@@ -3177,6 +3208,8 @@ class _LaunchCardScreen(_CardHealthActions):
                 self._get_started(win, focus=focus)
         while True:
             self._draw(win)
+            if tui.message_modal(win, self):
+                continue
             key = tui.read_key(win)
             if key.kind == "resize":
                 continue
@@ -3212,7 +3245,7 @@ class _LaunchCardScreen(_CardHealthActions):
                 outcome = self._enter(win, anyway=True)
                 if outcome is not None:
                     return outcome
-            elif ch == "w":
+            elif ch == "w" and not self.resume:
                 self._get_started(win)
             elif ch == "u" and self.update_hint is not None:
                 self._run_update(win)

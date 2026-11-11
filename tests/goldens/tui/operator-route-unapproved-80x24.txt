@@ -20,5 +20,5 @@
   qualification: not run (smoke, efforts, tools, stream) · family: acme (indep…
   Use unavailable — Esc → G (Providers) → acme shows the remedy.
 
-  Enter admit badge · Q diagnostics · E edit · X remove · V details · ? help
-  Esc back
+  Enter admit badge · A add model · Q diagnostics · E edit · X remove
+  V details · ? help · Esc back

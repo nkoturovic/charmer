@@ -1145,7 +1145,7 @@ class _ProvidersScreen:
             if self._own(fact):
                 ids.update(("edit", "remove"))
                 labels["remove"] = "remove"
-            if self._account_capable(fact):
+            if self._account_capable(fact) and primary != "account":
                 ids.add("sign-in")
                 if not self._account(fact):
                     labels["sign-in"] = "accounts"
@@ -1225,7 +1225,9 @@ class _ProvidersScreen:
             cursor=True,
         )
         message_row = height - bar_rows - 1
-        detail_top = message_row - cli_text.PROVIDERS_DETAIL_RESERVE
+        self._message_detail_rows = tui.message_detail_rows(self.message or "", width, cli_text.PROVIDERS_DETAIL_RESERVE,
+                                                            message_row - row - 1 - min(3, len(self.rows)))
+        detail_top = message_row - self._message_detail_rows
         visible = max(1, detail_top - (row + 1))
         if self.selected < self.offset:
             self.offset = self.selected
@@ -1259,14 +1261,13 @@ class _ProvidersScreen:
                 views.clip(span, width - 1 - served_x),
                 attr | (tui.curses.A_REVERSE if focused else 0),
             )
-        if self.rows:
+        if self.rows and (not self.message or len(tui.message_lines(self.message, width)) == 1):
             detail_row = row + 1 + min(visible, len(self.rows) - self.offset)
             details = self._rows(width=width - 3)[self.selected].details
             for offset, line in enumerate(details[:cli_text.PROVIDERS_DETAIL_RESERVE]):
                 tui.safe_add(win, detail_row + offset, 2, views.clip(line, width - 3), palette.attr("dim"))
-        if self.message:
-            tui.safe_add(win, message_row, 2, views.clip(self.message, width - 3),
-                         palette.attr(self.message_role))
+        tui.draw_message(win, self.message or "", palette, self.message_role, message_row,
+                         detail_rows=self._message_detail_rows)
         keybar.draw(win, height - 1, palette)
         win.refresh()
 
@@ -1471,6 +1472,8 @@ class _ProvidersScreen:
         tui.hide_cursor()
         while True:
             self._draw(win)
+            if tui.message_modal(win, self):
+                continue
             key = tui.read_key(win)
             if key.kind == "resize":
                 continue

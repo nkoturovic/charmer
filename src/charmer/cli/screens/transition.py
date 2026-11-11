@@ -7,6 +7,9 @@ from typing import Any
 from typing import TextIO
 import textwrap
 import charmer.cli.text as cli_text
+import charmer.cli.screens.actions as screen_actions
+
+HELP = screen_actions.help_text("transition", cli_text.TRANSITION_HELP)
 
 
 class _TransitionScreen:
@@ -16,7 +19,7 @@ class _TransitionScreen:
     Returns True only on explicit confirmation; Esc cancels (False).
     """
 
-    KEYBAR = (("Enter", "confirm exited"), ("?", "help"), ("Esc", "cancel"))
+    KEYBAR = screen_actions.bar("transition")
 
     def __init__(
         self,
@@ -74,7 +77,7 @@ class _TransitionScreen:
             if key.kind == "char" and key.ch == "?":
                 tui.Modal(
                     "transition — help",
-                    cli_text.TRANSITION_HELP.splitlines(),
+                    HELP.splitlines(),
                     buttons=(("Close", True),),
                 ).run(win, self.palette, background=self._draw)
                 continue

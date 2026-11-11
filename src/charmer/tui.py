@@ -1374,16 +1374,24 @@ class SelectList:
         # Single mode: Enter returns the index (or None when empty/back).
         # Multi mode: Enter returns the sorted toggled indexes (possibly
         # empty), Esc returns None. Callback callers may ignore the return.
+        if (help_text or on_help is not None) and not any(key == "?" for key, _ in self.footer.bindings):
+            bindings = list(self.footer.bindings)
+            exit_index = next((i for i, (key, _) in enumerate(bindings) if key == "Esc"), len(bindings))
+            bindings.insert(exit_index, ("?", "help"))
+            self.footer = KeyBar(bindings)
         while True:
             if refresh is not None:
                 self.items = list(refresh())
             self.draw(win, palette)
+            if message_modal(win, self, palette=palette, background=lambda w: self.draw(w, palette)):
+                continue
             key = read_key(win)
             self.message = ""
             if key.kind == "char" and shortcuts and key.ch in shortcuts:
                 return shortcuts[key.ch]
             if key.kind == "char" and key.ch == "?" and help_text:
-                TextView(self.title + " — help", help_text.splitlines(), palette=palette).run(win)
+                keys = "\n".join(f"{key} — {label}" for key, label in self.footer.bindings)
+                TextView(self.title + " — help", (keys + "\n\n" + help_text).splitlines(), palette=palette).run(win)
                 continue
             if key.kind == "resize":
                 continue
@@ -1456,6 +1464,7 @@ class Modal:
         self.keybar = KeyBar(keybar) if keybar else None
         self.title = title
         self.lines = list(lines)
+        self.offset = 0
         self.buttons = list(buttons)
         self.input = input
         # 0 input, 1..n buttons; ``default`` names the value of the button
@@ -1504,9 +1513,14 @@ class Modal:
         # Clamp the body slice: below box_h 5 the naive slice goes negative
         # and would index from the list's END, showing the wrong lines on
         # tiny terminals.
-        for line in self.lines[: max(0, box_h - 5)]:
+        capacity = max(0, box_h - 5)
+        self.offset = max(0, min(self.offset, max(0, len(self.lines) - capacity)))
+        for line in self.lines[self.offset:self.offset + capacity]:
             safe_add(win, row, left + 2, line)
             row += 1
+        if len(self.lines) > capacity and self.input is None:
+            safe_add(win, top + box_h - 3, left + 2,
+                     f"↑↓ {self.offset + 1}-{self.offset + capacity}/{len(self.lines)}", palette.attr("dim"))
         if self.input is not None:
             cursor = self.input.draw(
                 win, row, left + 2, box_w - 4, palette, focused=self.focus == 0
@@ -1552,6 +1566,17 @@ class Modal:
                 return None
             if key.kind == "ctrl" and key.ch == "c":
                 raise KeyboardInterrupt
+            if self.input is None and key.kind in ("up", "down", "pageup", "pagedown", "home", "end"):
+                _top, _left, box_h, _box_w = self._geometry(win)
+                capacity = max(1, box_h - 5)
+                if key.kind == "home":
+                    self.offset = 0
+                elif key.kind == "end":
+                    self.offset = len(self.lines)
+                else:
+                    step = capacity if key.kind in ("pageup", "pagedown") else 1
+                    self.offset += step if key.kind in ("down", "pagedown") else -step
+                continue
             if key.kind in ("tab", "btab"):
                 step = 1 if key.kind == "tab" else -1
                 if self.input is not None:
@@ -1965,22 +1990,20 @@ def show_cursor() -> None:
 # screen here writes anything itself.
 
 PROFILE_EDITOR_HELP = (
-    "↑/↓ move. Enter changes the row: General (name, description, primary provider,\n"
-    "lead providers, compaction override), Lead and agents (model picker; ← → picks\n"
-    "the effort), Native (Explore, Plan, general-purpose, workflows), Review (routing).\n"
-    "U unbinds an agent. B edits named bindings. R shows the review routing table.\n"
-    "^S saves (^O too); only a valid profile saves. ^G edits the raw JSON in $EDITOR.\n"
+    "Enter — change the selected row\nU — unbind the selected agent\nB — edit the named bindings\n"
+    "R — show the review routing\n^S — save the profile\n^G — edit the raw JSON in $EDITOR\n"
+    "? — this screen's help\nEsc — back\n\n"
+    "↑/↓ move. General edits name, description, primary provider, lead providers and compaction. "
+    "Lead and agents open the model picker. Native edits Explore, Plan, general-purpose and workflows. "
+    "Review shows routing. B edits named bindings. Only a valid profile saves.\n"
     "Checks: ✓ valid · ! warning (never blocks) · ✗ error (Enter jumps to its field).\n"
-    "◆ marks a per-profile override of a Settings value. Esc goes back."
+    "◆ marks a per-profile override of a Settings value."
 )
+# The widget layer cannot import cli. Tests compare these constants and
+# the help prefixes with the screen action table, including contextual forms.
 PROFILE_EDITOR_KEYBAR = (
-    ("Enter", "change"),
-    ("U", "unbind"),
-    ("B", "named bindings"),
-    ("R", "routing"),
-    ("^S", "save"),
-    ("?", "help"),
-    ("Esc", "back"),
+    ("Enter", "change", 1), ("U", "unbind", 2), ("B", "named bindings", 2), ("R", "routing", 2),
+    ("^S", "save", 1), ("?", "help", 2), ("Esc", "back", 2),
 )
 PROFILE_EDITOR_MIN_COLS = 60
 # §3.4: top, header, rule, General, Lead, blank, Agents header, blank, Native,
@@ -2005,8 +2028,12 @@ PROFILE_FORM_LEAD_UNBIND = "the lead cannot be unbound"
 PROFILE_FORM_JSON_NOT_APPLIED = "JSON not applied: {error}"
 PROFILE_FORM_SAVED = "saved {name}"
 PROFILE_FORM_GENERAL_TITLE = "edit profile — general"
-PROFILE_FORM_GENERAL_KEYBAR = (("Enter", "change"), ("^S", "apply"), ("?", "help"), ("Esc", "cancel"))
+PROFILE_FORM_GENERAL_KEYBAR = (("Enter", "change", 1), ("^S", "apply", 1), ("?", "help", 2), ("Esc", "cancel", 2))
+PROFILE_FORM_GENERAL_TEXT_KEYBAR = tuple(("F1" if key == "?" else key, label, rank)
+                                        for key, label, rank in PROFILE_FORM_GENERAL_KEYBAR)
 PROFILE_FORM_GENERAL_HELP = (
+    "Enter — change the selected field\n^S — apply the changes to the profile being edited\n"
+    "? — this screen's help\nF1 — help while typing (? types a character)\nEsc — discard these field changes\n\n"
     "↑/↓ move between the fields; printable keys edit the name, the description and "
     "the compaction override.\n\n"
     "Enter on primary provider picks one provider (none = no primary). Enter on lead "
@@ -2016,16 +2043,19 @@ PROFILE_FORM_GENERAL_HELP = (
     "the profile being edited; Esc discards them."
 )
 PROFILE_FORM_NATIVE_TITLE = "edit profile — native agents & workflows"
-PROFILE_FORM_NATIVE_KEYBAR = (("← →", "choose"), ("Enter", "apply"), ("?", "help"), ("Esc", "cancel"))
+PROFILE_FORM_NATIVE_KEYBAR = (("← →", "choose", 1), ("Enter", "apply", 1), ("?", "help", 2), ("Esc", "cancel", 2))
 PROFILE_FORM_NATIVE_HELP = (
+    "← → — choose a value\nEnter — apply these choices\n? — this screen's help\nEsc — discard these choices\n\n"
     "↑/↓ move between the groups; ← → choose a value. Explore: replace (cm-explorer "
     "answers Explore calls), native or off. Plan: native or off. general-purpose: on or "
-    "off. workflows: native or off. Enter (or ^S) applies; Esc discards.\n\n"
+    "off. workflows: native or off. Enter applies; Esc discards.\n\n"
     "Workflow mode is a relaunch field: a running session changes it only at its next "
     "resume."
 )
-BINDING_PICKER_KEYBAR = (("← →", "effort"), ("Enter", "choose"), ("V", "details"), ("?", "help"), ("Esc", "back"))
+BINDING_PICKER_KEYBAR = (("← →", "effort", 1), ("Enter", "choose", 1), ("V", "details", 2), ("?", "help", 2), ("Esc", "back", 2))
 BINDING_PICKER_HELP = (
+    "← → — choose the effort\nEnter — bind the model, use a named binding or turn the slot off\n"
+    "V — the model's details\n? — this screen's help\nEsc — back\n\n"
     "↑/↓ move; ← → pick effort; Enter binds the model. Single-selector client lines "
     "offer supported native efforts (undeclared efforts warn); gateway efforts need "
     "an existing selector mapping. ultracode is the lead's; a client-effort workflow "
@@ -2039,12 +2069,13 @@ BINDING_PICKER_HELP = (
     "every slot that uses it."
 )
 BINDING_PICKER_MIN_COLS = 50
-ROUTING_KEYBAR = (("?", "help"), ("Esc", "back"))
+ROUTING_KEYBAR = (("?", "help", 2), ("Esc", "back", 2))
 ROUTING_LEGEND = (
     "✓ recognized cross-family   ≈ recognized same-family   ? independence unknown   "
     "° preferred reviewer shares the author's family"
 )
 ROUTING_HELP = (
+    "? — this screen's help\nEsc — back\n\n"
     "Who reviews whose change. A normal change goes to the plain reviewer; a "
     "high-stakes change to the strong one. A reviewer of a recognized different family "
     "is preferred (✓); recognized same-family review is allowed and labelled (≈). "
@@ -2056,8 +2087,10 @@ ROUTING_HELP = (
 )
 ROUTING_MIN_COLS = 60
 NAMED_BINDINGS_TITLE = "named bindings"
-NAMED_BINDINGS_KEYBAR = (("Enter", "edit"), ("A", "add"), ("X", "delete"), ("?", "help"), ("Esc", "back"))
+NAMED_BINDINGS_KEYBAR = (("Enter", "edit", 1), ("A", "add", 2), ("X", "delete", 1), ("?", "help", 2), ("Esc", "back", 2))
 NAMED_BINDINGS_HELP = (
+    "Enter — change the binding's model or effort\nA — add a named binding\nX — delete the named binding\n"
+    "? — this screen's help\nEsc — back\n\n"
     "A named binding is a model and an effort under one name. A profile slot set to a "
     "named binding follows it: editing the binding moves every slot that uses it, in "
     "every profile, and offers to apply the change to the sessions that follow those "
@@ -2081,6 +2114,11 @@ def _too_small(win: Any, palette: Palette, what: str, rows: int, cols: int) -> N
 def _reflow(text: str, width: int) -> list[str]:
     """Help text re-flowed to ``width`` (blank-line paragraphs kept)."""
 
+    first, separator, notes = text.partition("\n\n")
+    if first and all(" — " in line for line in first.splitlines()):
+        lines = [wrapped for line in first.splitlines()
+                 for wrapped in textwrap.wrap(line, max(20, width), break_on_hyphens=False)]
+        return lines + ([""] + _reflow(notes, width) if separator else [])
     lines: list[str] = []
     for paragraph in text.split("\n\n"):
         if lines:
@@ -2100,6 +2138,64 @@ def _help(win: Any, palette: Palette, title: str, text: str, background: Any = N
         for line in extra:
             lines.extend(textwrap.wrap(line, wrap, subsequent_indent="  ") or [""])
     Modal(title, lines, buttons=(("Close", True),)).run(win, palette, background=background)
+
+
+def message_lines(text: str, width: int) -> list[str]:
+    """A result as display-safe, wrapped text (never a clipped remedy)."""
+
+    return textwrap.wrap(visible_text(str(text).replace("\n", " ")), max(1, width - 4),
+                         break_on_hyphens=False) or [""]
+
+
+def message_detail_rows(text: str, width: int, minimum: int, available: int) -> int:
+    """Grow a result's detail block before hiding its remedy or opening a modal."""
+
+    needed = len(message_lines(text, width)) - 1 if text else 0
+    return max(minimum, min(needed, max(minimum, available)))
+
+
+def draw_message(win: Any, text: str, palette: Palette, role: str, row: int, *, detail_rows: int = 0) -> None:
+    """Use the message row, or temporarily replace its reserved detail block."""
+
+    if not text:
+        return
+    _height, width = win.getmaxyx()
+    lines = message_lines(text, width)
+    top = row - detail_rows if 1 < len(lines) <= detail_rows + 1 else row
+    for y in range(top, row + 1):
+        safe_add(win, y, 2, " " * max(0, width - 4))
+    for y, line in enumerate(lines[:row - top + 1], top):
+        safe_add(win, y, 2, line, palette.attr(role))
+
+
+def message_modal(win: Any, screen: Any, *, detail_rows: int | None = None, palette: Palette | None = None,
+                  background: Callable[[Any], None] | None = None) -> bool:
+    """Show a result too large for the reserved block in a Close-only modal.
+
+    Called by the run loop, not drawing: resizing or rendering a frame never
+    consumes an input key. Closing consumes only that acknowledgement.
+    """
+
+    source = screen if hasattr(screen, "message") else getattr(screen, "state", screen)
+    text = getattr(source, "message", "")
+    detail_rows = getattr(screen, "_message_detail_rows", 0) if detail_rows is None else detail_rows
+    width = getattr(screen, "_message_width", win.getmaxyx()[1])
+    if not text or text == getattr(screen, "_closed_message", None) or len(message_lines(text, width)) <= detail_rows + 1:
+        return False
+    floor = getattr(screen, "min_size", None)
+    if floor is not None:
+        height, columns = win.getmaxyx()
+        rows_needed, cols_needed = floor(columns)
+        if height < rows_needed or columns < cols_needed:
+            return False
+    lines = message_lines(text, max(12, win.getmaxyx()[1] - 6))
+    palette = palette or getattr(screen, "palette", MONO_PALETTE)
+    background = background or getattr(screen, "_draw", None)
+    Modal("Action result", lines, buttons=(("Close", True),)).run(win, palette, background=background)
+    screen._closed_message = text
+    if source is not screen:
+        source.message = ""  # the editor draft outlives this screen, not its acknowledged result
+    return True
 
 
 def _clip_at(text: str, width: int, col: int) -> str:
@@ -2450,8 +2546,12 @@ class _GeneralForm:
         self.focus = 0
         self.message = ""
 
+    def _keybar(self) -> KeyBar:
+        return KeyBar(PROFILE_FORM_GENERAL_TEXT_KEYBAR if self.FIELDS[self.focus] in self.inputs
+                      else PROFILE_FORM_GENERAL_KEYBAR)
+
     def min_size(self, width: int) -> tuple[int, int]:
-        bar = KeyBar(PROFILE_FORM_GENERAL_KEYBAR).rows(width)
+        bar = self._keybar().rows(width)
         return (3 + len(self.FIELDS) + 1 + 1 + bar, PROFILE_EDITOR_MIN_COLS)
 
     def _value_text(self, field: str) -> str:
@@ -2500,7 +2600,7 @@ class _GeneralForm:
                 text = self._value_text(field)
                 safe_add(win, y, field_col, _clip_at(text, width - 9, field_col), attr)
                 safe_add(win, y, width - 9, "[Enter]", palette.attr("dim"))
-        bar = KeyBar(PROFILE_FORM_GENERAL_KEYBAR)
+        bar = self._keybar()
         if self.message:
             safe_add(win, height - bar.rows(width) - 1, 2, _clip_at(self.message, width, 2), palette.attr("warn"))
         bar.draw(win, height - 1, palette)
@@ -2566,6 +2666,8 @@ class _GeneralForm:
 
         while True:
             self._draw(win)
+            if message_modal(win, self):
+                continue
             key = read_key(win)
             if key.kind == "resize":
                 continue
@@ -2667,6 +2769,8 @@ class _NativeForm:
     def run(self, win: Any) -> bool:
         while True:
             self._draw(win)
+            if message_modal(win, self):
+                continue
             key = read_key(win)
             if key.kind == "resize":
                 continue
@@ -2827,6 +2931,8 @@ class BindingPicker:
         hide_cursor()
         while True:
             self._draw(win)
+            if message_modal(win, self):
+                continue
             key = read_key(win)
             if key.kind == "resize":
                 continue
@@ -2933,6 +3039,8 @@ class RoutingPreviewScreen:
         hide_cursor()
         while True:
             self._draw(win)
+            if message_modal(win, self):
+                continue
             key = read_key(win)
             if key.kind == "esc" or (key.kind == "ctrl" and key.ch == "c"):
                 return
@@ -3106,6 +3214,8 @@ class NamedBindingsScreen:
         hide_cursor()
         while True:
             self._draw(win)
+            if message_modal(win, self):
+                continue
             key = read_key(win)
             if key.kind == "resize":
                 continue
@@ -3492,6 +3602,8 @@ class ProfileEditorScreen:
         while True:
             self._settle_focus()
             self._draw(win)
+            if message_modal(win, self):
+                continue
             key = read_key(win)
             if key.kind == "resize":
                 continue
@@ -3605,7 +3717,7 @@ class TextView:
 
     def _keybar(self):
         bar = (("Enter", "declare"), ("Esc", "cancel")) if self.confirm == "declare" else (
-            (("y", "proceed"), ("Esc", "cancel")) if self.confirm else (
+            (("y", "proceed"), ("N", "decline"), ("Enter", "decline"), ("Esc", "cancel")) if self.confirm else (
             ("↑↓", "scroll"), ("PgUp/PgDn", "page"), ("Esc", "back")))
         return KeyBar(bar)
 
@@ -3637,6 +3749,8 @@ class TextView:
         hide_cursor()
         while True:
             self._draw(win)
+            if message_modal(win, self):
+                continue
             key = read_key(win)
             if key.kind == "esc" or (key.kind == "ctrl" and key.ch == "c"):
                 return False
@@ -3669,6 +3783,15 @@ class TextView:
 FIELD_HIDDEN = "(not shown: only A-Z, 0-9 and _ are drawn here — Backspace clears it)"
 
 
+ONBOARDING_KEYBAR = (("Enter", "next", 1), ("Backspace", "previous", 2), ("↑↓", "choose", 1),
+                     ("F1", "help", 2), ("?", "help", 2), ("Esc", "cancel", 2))
+ONBOARDING_HELP = (
+    "Enter — accept this field and continue\nBackspace — previous field (in text: erase first)\n"
+    "↑↓ — choose a value on a choice step\n? — this screen's help\n"
+    "F1 — help while typing (? types a character)\nEsc — cancel without saving"
+)
+
+
 class OnboardingForm:
     """A draft-only stepper. Fields are (name, label, default, choices).
 
@@ -3687,7 +3810,8 @@ class OnboardingForm:
     def __init__(self, title, fields, *, palette=None, help_text="", footer=DRAFT_FOOTER,
                  checks: Mapping[str, Callable[[str], str | None]] | None = None,
                  shown: Mapping[str, Callable[[str], bool]] | None = None):
-        self.title, self.fields, self.help_text = title, tuple(fields), help_text
+        self.title, self.fields = title, tuple(fields)
+        self.help_text = ONBOARDING_HELP + ("\n\n" + help_text if help_text else "")
         self.footer = footer
         self.palette = palette or MONO_PALETTE
         self.index = 0
@@ -3697,6 +3821,9 @@ class OnboardingForm:
         self.shown = dict(shown or {})
         self.message = ""  # why the current step refused its value
         self._message_step = -1
+
+    def min_size(self, width: int) -> tuple[int, int]:
+        return max(14, len(self.fields[self.index][3]) + 11), 50
 
     def _hidden(self, name: str) -> bool:
         show = self.shown.get(name)
@@ -3720,11 +3847,13 @@ class OnboardingForm:
         height, width = win.getmaxyx()
         win.erase()
         cursor = None
-        floor = max(14, len(self.fields[self.index][3]) + 11)
-        if height < floor or width < 50:
-            _too_small(win, self.palette, "onboarding", floor, 50)
+        rows, cols = self.min_size(width)
+        if height < rows or width < cols:
+            _too_small(win, self.palette, "onboarding", rows, cols)
             return
         name, label, _default, choices = self.fields[self.index]
+        if choices and "↑↓ chooses" not in label:
+            label += " (↑↓ chooses)"
         safe_add(win, 1, 2, self.title, self.palette.attr("accent"))
         safe_add(win, 2, 2, views.rule(width), self.palette.attr("dim"))
         safe_add(win, 4, 2, f"Step {self.index + 1}/{len(self.fields)} — {label}", self.palette.attr("normal"))
@@ -3739,14 +3868,16 @@ class OnboardingForm:
             cursor = self.inputs[name].draw_text(
                 win, 6, 2, width - 4, attr=self.palette.attr("accent"),
                 highlight_cursor=True, end_marker="_")
+        self._message_detail_rows = max(0, height - 14)
         if self.message and self._message_step == self.index:
-            for y, line in enumerate(textwrap.wrap(self.message, max(10, width - 4))[:max(0, height - 13)], 8):
+            for y, line in enumerate(message_lines(self.message, width)[:self._message_detail_rows + 1], 8):
                 safe_add(win, y, 2, line, self.palette.attr("warn"))
         safe_add(win, height - 4, 2, self.footer, self.palette.attr("dim"))
         # In a text step ? is typed (a URL query, say): F1 is help there.
         help_key = "?" if choices else "F1"
-        KeyBar((("Enter", "next"), ("Backspace", "previous"), (help_key, "help"), ("Esc", "cancel"))).draw(
-            win, height - 1, self.palette)
+        KeyBar(tuple(binding for binding in ONBOARDING_KEYBAR
+                     if (binding[0] not in ("?", "F1") or binding[0] == help_key)
+                     and (binding[0] != "↑↓" or choices))).draw(win, height - 1, self.palette)
         if cursor is not None:
             try:
                 win.move(*cursor)
@@ -3764,13 +3895,16 @@ class OnboardingForm:
     def _run(self, win):
         while True:
             self._draw(win)
+            if message_modal(win, self):
+                continue
             key = read_key(win)
             name, _label, _default, choices = self.fields[self.index]
             field = self.inputs[name]
             if key.kind == "esc" or (key.kind == "ctrl" and key.ch == "c"):
                 return None
             height, width = win.getmaxyx()
-            if height < max(14, len(choices) + 11) or width < 50:
+            rows, cols = self.min_size(width)
+            if height < rows or width < cols:
                 continue
             if key.kind == "f1" or (key.kind == "char" and key.ch == "?" and choices):
                 TextView(self.title + " — help", self.help_text.splitlines(), palette=self.palette).run(win)

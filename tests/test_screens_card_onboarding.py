@@ -205,27 +205,35 @@ class GetStartedKeyTests(CardOnboardingCase):
         self.assertEqual(screen.target.profile, other)
         self.assertIn(cli_text.PROFILES_USED.format(name=other)[:60], win.frames[-1])
 
-    def test_a_resume_card_opens_it_read_only(self) -> None:
+    def test_a_resume_card_does_not_open_get_started(self) -> None:
         record = fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=fx.FIXED_ID)
         prepared = self.runtime.prepare(cli._record_resume_target(record), action="resume", passthrough=[],
                                         session_id=fx.FIXED_ID)
         screen = self.card(prepared.target, action="resume", prepared=prepared)
         with self.get_started() as calls:
-            self.run_card(screen, ["w", ESC])
-        self.assertEqual([(call["resume"], call["open_profiles"]) for call in calls], [(True, None)])
+            result, _win = self.run_card(screen, ["w", "W", ESC])
+        self.assertIsNone(result)
+        self.assertEqual(calls, [])
+        self.assertIs(screen.prepared, prepared)
 
     def test_refused_inside_a_session_and_in_a_read_only_run(self) -> None:
         screen = self.card()
         with self.get_started() as calls, mock.patch.dict(self.runtime.environ, {"CLAUDECODE": "1"}):
-            _result, win = self.run_card(screen, ["w", ESC])
+            # Acknowledge the full refusal, then leave the card.
+            _result, win = self.run_card(screen, ["w", ESC, ESC])
         self.assertEqual(calls, [])
         self.assertEqual(screen.message, cli_text.GS_IN_SESSION)
-        self.assertIn(cli_text.GS_IN_SESSION[:45], win.frames[-1])
+        modal = next(frame for frame in win.frames if "Action result" in frame)
+        body = " ".join(line.split("|", 2)[1].strip() for line in modal.splitlines() if "|" in line)
+        self.assertIn(cli_text.GS_IN_SESSION, body)
+        self.assertIn("[ Close ]", body)
         with self.get_started() as calls, mock.patch.object(self.runtime, "allow_state_writes", False):
-            _result, win = self.run_card(screen, ["w", ESC])
+            _result, win = self.run_card(screen, ["w", ESC, ESC])
         self.assertEqual(calls, [])
         self.assertEqual(screen.message, cli_text.GS_READONLY)
-        self.assertIn(cli_text.GS_READONLY[:45], win.frames[-1])
+        modal = next(frame for frame in win.frames if "Action result" in frame)
+        body = " ".join(line.split("|", 2)[1].strip() for line in modal.splitlines() if "|" in line)
+        self.assertIn(cli_text.GS_READONLY, body)
 
     def test_profiles_from_get_started_returns_the_profile_used(self) -> None:
         other = sorted(self.runtime.profiles.names())[-1]
@@ -539,7 +547,9 @@ class SettingsDefaultRowTests(CardOnboardingCase):
     def test_the_row_shows_automatic_then_the_choice(self) -> None:
         screen = self.settings()
         self.assertEqual(screen.selected_row.value, views.SETTINGS_DEFAULT_AUTOMATIC)
-        self.assertEqual(screen.keybar_bindings(), cli_text.SETTINGS_KEYBAR)
+        self.assertEqual(screen.keybar_bindings(),
+                         (("Enter", "edit"), ("R", "reset to default"), ("G", "providers"),
+                          ("M", "models"), ("?", "help"), ("Esc", "back")))
         self.set_default(catalog.DEFAULT_SEED)
         self.assertEqual(self.settings().selected_row.value, catalog.DEFAULT_SEED)
 

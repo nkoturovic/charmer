@@ -234,7 +234,8 @@ SESSIONS_HELP = (
     + termtext.CHEATSHEET_HINT
 )
 SESSIONS_HELP_TITLE = "sessions — help"
-SESSIONS_EMPTY = "(no recorded sessions)"
+SESSIONS_EMPTY = "(no recorded sessions — Esc, then Enter launches one; L links a session started without charmer)"
+SESSIONS_EMPTY_ROOT = "(no recorded sessions — Esc quits; run charmer to launch one; L links a session started without charmer)"
 SESSIONS_EMPTY_FILTERED = "(no sessions in this directory — press C to see all)"
 SESSIONS_EMPTY_SELECTION = "(no sessions match these filters — B changes them)"
 SESSIONS_MIN_COLS = 44
@@ -1118,7 +1119,7 @@ PROFILES_KEYBAR_UNLOADABLE = (("E", "edit file"), ("X", "delete"), ("N", "new"),
 PROFILES_RESTORE_BINDING = ("U", "restore")
 PROFILES_FILTER_OFF_LABEL = "all profiles"
 PROFILES_HELP_TITLE = "profiles — help"
-PROFILES_NONE = "no profiles"
+PROFILES_NONE = "no profiles — N creates one"
 PROFILES_NO_FALLBACK = "no profile is a fallback profile yet — E → General → primary provider makes one"
 PROFILES_HELP = (
     "Profiles decide which model leads and which models the helper agents use.\n"

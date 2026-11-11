@@ -115,6 +115,52 @@ def providers_golden(root: Path) -> str:
         )
 
 
+def provider_refusal_golden(root: Path) -> str:
+    from charmer.cli.screens import providers
+
+    with golden_runtime(root) as runtime:
+        screen = providers._ProvidersScreen(runtime, palette=tui.MONO_PALETTE, journal=lambda: None)
+        screen.selected = next(i for i, fact in enumerate(screen.facts) if fact["id"] == "anthropic")
+        width, height = current_size()
+        win = FakeWindow(["K", "\x1b"], width=width, height=height)
+        screen.run(win)
+        return last_frame(win, "run it in a separate shell")
+
+
+def own_provider_picker_golden(root: Path) -> str:
+    from charmer.cli.screens import get_started
+
+    with golden_runtime(root) as runtime:
+        return render(lambda: get_started._ProviderPicker(runtime, tui.MONO_PALETTE, only="other"))
+
+
+def models_add_golden(root: Path) -> str:
+    from charmer.cli.screens import models
+
+    with golden_runtime(root) as runtime:
+        width, height = current_size()
+        win = FakeWindow(["A", "\x1b", "\x1b"], width=width, height=height)
+        models._ModelsScreen(runtime, palette=tui.MONO_PALETTE).run(win)
+        return last_frame(win, "add model — choose a provider")
+
+
+def empty_screen_golden(root: Path, kind: str) -> str:
+    from charmer.cli.screens import launch_sessions, profiles
+
+    with golden_runtime(root) as runtime:
+        if kind in ("sessions", "sessions-root"):
+            return render(lambda: launch_sessions._SessionsScreen(runtime, palette=tui.MONO_PALETTE, now=fx.FIXED_NOW,
+                                                                 root=kind == "sessions-root"))
+        screen = profiles._ProfilesScreen(runtime, tui.MONO_PALETTE, now=fx.FIXED_NOW)
+        screen.rows = []
+        return render(lambda: screen)
+
+
+def general_form_golden(root: Path) -> str:
+    with golden_runtime(root) as runtime:
+        return render(lambda: tui._GeneralForm(editor_state(runtime), tui.MONO_PALETTE))
+
+
 def providers_row_golden(root: Path, kind: str) -> str:
     """The first account or key-set row, selected explicitly at either size."""
 
@@ -961,6 +1007,14 @@ GOLDEN_SIZES: dict[str, tuple[int, int]] = {"card-wide": (120, 30), **{name: WID
 
 
 GOLDENS: dict[str, Callable[[Path], str]] = {
+    "provider-refusal": provider_refusal_golden,
+    "provider-picker-own": own_provider_picker_golden,
+    "models-add": models_add_golden,
+    "profiles-empty": lambda root: empty_screen_golden(root, "profiles"),
+    "sessions-empty": lambda root: empty_screen_golden(root, "sessions"),
+    "sessions-empty-root": lambda root: empty_screen_golden(root, "sessions-root"),
+    "general-form-text": general_form_golden,
+    "settings-review-rounds": lambda root: settings_golden(root, "review_round_cap"),
     "keyed-provider-credentials": keyed_provider_credentials_golden,
     "get-started": get_started_golden,
     "get-started-picker": get_started_picker_golden,
