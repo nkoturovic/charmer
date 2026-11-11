@@ -1211,6 +1211,43 @@ class SessionsRenameTests(_SessionsCase):
         self.assertIn(cli.SESSIONS_V3_TITLE, win.frames[-1])
 
 
+class SessionsForkInsideSessionTests(_SessionsCase):
+    """Bare ``charmer -r`` run inside a Claude or managed session: N on a
+    row refuses with the fork's inside-session text before anything is
+    prepared, for every session marker the launcher recognises."""
+
+    curses_script = SessionsEntryTests.curses_script
+    main = SessionsEntryTests.main
+
+    def state(self) -> tuple:
+        store = self.runtime.session_store
+        root = store.root
+        return (sorted(path.name for path in (root / "sessions").glob("*.json")),
+                sorted(path.name for path in (root / "scopes").iterdir()),
+                (root / "sessions" / f"{fx.FIXED_ID}.json").read_bytes(),
+                store.read_pointer_bytes(str(self.runtime.cwd)))
+
+    def test_n_inside_a_session_refuses_before_anything_is_prepared(self) -> None:
+        import charmer.cli.consent as consent
+        import charmer.cli.resume_checks as resume_checks
+
+        self.record()
+        before = self.state()
+        for marker in consent.SESSION_MARKERS:
+            with self.subTest(marker=marker):
+                patcher, calls = self.curses_script(["N", ESC], width=160)
+                prepare = mock.Mock(wraps=self.runtime.prepare)
+                with patcher, mock.patch.dict(self.runtime.environ, {marker: "1"}), \
+                        mock.patch.object(self.runtime, "prepare", prepare):
+                    code, output = self.main(["-r"])
+                self.assertEqual(code, 0, output)
+                self.assertEqual(len(calls), 1, "one curses session")
+                self.assertIn(resume_checks.FORK_INSIDE_SESSION, _flat("\n".join(calls[0].frames)))
+                self.assertEqual(prepare.call_args_list, [], "nothing is prepared")
+                self.assertEqual(self.runtime.launches, [], "nothing is performed or executed")
+                self.assertEqual(self.state(), before, "no record, scope or continue pointer changes")
+
+
 class SessionsNewForkTests(_SessionsCase):
     """N: ``charmer -r SESSION --fork`` from the sessions screen — the fork
     gate, the preparation, the card (always), then the perform intent."""

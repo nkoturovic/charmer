@@ -523,6 +523,39 @@ class ForkFlowTests(ForkCase):
             self.assertEqual((code, out.getvalue()), (2, ""), err.getvalue())
             self.assertIn(text, err.getvalue())
 
+    def test_inside_a_session_the_command_line_fork_refuses_before_any_state(self) -> None:
+        import contextlib
+
+        import charmer.cli.consent as consent
+        import charmer.cli.runtime as runtime_mod
+        from charmer import installs
+
+        for marker in consent.SESSION_MARKERS:
+            with self.subTest(marker=marker), \
+                    mock.patch.dict(os.environ, {**self.runtime.environ, marker: "1"}, clear=True), \
+                    mock.patch.object(installs, "check", side_effect=AssertionError("channel recorded")), \
+                    mock.patch.object(runtime_mod, "Runtime", side_effect=AssertionError("Runtime built")), \
+                    contextlib.redirect_stderr(io.StringIO()) as err:
+                out = io.StringIO()
+                code = cli.main(["-r", self.pid, "--fork"], output_stream=out, interactive=False)
+            self.assertEqual((code, out.getvalue()), (1, ""), err.getvalue())
+            self.assertIn(resume_checks.FORK_INSIDE_SESSION, err.getvalue())
+
+    def test_inside_a_session_a_prepared_fork_is_refused_at_the_commit(self) -> None:
+        import charmer.cli.consent as consent
+
+        prepared, _fingerprint = self.fork_plan()
+        child = self.fork_id(prepared)
+        before = (len(self.execs), self.pointer(), self.parent_state())
+        for marker in consent.SESSION_MARKERS:
+            with self.subTest(marker=marker), mock.patch.dict(self.runtime.environ, {marker: "1"}):
+                with self.assertRaises(cli.CLIError) as caught:
+                    self.runtime.perform(prepared)
+                self.assertEqual(str(caught.exception), resume_checks.FORK_INSIDE_SESSION)
+                self.assertIsNone(self.record_bytes(child))
+                self.assertFalse(self.live(child).exists())
+                self.assertEqual((len(self.execs), self.pointer(), self.parent_state()), before)
+
     def test_main_dispatches_the_fork(self) -> None:
         state_before = self.tree(self.store.root)
         out = io.StringIO()
