@@ -20,11 +20,14 @@ from charmer import errors as cli_errors
 from charmer import tui
 from charmer import views
 import charmer.cli.consent as consent
+import charmer.cli.screens.actions as screen_actions
 import charmer.cli.screens.common as screens_common
 import charmer.cli.screens.providers as screens_providers
 import charmer.cli.text as cli_text
 
 READ_STEPS = ("preflight", "check")
+HELP = screen_actions.help_text("get-started", cli_text.GS_HELP)
+PICKER_HELP = screen_actions.help_text("provider-picker", cli_text.PICKER_HELP)
 
 
 @dataclass(frozen=True)
@@ -123,7 +126,10 @@ class _StepView:
     def _keybar(self) -> tui.KeyBar:
         bindings = [("Enter", self.buttons[self.focus][0].lower())] if self.buttons else []
         if len(self.buttons) > 1:
-            bindings.append(("←→", "choose"))
+            bindings.append(("← →", "choose"))
+        for key, target in self.shortcuts.items():
+            label = next((label.lower() for label, value in self.buttons if value == target), str(target))
+            bindings.append((key, label))
         return tui.KeyBar([*bindings, ("?", "help"), ("Esc", "back")])
 
     def _draw(self, win: Any) -> None:
@@ -158,6 +164,8 @@ class _StepView:
         tui.hide_cursor()
         while True:
             self._draw(win)
+            if tui.message_modal(win, self):
+                continue
             key = tui.read_key(win)
             if key.kind == "resize":
                 continue
@@ -265,7 +273,7 @@ class _ProviderPicker:
         return cli_text.PICKER_DETAIL.get(entry.kind, "").format(display=display, note=entry.note)
 
     def min_size(self, width: int) -> tuple[int, int]:
-        bar = tui.KeyBar(cli_text.PICKER_KEYBAR).rows(width)
+        bar = tui.KeyBar(screen_actions.bar("provider-picker")).rows(width)
         return max(cli_text.PICKER_MIN_ROWS, 3 + 3 + 3 + 1 + bar + 1), cli_text.PICKER_MIN_COLS
 
     def _draw(self, win: Any) -> None:
@@ -276,21 +284,28 @@ class _ProviderPicker:
             screens_common._screen_too_small(win, palette, self.what, rows_needed, cols_needed)
             return
         win.erase()
-        keybar = tui.KeyBar(cli_text.PICKER_KEYBAR)
+        keybar = tui.KeyBar(screen_actions.bar("provider-picker"))
         bar_rows = keybar.rows(width)
         title = cli_text.PICKER_TITLE_OTHER if self.only == "other" else cli_text.PICKER_TITLE
         tui.safe_add(win, 1, 2, title, palette.attr("accent") | tui.curses.A_BOLD)
         tui.safe_add(win, 2, 2, views.rule(width), palette.attr("dim"))
         message_row = height - bar_rows - 1
         detail = screens_common._wrapped(self._detail(), width - 4)[:3]
-        detail_top = message_row - len(detail)
+        self._message_detail_rows = tui.message_detail_rows(self.message, width, len(detail),
+                                                            message_row - 4 - min(3, len(self.rows)))
+        detail_top = message_row - self._message_detail_rows
         rule_row = detail_top - 1
-        visible = max(1, rule_row - 3)
+        capacity = max(1, rule_row - 3)
+        visible = max(1, capacity - 1) if len(self.rows) > capacity else capacity
         if self.selected < self.offset:
             self.offset = self.selected
         elif self.selected >= self.offset + visible:
             self.offset = self.selected - visible + 1
         self.offset = max(0, min(self.offset, max(0, len(self.rows) - visible)))
+        more = sum(row.kind == "entry" for row in self.rows[self.offset + visible:])
+        if not more:
+            visible = capacity
+            self.offset = min(self.offset, max(0, len(self.rows) - visible))
         right_x = max(30, width - 27)
         for y, index in enumerate(range(self.offset, min(len(self.rows), self.offset + visible)), 3):
             row = self.rows[index]
@@ -310,11 +325,12 @@ class _ProviderPicker:
             tui.safe_add(win, y, 6, views.clip(row.text, right_x - 7), attr)
             if row.right:
                 tui.safe_add(win, y, right_x, views.clip(row.right, width - 1 - right_x), palette.attr("dim"))
+        if more:
+            tui.safe_add(win, rule_row - 1, 2, tui.MORE_ROWS.format(n=more), palette.attr("dim"))
         tui.safe_add(win, rule_row, 2, "─", palette.attr("dim"))
         for offset, line in enumerate(detail):
             tui.safe_add(win, detail_top + offset, 2, views.clip(line, width - 3), palette.attr("dim"))
-        if self.message:
-            tui.safe_add(win, message_row, 2, views.clip(self.message, width - 3), palette.attr(self.message_role))
+        tui.draw_message(win, self.message, palette, self.message_role, message_row, detail_rows=self._message_detail_rows)
         keybar.draw(win, height - 1, palette)
         win.refresh()
 
@@ -350,6 +366,8 @@ class _ProviderPicker:
         tui.hide_cursor()
         while True:
             self._draw(win)
+            if tui.message_modal(win, self):
+                continue
             key = tui.read_key(win)
             if key.kind == "resize":
                 continue
@@ -371,7 +389,7 @@ class _ProviderPicker:
             elif key.kind == "end":
                 self._edge(last=True)
             elif key.kind == "char" and key.ch == "?":
-                screens_common._help_modal(win, self.palette, cli_text.PICKER_HELP_TITLE, cli_text.PICKER_HELP,
+                screens_common._help_modal(win, self.palette, cli_text.PICKER_HELP_TITLE, PICKER_HELP,
                                            self._draw)
             elif key.kind == "enter":
                 self._connect(win)
@@ -441,10 +459,10 @@ class _GetStartedScreen:
             return
         win.erase()
         step = self.state.steps[self.selected]
-        bindings = cli_text.GS_KEYBAR
+        ids = {"open", "add-provider", "profiles", "help", "card"}
         if step.id == "claude":
-            bindings = (*bindings[:-2], ("F", "offline file"), *bindings[-2:])
-        keybar = tui.KeyBar(bindings)
+            ids.add("offline-client")
+        keybar = tui.KeyBar(screen_actions.bar("get-started", ids))
         bar_rows = keybar.rows(width)
         message_row = height - bar_rows - 1
         tui.safe_add(win, 1, 2, cli_text.GS_HEADER, palette.attr("accent") | tui.curses.A_BOLD)
@@ -456,8 +474,9 @@ class _GetStartedScreen:
         steps = step_rows(self.state, self.results)
         fixed = len(steps) + 1 + len(detail)
         room = message_row - 3
-        show_intro = room >= fixed + len(intro) + 3
-        blanks = room >= fixed + (len(intro) + 1 if show_intro else 0) + 2
+        long_message = bool(self.message and len(tui.message_lines(self.message, width)) > 1)
+        show_intro = not long_message and room >= fixed + len(intro) + 3
+        blanks = not long_message and room >= fixed + (len(intro) + 1 if show_intro else 0) + 2
         y = 3
         if show_intro:
             for line in intro:
@@ -477,11 +496,11 @@ class _GetStartedScreen:
             y += 1
         tui.safe_add(win, y, 2, views.clip(connected, width - 3))
         y += 2 if blanks else 1
-        for line in detail[: max(0, message_row - y)]:
+        self._message_detail_rows = max(0, message_row - y)
+        for line in detail[: self._message_detail_rows]:
             tui.safe_add(win, y, 2, line, palette.attr("dim"))
             y += 1
-        if self.message:
-            tui.safe_add(win, message_row, 2, views.clip(self.message, width - 3), palette.attr(self.message_role))
+        tui.draw_message(win, self.message, palette, self.message_role, message_row, detail_rows=self._message_detail_rows)
         keybar.draw(win, height - 1, palette)
         win.refresh()
 
@@ -718,6 +737,8 @@ class _GetStartedScreen:
         tui.hide_cursor()
         while True:
             self._draw(win)
+            if tui.message_modal(win, self):
+                continue
             key = tui.read_key(win)
             if key.kind == "resize":
                 continue
@@ -741,7 +762,7 @@ class _GetStartedScreen:
             elif key.kind == "end":
                 self.selected = len(self.state.steps) - 1
             elif letter == "?":
-                screens_common._help_modal(win, self.palette, cli_text.GS_HELP_TITLE, cli_text.GS_HELP, self._draw)
+                screens_common._help_modal(win, self.palette, cli_text.GS_HELP_TITLE, HELP, self._draw)
             elif key.kind == "enter":
                 result = self._open(win)
                 self._reload()

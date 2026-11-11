@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, TextIO
 
 from charmer import errors, gateway_hold, gateway_inhibition, gateway_lifecycle, termtext, tui
+import charmer.cli.screens.actions as screen_actions
 import charmer.cli.screens.common as screens_common
 
 # Gateway operations the TUI deliberately leaves to the CLI, with the reason.
@@ -53,10 +54,9 @@ HOLD_COVERAGE_ROUTE = ("Restart is not offered while it holds. Keep the gateway 
 HOLD_FAILURE_ROUTE = (f"Restart is not offered while it holds. Fix: {gateway_hold.REMEDY} (clear-hold runs in a "
                       "terminal outside Claude Code, with a typed confirmation)")
 RESTART_QUESTION = "Restart the gateway now?"
-KEYBAR = (("P", "plan"), ("?", "help"), ("Esc", "close"))
-HELP = ("P shows the read-only served-change plan (charmer plan); it sends no request and writes nothing. "
-        "Tab chooses a gateway action; Enter opens it. Esc closes this dialog. Stop, clear-hold and service "
-        "uninstall stay terminal commands.")
+KEYBAR = screen_actions.bar("gateway")
+HELP = screen_actions.help_text("gateway", "Tab chooses a gateway action. Stop, clear-hold and service uninstall "
+                                "stay terminal commands. The plan sends no request and writes nothing.")
 
 
 @dataclass(frozen=True)
@@ -372,7 +372,7 @@ def dialog(runtime: Any, win: Any, palette: tui.Palette, *, background: Callable
                            keybar=KEYBAR).run(win, palette, background=background)
         if choice != "help":
             break
-        tui.TextView("Gateway — help", [HELP], palette=palette).run(win)
+        tui.TextView("Gateway — help", HELP.splitlines(), palette=palette).run(win)
         if background is not None:
             background(win)
         else:

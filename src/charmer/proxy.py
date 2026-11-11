@@ -2141,31 +2141,29 @@ def published_identity(home: Path) -> PublishedIdentity:
     return PublishedIdentity(routes, None, served_plan_mod.gateway_label(document))
 
 
-PRIVATE_NETWORK_KEY = "private-network"
+PRIVATE_NETWORK_KEY = render_mod.PRIVATE_NETWORK_KEY
 
 
 def private_network_selectors(document: Mapping[str, Any]) -> frozenset[str]:
     """The selectors of the ``openai-compatibility`` entries a render puts on
     a private network (the entries a gateway without that support drops)."""
 
-    found: set[str] = set()
-    for section in document.get("openai-compatibility") or ():
-        if not isinstance(section, Mapping) or not isinstance(section.get(PRIVATE_NETWORK_KEY), Mapping):
-            continue
-        for model in section.get("models") or ():
-            if isinstance(model, Mapping) and isinstance(model.get("alias"), str):
-                found.add(model["alias"])
-    return frozenset(found)
+    return frozenset(render_mod.rendered_private_network_selectors(document))
 
 
-def published_private_network_selectors(home: Path) -> frozenset[str]:
+def published_private_network_selectors(home: Path, sentinel: str | None = None) -> frozenset[str]:
     """:func:`private_network_selectors` of the published ``config.yaml``
-    (none when it is missing or not in the rendered form)."""
+    (none when it is missing, not in the rendered form, or, with
+    ``sentinel``, another render's: that sentinel is then never served)."""
 
     try:
         raw = state.read_private(config_dir(home) / "config.yaml")
-        return private_network_selectors(served_plan_mod.parse_restricted_yaml(raw.decode("utf-8")))
-    except (state.StateError, OSError, served_plan_mod.PlanParseError, UnicodeDecodeError, ValueError, TypeError):
+        document = served_plan_mod.parse_restricted_yaml(raw.decode("utf-8"))
+        if sentinel is not None and render_mod.document_sentinel(document) != sentinel:
+            return frozenset()
+        return private_network_selectors(document)
+    except (state.StateError, OSError, served_plan_mod.PlanParseError, UnicodeDecodeError, ValueError, TypeError,
+            KeyError, IndexError):
         return frozenset()
 
 
@@ -2604,6 +2602,7 @@ def rotate_token(
         outcome = await_sentinel(
             gateway, token, result.sentinel, models_get=models_get, clock=clock, sleep=sleep,
             owner_check=instance_listener(home, own_root, environ, gateway),
+            private_aliases=result.private_aliases,
         )
         if outcome.status != "reloaded":
             message = restart_required() if outcome.status == "down" else outcome.message
@@ -2624,6 +2623,7 @@ def rotate_token(
             outcome = await_sentinel(
                 gateway, token, result.sentinel, models_get=models_get, clock=clock, sleep=sleep,
                 owner_check=instance_listener(home, own_root, environ, gateway),
+                private_aliases=result.private_aliases,
             )
             if outcome.status != "reloaded":
                 raise ProxyError("gateway reload still unverified; rotation paused (patched watcher required)")
@@ -2866,10 +2866,27 @@ def _plan_alias_prune(
         )
     current = {base for line in snapshot.layer.lines.values()
                for base in operator_mod.line_aliases(line.core_entry)}
+    # Captures of a declaration a closed gate refuses carry its line keys:
+    # kept and never named (counted per file).
+    import dataclasses
+
+    gated = operator_mod.gated_file_ids(snapshot.layer)
+    hidden: dict[str, int] = {}
+    for capture in captures.values():
+        if capture["provider"] in gated:
+            hidden[capture["provider"]] = hidden.get(capture["provider"], 0) + 1
+    ledger = snapshot.ledger
+    if hidden and ledger is not None:
+        ledger = dataclasses.replace(ledger, aliases={alias: capture for alias, capture in ledger.aliases.items()
+                                                      if capture["provider"] not in gated})
+        wanted_captures = frozenset(wanted_captures & set(ledger.aliases))
+    for pid, count in sorted(hidden.items()):
+        lines.append(f"kept: {count} captured alias(es) of {operator_mod.file_label(pid)} — not named while a "
+                     "closed gate refuses that declaration")
     capture_plan = None
     if captures and (names is None or wanted_captures):
         capture_plan = operator_mod.plan_capture_prune(
-            snapshot.ledger, current, scan.refs, scan.live, wanted_captures or None,
+            ledger, current, scan.refs, scan.live, wanted_captures or None,
         )
     refusals = [p.refusal for p in (continuity_plan, capture_plan) if p is not None and p.refusal]
     if refusals:
@@ -3102,6 +3119,7 @@ def prune_aliases(
             gateway, gateway_api_keys(home)[-1], result.sentinel,
             models_get=models_get, clock=clock, sleep=sleep,
             owner_check=instance_listener(home, state_root, environ, gateway),
+            private_aliases=result.private_aliases,
         )
         lines.append(outcome.message)
         return PruneOutcome(0, tuple(lines))
@@ -3734,6 +3752,7 @@ def cmd_init(
             gateway, gateway_api_keys(home)[-1], result.sentinel,
             models_get=models_get, clock=clock, sleep=sleep,
             owner_check=instance_listener(home, state_root, environ, gateway),
+            private_aliases=result.private_aliases,
         )
         status = outcome.status
         print(outcome.message, file=sys.stdout if status in ("reloaded", "down") else sys.stderr)

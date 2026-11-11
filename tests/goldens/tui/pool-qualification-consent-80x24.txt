@@ -21,4 +21,4 @@
   Caps: 120 s and 256 KiB per request; context 300 s and 256 KiB.
   No retries. max_tokens is sent but is not a reliable cost bound.
   ↓ 2 more
-  y proceed · Esc cancel
+  y proceed · N decline · Enter decline · Esc cancel

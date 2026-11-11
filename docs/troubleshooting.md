@@ -2,10 +2,11 @@
 
 Start with `charmer doctor`. It reports **Ready**, **Attention**
 (a warning to assess, with a remedy) or **BLOCKED** (something is
-broken, and what). Plain `doctor` is read-only; repair, pruning and token
-rotation require their explicit options. Use `charmer doctor --json` for a
-machine-readable, read-only report. Neither plain doctor nor opening **H** fetches
-release metadata.
+broken, and what). Plain `charmer doctor` makes no repairs and fetches no
+release metadata; repair, pruning and token rotation require their explicit
+options, and launcher initialization may refresh shared helpers. Use
+`charmer doctor --json` for a report that does not write local state
+(machine-readable). Opening **H** fetches no release metadata either.
 The tables below go from a symptom to the doctor finding, the safest fix
 and how to check it worked. [CHEATSHEET.md](CHEATSHEET.md) has the short
 version.

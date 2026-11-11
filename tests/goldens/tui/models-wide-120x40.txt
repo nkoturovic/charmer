@@ -37,4 +37,4 @@
 
 
 
-  Enter inspect · V details · ? help · Esc back
+  Enter inspect · A add model · V details · ? help · Esc back

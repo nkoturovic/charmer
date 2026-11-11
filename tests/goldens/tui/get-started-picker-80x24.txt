@@ -16,7 +16,7 @@
     Meta                                             family meta
       Meta API key — no models yet                   key missing
     Qwen                                             family alibaba
-      Qwen API key                                   key missing
+  ↓ 3 more
   ─
   Opens a sign-in in your browser, or prints an address to open on any device.
   Personal use of your own account only; you confirm that first.

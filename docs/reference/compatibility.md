@@ -36,7 +36,10 @@ never moved, linked or changed.
   copy of the right size can look ready there; doctor and every launch
   check the full hash. This difference is deliberate.
 - There is no way to run a client that does not match the pin.
-- A copy a running session uses is locked; setup and updates keep it.
+- A copy in use (locked by a running session, or seen executing in a
+  running process) is kept by setup and updates, which name up to eight
+  processes seen using it by PID and program name; `charmer doctor -v`
+  shows the same detail.
 
 ### Newer Claude Code versions
 

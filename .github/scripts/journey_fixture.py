@@ -759,7 +759,7 @@ def native_checks(platform: str, scratch: Path, session_runtime: str | None = No
         same = _until(lambda: identity(child.pid, program), lambda found: found == (child.pid, True))
         reused = identity(child.pid, other_program)
         walked = ancestors(child.pid)
-        paths_seen = darwin_process.executable_paths() if platform == "darwin" else None
+        rows_seen = darwin_process.executable_processes() if platform == "darwin" else None
     stopped = _until(lambda: identity(child.pid, program), lambda found: found == (child.pid, False))
     if (same, reused, stopped) != ((child.pid, True), (None, None), (child.pid, False)):
         raise CheckError(f"process identity: the recorded program {same}, another program {reused}, after exit "
@@ -769,8 +769,9 @@ def native_checks(platform: str, scratch: Path, session_runtime: str | None = No
         raise CheckError(f"the parent walk from {child.pid} does not reach this process ({os.getpid()})")
     lines.append("parent walk: ok")
     if platform == "darwin":
-        if paths_seen is None or not any(os.path.realpath(path) == program for path in paths_seen):
-            raise CheckError(f"ps does not report the executable path {program} of a running process")
+        if rows_seen is None or not any(pid == child.pid and os.path.realpath(path) == program
+                                        for pid, path in rows_seen):
+            raise CheckError(f"ps does not report the executable path {program} of the running process {child.pid}")
         lines.append("executable paths: ok (ps reports the program's path)")
 
     # The mount table (macOS: mount's output; Linux: mountinfo) names the

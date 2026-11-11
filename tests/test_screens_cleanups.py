@@ -15,9 +15,9 @@ from test_tui import FakeWindow
 
 class ShortcutLabelsTests(unittest.TestCase):
     def test_both_cards_advertise_the_findings_gateway_key(self) -> None:
-        from charmer.cli import text
+        from charmer.cli.screens import launch_sessions
 
-        for help_text in (text.QUICK_HELP, text.RESUME_QUICK_HELP):
+        for help_text in (launch_sessions.CARD_HELP, launch_sessions.RESUME_HELP):
             with self.subTest(help_text=help_text.splitlines()[0]):
                 self.assertIn("W the gateway's actions", help_text)
                 self.assertNotIn("G the gateway's actions", help_text)
@@ -25,14 +25,16 @@ class ShortcutLabelsTests(unittest.TestCase):
     def test_details_and_named_binding_aliases_are_silent(self) -> None:
         from charmer.cli import text
 
-        for bar in (text.PROVIDERS_KEYBAR_KEY_MISSING, text.PROVIDERS_KEYBAR_ACCOUNT,
-                    text.PROVIDERS_KEYBAR_ACCOUNT_KEY):
-            self.assertIn(("V", "details"), bar)
-            self.assertNotIn(("Q", "details"), bar)
-        self.assertIn(("B", "named bindings"), tui.PROFILE_EDITOR_KEYBAR)
-        self.assertNotIn(("N", "named bindings"), tui.PROFILE_EDITOR_KEYBAR)
+        from charmer.cli.screens import actions, providers
+
+        bar = tui.KeyBar(actions.bar("providers", [row.id for row in actions.ACTIONS["providers"]])).bindings
+        self.assertIn(("V", "details"), bar)
+        self.assertNotIn(("Q", "details"), bar)
+        editor_bar = tui.KeyBar(tui.PROFILE_EDITOR_KEYBAR).bindings
+        self.assertIn(("B", "named bindings"), editor_bar)
+        self.assertNotIn(("N", "named bindings"), editor_bar)
         self.assertIn("B edits named bindings", tui.PROFILE_EDITOR_HELP)
-        self.assertIn("V shows details", text.PROVIDERS_HELP)
+        self.assertIn("V shows details", providers.HELP)
 
 
 class PresentationTests(unittest.TestCase):
@@ -69,6 +71,6 @@ class PresentationTests(unittest.TestCase):
         self.assertIn("with a key, a separately confirmed", paragraph)
         self.assertTrue(paragraph.endswith("account-only rows."))
 
-    def test_not_connected_card_calls_h_checks(self) -> None:
-        self.assertIn(("H", "checks"), views.CARD_KEYS_NOT_CONNECTED)
-        self.assertNotIn(("H", "doctor"), views.CARD_KEYS_NOT_CONNECTED)
+    def test_not_connected_card_calls_h_doctor(self) -> None:
+        self.assertIn(("H", "doctor"), views.CARD_KEYS_NOT_CONNECTED)
+        self.assertNotIn(("H", "checks"), views.CARD_KEYS_NOT_CONNECTED)

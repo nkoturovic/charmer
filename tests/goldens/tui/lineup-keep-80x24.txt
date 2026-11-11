@@ -2,7 +2,7 @@
   change lineup — "api design" (unknown)
   ─────────────────────────────────────────────────────────────────────────────
   from  balanced (gen 1)
-  to    [balanced ▾]   per-agent edit ▸   direct (no agents)   keep current
+  to    [balanced ▾]   per-agent ▸   direct   keep   fallback [anthropic ▾]
   plan  Preview: Keep the current lineup — discard the pending change
         follow: on (profile balanced) → off
         pending change (native agents: explore replace → native): dropped

@@ -29,6 +29,7 @@ from charmer import catalog, cli, custom, profile, proxy, settings, state, stric
 
 import _tui_fixture as fx
 import charmer.cli.text as cli_text
+import charmer.cli.screens.settings as screens_settings
 import _tui_render
 from _catalog import FIXTURE_ROOT
 from _layout import REPO_ROOT
@@ -232,10 +233,12 @@ class ModelsScreenTests(_ScreenCase):
         self.assertIn("new (not admitted — Enter adds an optional badge):", heading)
         self.assertNotIn("New · Off", heading)
         self.assertIn("admission: not admitted (optional)", heading)
-        self.assertIn("Enter admit badge · Q diagnostics", heading)
+        self.assertIn("Enter admit badge · A add model", heading)
+        for binding in ("Q diagnostics", "E edit", "X remove"):
+            self.assertNotIn(binding, heading)
         self.assertTrue(any(f"Admit {key}?" in f for f in win.frames))
         self.assertTrue(any(f"admitted {key} — badge only" in f for f in win.frames))
-        self.assertTrue(any("Enter revoke badge · Q diagnostics" in f for f in win.frames))
+        self.assertTrue(any("Enter revoke badge · A add model" in f for f in win.frames))
         self.assertTrue(any(f"Revoke {key}?" in f for f in win.frames))
         self.assertEqual(screen.message, f"revoked {key} — badge only; use and qualification unchanged")
         self.assertEqual(self.settings_doc(runtime).get("admitted_lines"), [])
@@ -510,12 +513,12 @@ class ProvidersScreenTests(_ScreenCase):
         self.assertEqual(present_row.details[0], "API key KEYED_API_KEY is set — K replaces it, X removes it")
         self.assertEqual(missing_row.details[0], "set KEYED_API_KEY (masked) with K")
 
-    def test_w_joins_the_bar_only_while_the_gateway_is_down(self) -> None:
-        self.assertNotIn(cli_text.PROVIDERS_GATEWAY_BINDING, self.screen()._keybar_bindings())
-        down = self.screen(self.make_runtime(self.tmp / "down-w", gateway_down=True))
-        bindings = down._keybar_bindings()
-        self.assertIn(cli_text.PROVIDERS_GATEWAY_BINDING, bindings)
-        self.assertEqual([key for key, _label in bindings][-2:], ["?", "Esc"])
+    def test_w_is_primary_while_the_gateway_is_down_and_housekeeping_when_up(self) -> None:
+        up = self.screen()._keybar()
+        self.assertEqual(up.ranks[up.bindings.index(("W", "gateway"))], 3)
+        down = self.screen(self.make_runtime(self.tmp / "down-w", gateway_down=True))._keybar()
+        self.assertEqual(down.ranks[down.bindings.index(("W", "gateway"))], 1)
+        self.assertEqual([key for key, _label in down.bindings][-2:], ["?", "Esc"])
 
     def test_a_provider_with_no_model_line_never_asks_for_an_apply(self) -> None:
         from types import SimpleNamespace
@@ -536,7 +539,9 @@ class ProvidersScreenTests(_ScreenCase):
         dialog.assert_called_once()
         self.assertIs(dialog.call_args.args[0], self.runtime)
         self.assertEqual(screen.message, "gateway ready: fixture")
-        self.assertIn("W opens the local gateway", cli.PROVIDERS_HELP)
+        from charmer.cli.screens import providers
+
+        self.assertIn("W opens the local gateway", providers.HELP)
 
     def test_gateway_down_banner_names_the_service_hint(self) -> None:
         runtime = self.make_runtime(self.tmp / "down", gateway_down=True)
@@ -566,9 +571,11 @@ class ProvidersScreenTests(_ScreenCase):
         screen = self.screen(journal=lambda: calls.append(1) or None)
         win = self.run_screen(screen, ["?", ESC, "r", ESC])
         modal = next(f for f in win.frames if "providers — help" in f)
-        self.assertIn(" ".join(cli.PROVIDERS_HELP.split()[:6]), modal)
-        self.assertIn("Enter does the main thing for the selected provider",
-                      " ".join(line.strip(" |") for line in modal.splitlines()))
+        from charmer.cli.screens import actions, providers
+
+        self.assertIn(" ".join(providers.HELP.split()[:6]), modal)
+        self.assertIn(actions.action("providers.primary").help,
+                      " ".join(line.strip(" |") for line in modal.splitlines()).replace("  ", " "))
         self.assertEqual(screen.message, "refreshed.")
         self.assertEqual(len(calls), 2, "the journal is read on open and once per R")
 
@@ -583,7 +590,9 @@ class ProvidersScreenTests(_ScreenCase):
         for name in ("_add_provider", "_add_models", "_prompt", "_cancelled"):
             self.assertFalse(hasattr(cli._ProvidersScreen, name), name)
         self.assertFalse(hasattr(cli, "_registry_id_for_wire"))
-        self.assertIn("N adds your own endpoint", " ".join(cli.PROVIDERS_HELP.split()))
+        from charmer.cli.screens import providers
+
+        self.assertIn("N adds your own endpoint", providers.HELP)
 
     def test_floor(self) -> None:
         self.assertFloor(self.screen)
@@ -851,13 +860,17 @@ class SettingsScreenTests(_ScreenCase):
 
     def test_footer_follows_the_selected_row_with_the_handler_predicates(self) -> None:
         # The footer advertises exactly what the handlers accept.
-        edit = tuple(cli_text.SETTINGS_KEYBAR)
+        navigation = (("G", "providers"), ("M", "models"), ("?", "help"), ("Esc", "back"))
+        edit = (("Enter", "edit"), ("R", "reset to default"))
         cases = {
-            settings.COMPACTION_PERCENT_KEY: edit, settings.FEEDBACK_DRAFTS_KEY: edit,
-            settings.REVIEW_ROUND_CAP_KEY: edit, "providers": cli_text.SETTINGS_KEYBAR_OPEN,
-            "admitted": cli_text.SETTINGS_KEYBAR_OPEN, "token": cli_text.SETTINGS_KEYBAR_ROTATE,
-            "ceiling": edit,
-            "reserve": (("read-only:", cli_text.SETTINGS_READ_ONLY_EVIDENCE), ("?", "help"), ("Esc", "back")),
+            settings.COMPACTION_PERCENT_KEY: (*edit, *navigation),
+            settings.FEEDBACK_DRAFTS_KEY: (*edit, *navigation),
+            settings.REVIEW_ROUND_CAP_KEY: (*edit, ("← →", "rounds"), *navigation),
+            "providers": (("Enter", "open"), *navigation),
+            "admitted": (("Enter", "open"), *navigation),
+            "token": (("Enter", "rotate"), *navigation),
+            "ceiling": (*edit, *navigation),
+            "reserve": (("read-only:", cli_text.SETTINGS_READ_ONLY_EVIDENCE), *navigation),
         }
         for writes in (True, False):
             self.runtime.allow_state_writes = writes
@@ -870,10 +883,10 @@ class SettingsScreenTests(_ScreenCase):
                     row = screen.selected_row
                     advertised = ("R", "reset to default") in bindings
                     self.assertEqual(advertised, screen._can_edit(row))
-                    if writes or expected in (cli_text.SETTINGS_KEYBAR_OPEN, cases["reserve"]):
+                    if writes or key in ("providers", "admitted", "reserve"):
                         self.assertEqual(bindings, expected)
                     else:
-                        self.assertEqual(bindings[0], ("read-only:", cli_text.SETTINGS_READ_ONLY_COMMAND))
+                        self.assertEqual(bindings, (("read-only:", cli_text.SETTINGS_READ_ONLY_COMMAND), *navigation))
         self.runtime.allow_state_writes = True
 
     def test_reset_on_a_read_only_row(self) -> None:
@@ -982,12 +995,13 @@ class SettingsScreenTests(_ScreenCase):
         self.assertEqual(opened, ["providers", "models", "providers", "models"])
 
     def test_help(self) -> None:
-        win = self.run_screen(self.screen(), ["?", ESC, ESC])
-        modal = next(f for f in win.frames if "settings — help" in f)
-        self.assertIn(" ".join(cli.SETTINGS_HELP.split()[:6]), modal)
-        # The modal wraps its text; read it as one paragraph.
-        flat = " ".join(" ".join(line.strip().strip("|").split()) for line in modal.splitlines())
-        self.assertIn("Provider keys are never", flat)
+        win = self.run_screen(self.screen(), ["?", END, ESC, ESC])
+        modals = [f for f in win.frames if "settings — help" in f]
+        # The key list comes first; End reaches the wrapped conceptual notes.
+        flat = [" ".join(" ".join(line.strip().strip("|").split()) for line in modal.splitlines())
+                for modal in modals]
+        self.assertIn(screens_settings.HELP.splitlines()[0], flat[0])
+        self.assertIn("Provider keys are never", flat[-1])
 
     def test_floor(self) -> None:
         self.assertFloor(self.screen)
@@ -1080,12 +1094,15 @@ class ProviderQuotaScreenTests(_ScreenCase):
                 continue
             with self.subTest(provider=row.id):
                 screen.selected = index
+                # Programmatic selection does not press the key that clears a result.
+                screen.message = ""
                 text = self.run_screen(screen, [ESC]).text()
                 self.assertEqual(row.cells[2], "not signed in")
                 self.assertIn(views.SIGNIN_GUIDANCE, text)
                 self.assertIn("quota off — no management key", text)
                 self.assertNotIn("quota no-key", text)
                 screen._toggle()
+                screen.message = ""  # Inspect the selected row, not the toggle result.
                 text = self.run_screen(screen, [ESC]).text()
                 self.assertIn("off in Settings: new sessions exclude it; running sessions keep their routes", text)
                 screen._toggle()
@@ -1141,7 +1158,9 @@ class OnboardingHelpTextTests(unittest.TestCase):
         self.assertNotIn("custom models (direct only) follow", text)
 
     def test_providers_help_states_case_and_the_guarded_key_import(self) -> None:
-        text = " ".join(cli_text.PROVIDERS_HELP.split())
+        from charmer.cli.screens import providers
+
+        text = " ".join(providers.HELP.split())
         self.assertNotIn("case-sensitive", text)
         self.assertNotIn("(charmer providers approve ID)", " ".join(cli_text.MODELS_HELP.split()))
         self.assertIn("K sets or replaces an API key (typed masked; saving reloads the gateway; nothing is sent "

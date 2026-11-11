@@ -43,6 +43,8 @@ SECTION_KEY = "claude-api-key"
 # behaviour switches and each model's capability metadata (never the key).
 SECTION_CODEX_KEY = "codex-api-key"
 SECTION_COMPAT = "openai-compatibility"
+# The compat entry block of a provider on a private network (render's key).
+PRIVATE_NETWORK_KEY = "private-network"
 SENTINEL_NAME = "charmer-render"
 SENTINEL_PREFIX = "charmer-render-"
 SENTINEL_BASE_URL = "http://127.0.0.1:9/v1"
@@ -438,7 +440,14 @@ def routes_from_document(document: Mapping[str, Any], *, strict: bool = False) -
         name = str(section.get("name"))
         if _is_reload_sentinel(section):
             continue
-        route = f"{name} {normalize_base_url(section.get('base-url'))}"
+        private = section.get(PRIVATE_NETWORK_KEY)
+        if isinstance(private, Mapping):
+            # A provider on a private network: its class is part of where
+            # the selector goes (another class is another route).
+            route = (f"{name} {normalize_base_url(private.get('base-url'))} "
+                     f"private network {private.get('class')}")
+        else:
+            route = f"{name} {normalize_base_url(section.get('base-url'))}"
         # Auth mode and header NAMES only (key and header values
         # never enter an identity, a plan text or a digest).
         keyed = "api-key-entries" in section or "api-key" in section

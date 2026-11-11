@@ -341,6 +341,103 @@ class UnreadableDataTests(PreflightCase):
                          ["Could not check what 2.2.1 can read (the retained release carries no packaged data)."])
 
 
+NET_240 = DATA / "2.4.0"
+NET_ID, NET_KEY = "lanbox", "custom-lanbox-chat"
+NET_SESSION = "77777777-7777-4777-8777-777777777777"
+NET_DECLARATION = {
+    "version": 1,
+    "provider": {"display": "LAN box", "kind": "openai-compatible-lan", "base_url": "http://box.example.test:8010/v1",
+                 "auth": {"kind": "none"}, "independence_family": "boxfam", "network": "tailnet"},
+    "lines": {NET_KEY: {"wire_model": "lanbox-chat-1", "display": "LAN box chat", "efforts": ["high"],
+                        "default_effort": "high", "context": {"declared_tokens": 200000, "source": "operator"}}}}
+NET_PROFILE = {"version": 2, "name": "netlead", "description": "a profile on the private-network line",
+               "lead": {"model": NET_KEY, "effort": "high"}, "agents": {},
+               "native_agents": {"explore": "native", "general_purpose": "on", "plan": "native"},
+               "workflows": "native"}
+NET_GATED = ("providers.d/lanbox.json: provider.network: private-network routes are unavailable in this build — "
+             "before going back to a release without them: charmer providers rm lanbox (it names any of its lines "
+             "to remove first); add the provider and its lines again after returning")
+LIMITS_240 = "Checked with 2.5.0's rules against 2.4.0's data; 2.4.0 may still refuse what these rules accept."
+
+
+class PrivateNetworkRollbackTests(PreflightCase):
+    """2.5.0 → 2.4.0 with a provider declared on a private network: the
+    gate (2.4.0's data carries no ``audits.private_network``) refuses the
+    declaration, so its lines, the profiles on them and the sessions on its
+    selectors are findings; against 2.5.0's data there is nothing."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        # This release's rules and data with the private-network gate open.
+        documents = rp.read_target(RESOURCES_ROOT)
+        gateway = json.loads(documents["catalog/gateway.json"])
+        gateway["audits"][operator_mod.PRIVATE_NETWORK_AUDIT] = True
+        documents["catalog/gateway.json"] = strict_json.pretty_file_bytes(gateway)
+        self.current_root = rp.compose_root(RESOURCES_ROOT, documents, self.root / "current-250")
+        self.data_250 = self.root / "data-250"
+        self.data_250.mkdir(mode=0o700)
+        for relative, raw in documents.items():
+            target = self.data_250 / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(raw)
+
+    def check_net(self, target_root: Path, target: str) -> rp.Report:
+        roots = [self.root / "home", self.root / "config", self.root / "state", self.root / "secrets"]
+        before, scratch = tree(*roots), scratch_roots()
+        report = rp.check(environ=self.env, home=self.home, state_root=self.state_root,
+                          current_root=self.current_root, target_root=target_root, current="2.5.0", target=target)
+        self.assertEqual(tree(*roots), before)
+        self.assertEqual(scratch_roots(), scratch)
+        return report
+
+    def declare_network(self) -> str:
+        """The declaration, a profile leading on its line and a live session
+        on its selector; returns that selector."""
+
+        write_json(operator_mod.providers_dir(self.env) / f"{NET_ID}.json", NET_DECLARATION)
+        save_profile(self.env, self.current_root, NET_PROFILE)
+        served = self.served(self.current_root)
+        selector = next(alias for alias in sorted(served) if alias.startswith(NET_KEY))
+        session(self.state_root, NET_SESSION, f"{selector}[1m]", {})
+        return selector
+
+    def test_a_network_declaration_against_240_lists_it_its_profiles_and_its_sessions(self) -> None:
+        selector = self.declare_network()
+        report = self.check_net(NET_240, "2.4.0")
+        self.assertEqual([finding.group for finding in report.findings], [rp.DECLARATIONS, rp.PROFILES, rp.SESSIONS])
+        lines = report.lines()
+        self.assertEqual(lines[:2], [f"Declarations 2.4.0 cannot read ({ANCHOR}):",
+                                     f"  - {NET_GATED} — charmer providers edit lanbox"])
+        self.assertEqual(lines[2], f"Profiles and named bindings 2.4.0 cannot evaluate ({ANCHOR}):")
+        self.assertEqual(lines[3], f"  - profile netlead: lead.model: unknown model '{NET_KEY}' — "
+                                   "charmer profile edit netlead")
+        self.assertEqual(lines[4:6], [
+            f"Running sessions on selectors 2.4.0 does not serve ({ANCHOR}):",
+            f"  - session 77777777 uses {selector}, which 2.4.0 does not serve — exit it first (end the session; "
+            f"after the rollback, charmer -r {NET_SESSION} resumes it on 2.4.0's models)"])
+        self.assertEqual(lines[6:], ["Also reported by 2.5.0: 0, unchanged by the rollback.", LIMITS_240])
+        self.assertIsNone(report.unreadable)
+
+    def test_the_same_state_against_250_finds_nothing(self) -> None:
+        self.declare_network()
+        report = self.check_net(self.data_250, "2.5.0")
+        self.assertEqual(report.findings, ())
+        self.assertEqual(report.lines()[0], "Nothing found that 2.5.0 cannot read.")
+
+    def test_a_declaration_both_releases_refuse_is_counted_never_listed(self) -> None:
+        broken = json.loads(json.dumps(NET_DECLARATION))
+        broken["provider"]["kind"] = "anthropic-compatible"
+        broken["provider"]["auth"] = {"kind": "header", "header": "x-api-key", "secret_ref": "env:LANBOX_API_KEY"}
+        write_json(operator_mod.providers_dir(self.env) / f"{NET_ID}.json", broken)
+        current = rp._view(self.env, self.home, self.state_root, self.current_root, {})
+        self.assertIn((f"providers.d/{NET_ID}.json", None), current.declarations)
+        report = self.check_net(NET_240, "2.4.0")
+        self.assertEqual(report.findings, ())
+        self.assertEqual(report.unchanged, 1)
+        self.assertEqual(report.lines(), ["Nothing found that 2.4.0 cannot read.",
+                                          "Also reported by 2.5.0: 1, unchanged by the rollback.", LIMITS_240])
+
+
 class JourneyTests(test_release_update.JourneyTestCase):
     """The question: a finding refuses --yes and makes No the default; only
     unreadable data falls through to the question as it was."""

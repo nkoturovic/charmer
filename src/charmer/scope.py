@@ -2599,15 +2599,16 @@ def skill_policy_drift(live: Path, plan: ScopePlan, drifted: Sequence[str]) -> b
     (``live_drift`` lines) is the managed skill policy of another release —
     lazy state that resume or ``doctor --repair`` resolves.
 
-    ``settings.json`` may differ from ``plan`` only by the named skill
-    denies, all of them, a previous release's exact set
-    (:data:`PREVIOUS_MANAGED_SKILL_DENIES`) or none (a scope without the
-    deny, or one with it under a rollback compile), and by the mod-folder
-    deny, all of it or none; the ``/cm`` skill may hold a previous release's exact
-    bytes. A ``permissions.defaultMode`` or release-compiled
-    ``subagentStatusLine`` difference alongside is lazy too. A partial deny
-    set, any other permissions change or any other file is not: doctor
-    keeps it BLOCK. Read-only."""
+    ``settings.json`` may differ from ``plan`` only by the named skill and
+    mod-folder denies, in a combination one release compiled: none (a scope
+    without the deny, or one with it under a rollback compile), a previous
+    release's exact skill set (:data:`PREVIOUS_MANAGED_SKILL_DENIES`) without
+    the mod-folder deny, or this release's full set with it; the ``/cm``
+    skill may hold a previous release's exact bytes. A
+    ``permissions.defaultMode`` or release-compiled ``subagentStatusLine``
+    difference alongside is lazy too. A partial deny set (either
+    mod-authoring deny without the other among them), any other permissions
+    change or any other file is not: doctor keeps it BLOCK. Read-only."""
 
     if not drifted or any(line not in _SKILL_POLICY_DRIFT_LINES for line in drifted):
         return False
@@ -2624,8 +2625,13 @@ def skill_policy_drift(live: Path, plan: ScopePlan, drifted: Sequence[str]) -> b
             return False
         skills = [entry for entry in on_disk[1] if entry not in MOD_FOLDER_DENIES]
         folder = [entry for entry in on_disk[1] if entry in MOD_FOLDER_DENIES]
-        released = ([], list(MANAGED_SKILL_DENIES), *(list(denies) for denies in PREVIOUS_MANAGED_SKILL_DENIES))
-        if skills not in released or folder not in ([], list(MOD_FOLDER_DENIES)):
+        # Each release compiled one whole combination, never its parts: no
+        # named deny, an earlier release's skill denies without the
+        # mod-folder deny, or this release's (plugin-authoring among them)
+        # with it. Either mod-authoring deny without the other is damage.
+        released = (([], []), (list(MANAGED_SKILL_DENIES), list(MOD_FOLDER_DENIES)),
+                    *((list(denies), []) for denies in PREVIOUS_MANAGED_SKILL_DENIES))
+        if (skills, folder) not in released:
             return False
         if (on_disk[1] == expected[1]
                 and f"{SKILL_RELPATH} content differs" not in drifted):

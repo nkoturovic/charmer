@@ -138,6 +138,8 @@ T_SESSIONS = "tests.test_screens_sessions"
 T_DISPATCH = "tests.test_tui_dispatch"
 T_FINDINGS = "tests.test_screens_findings"
 T_WINDOW = "tests.test_agent_context"
+T_NETWORK = "tests.test_network_providers"
+_NETWORK_OPEN = "this build's private-network routes are open"
 
 OPERATIONS: tuple[Op, ...] = (
     # ------------------------------------------------------------ launch
@@ -398,6 +400,19 @@ OPERATIONS: tuple[Op, ...] = (
                "a reviewed preset whose vendor documents another address",
                f"{T_PROVIDERS}.PresetTests.test_another_documented_address_is_declared_and_approved")),
        confirm="consent naming every request", stream="stdout", exit="user"),
+    Op("providers.private-network", "providers",
+       "declare an OpenAI-compatible provider on a private network (a key may use plain HTTP there; the gateway "
+       "connects only to addresses in that network)",
+       cli=("providers add --network", "providers template --network"),
+       tui=(_t("providers.new", "card → G → N → a server on your network with an API key", _NETWORK_OPEN,
+               f"{T_NETWORK}.NetworkTuiTests.test_n_adds_a_keyed_server_on_the_tailnet"),
+            _t("get-started.add-provider", "card → W → A → a server on your network with an API key", _NETWORK_OPEN,
+               f"{T_NETWORK}.NetworkTuiTests.test_get_started_a_adds_a_keyed_server_on_the_lan"),
+            _t("providers.new", "card → G → N → a server on your network (no key) → its network", _NETWORK_OPEN,
+               f"{T_NETWORK}.NetworkTuiTests.test_n_adds_a_keyless_server_on_the_tailnet"),
+            _t("providers.edit", "card → G → E → its network", "a provider you added, OpenAI-compatible",
+               f"{T_NETWORK}.NetworkTuiTests.test_e_edits_the_network_and_the_route_is_approved_again")),
+       confirm="consent naming every request", stream="stdout", exit="user"),
     Op("providers.declare-only", "providers", "write an inert declaration without approving its route",
        audience="scripting", cli=("providers add --declare-only",),
        absent={"tui": "an unapproved declaration is a review step for scripts; the TUI declares and "
@@ -548,7 +563,9 @@ OPERATIONS: tuple[Op, ...] = (
        stream="stdout", exit="user"),
     Op("models.declare", "models", "declare a model of yours (New · not admitted)", cli=("models add",),
        tui=(_t("providers.add-models", "card → G → A → enter a model by hand", "a provider row",
-               f"{T_DISPATCH}.ProvidersDispatchTests.test_a_offers_the_add_models_flow"),),
+               f"{T_DISPATCH}.ProvidersDispatchTests.test_a_offers_the_add_models_flow"),
+            _t("models.add", "card → M → A", "choose a provider",
+               "tests.test_tui_model_add.ModelAddTests.test_a_chooses_a_merged_provider_and_runs_the_existing_flow")),
        stream="stdout", exit="user"),
     Op("models.declare-candidate", "models", "declare a candidate, its form prefilled",
        cli=("discover --add",),
@@ -648,7 +665,9 @@ OPERATIONS: tuple[Op, ...] = (
             _t("binding-picker.effort", "profile editor → Enter on an agent → ← →", "a model with efforts",
                f"{T_EDITOR}.PickerTests.test_effort_cycling_stops_at_the_ends"),
             _t("editor.save", "profile editor → Ctrl-S", "the editor",
-               f"{T_EDITOR}.EditorSaveTests.test_plain_save_writes_the_profile")),
+               f"{T_EDITOR}.EditorSaveTests.test_plain_save_writes_the_profile"),
+            _t("propagation.apply", "profile editor → save → A", "running followers are offered",
+               f"{T_EDITOR}.PropagationTests.test_a_applies_live_through_on_saved")),
        stream="terminal", exit="user"),
     Op("profiles.review-routing", "profiles", "preview where reviews route in a profile",
        cli=("profile show",),
@@ -924,7 +943,9 @@ OPERATIONS: tuple[Op, ...] = (
     Op("settings.edit", "settings", "edit a setting (applies at the next launch or resume)",
        absent={"cli": SETTINGS_CLI},
        tui=(_t("settings.edit", "card → O → Enter", "an editable row",
-               f"{T_CATALOG}.SettingsScreenTests.test_compaction_edit_recomputes_the_effective_row"),)),
+               f"{T_CATALOG}.SettingsScreenTests.test_compaction_edit_recomputes_the_effective_row"),
+            _t("settings.rounds", "card → O → review rounds → ← →", "the writable review-rounds row",
+               f"{T_CATALOG}.SettingsScreenTests.test_review_rounds_arrows_and_reset"))),
     Op("settings.reset", "settings", "reset a setting to its default", absent={"cli": SETTINGS_CLI},
        tui=(_t("settings.reset", "card → O → R", "a row with a default",
                f"{T_CATALOG}.SettingsScreenTests.test_review_rounds_arrows_and_reset"),),
@@ -1187,8 +1208,10 @@ OPTION_ARGUMENTS: Mapping[str, str] = {
     "providers add --listing-auth": _DECLARED_PROVIDER + "model list authentication",
     "providers add --listing-shape": _DECLARED_PROVIDER + "model list shape",
     "providers add --listing-url": _DECLARED_PROVIDER + "model list URL",
+    "providers add --network": _DECLARED_PROVIDER + "private network",
     "providers add --secret-ref": _DECLARED_PROVIDER + "key reference (env:NAME)",
     "providers template --kind": "the kind of provider the template is for",
+    "providers template --network": "the private network the template's provider is on",
     "restore-2x --assume-dead": "sessions the restore treats as ended, recording their end",
     "restore-2x --not-running": "sessions the restore treats as exited",
     "session-event --hook-protocol": "the protocol of the lifecycle hook that reports the event",
@@ -1213,6 +1236,28 @@ TUI_NAVIGATION: Mapping[str, str] = {
     "get-started.profiles": "open Profiles",
     "direct.providers": "open Providers",
     "providers.refresh": "read the gateway again",
+    "gateway.act": "open the selected gateway action",
+    "settings.providers": "open Providers",
+    "settings.models": "open Models",
+    "lineup-per-agent.pick": "choose an agent model for the dialog's preview",
+    "lineup-per-agent.unset": "preview unsetting an agent; the dialog applies it",
+    "propagation.later": "show the next-resume report without applying live",
+    "provider-picker.connect": "choose a connection flow; it confirms before writing",
+    "editor.raw-json": "edit the unsaved draft as JSON; saving is a separate action",
+    "form.change": "change a draft field or open its picker",
+    "form.apply": "apply fields to the unsaved profile draft",
+    "form.text-help": "show form help while typing",
+    "form.cancel": "discard this form's draft changes",
+    "native-form.choose": "choose a native-agent value in the unsaved draft",
+    "native-form.apply": "apply choices to the unsaved profile draft",
+    "native-form.cancel": "discard this form's draft changes",
+    "transition.confirm": "open the exited-process confirmation",
+    "transition.cancel": "leave without confirming a transition",
+    "onboarding-form.next": "accept the draft field and continue to the preview",
+    "onboarding-form.previous": "return to the previous field",
+    "onboarding-form.choose": "choose a draft field value",
+    "onboarding-form.text-help": "show form help while typing",
+    "onboarding-form.cancel": "discard the unsaved declaration",
 }
 # Action verbs that are navigation on every screen.
 NAVIGATION_VERBS = frozenset({"help", "back"})

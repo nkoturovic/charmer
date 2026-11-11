@@ -787,8 +787,11 @@ def providers_list_document(runtime: runtime_mod.Runtime) -> dict[str, Any]:
             "models": int(fact.get("models", 0)) if fact is not None else None,
             "served": conn.served if conn is not None else "unknown",
             "route": layer.route_status.get(provider_id) if declared is not None else None,
-            "lines": [{"key": key, "status": line_status(key, ctx, admitted)}
-                      for key in sorted(by_file.get(provider_id, []))],
+            # A declaration a closed trusted gate refuses was never screened
+            # against stored values (metadata only): its line keys are not shown.
+            "lines": [] if _gated(layer, provider_id) else [
+                {"key": key, "status": line_status(key, ctx, admitted)}
+                for key in sorted(by_file.get(provider_id, []))],
             "problems": len(layer.problems_by_file.get(operator_mod.file_label(provider_id), ())),
         })
     legacy = ctx.legacy
@@ -796,6 +799,11 @@ def providers_list_document(runtime: runtime_mod.Runtime) -> dict[str, Any]:
                      if (legacy.get("providers") or legacy.get("models")) and not layer.marker else None)
     return {"schema_version": PROVIDERS_LIST_SCHEMA, "list": "providers", "providers": entries,
             "unavailable": unavailable, "legacy_registry": legacy_counts}
+
+
+def _gated(layer: operator_mod.OperatorLayer, provider_id: str) -> bool:
+    return any(problem.code in operator_mod.GATED_CODES
+               for problem in layer.problems_by_file.get(operator_mod.file_label(provider_id), ()))
 
 
 def _provider_head(entry: Mapping[str, Any], layer: operator_mod.OperatorLayer) -> str:
@@ -1445,9 +1453,9 @@ def edit_target(runtime: runtime_mod.Runtime, provider_id: str) -> bytes | int:
 
 def edited_declaration(previous: bytes, values: Mapping[str, str]) -> bytes:
     """``previous`` with the edit form's answers applied: the display name,
-    the base URL, how the key is sent, the model family and the model list
-    URL (blank removes it). The id, the kind and the key name stay; every
-    other field is kept as it was."""
+    the base URL, how the key is sent, the private network (none removes
+    it), the model family and the model list URL (blank removes it). The id,
+    the kind and the key name stay; every other field is kept as it was."""
 
     document = strict_json.loads(previous)
     block = document["provider"]
@@ -1464,6 +1472,13 @@ def edited_declaration(previous: bytes, values: Mapping[str, str]) -> bytes:
             auth.pop("header", None)
     if "family" in values:
         block["independence_family"] = values["family"].strip() or "unknown"
+    if "network" in values:
+        # Another network is another route: it is approved again before use.
+        network = values["network"].strip()
+        if network in ("", "none"):
+            block.pop("network", None)
+        else:
+            block["network"] = network
     if "listing" in values:
         listing = values["listing"].strip()
         if not listing:
