@@ -1005,6 +1005,25 @@ class DoctorNetworkTests(NetworkCommandCase):
             {"transport": {"kind": "direct-openai", "auth": {"kind": "bearer"}, "base_url": "https://x.example"}}))
         self.assertFalse(readiness.probes_reachability({"transport": {"kind": "oauth-pool", "pool": "claude"}}))
 
+    def test_an_unreachable_private_network_slot_is_not_ready(self) -> None:
+        from types import SimpleNamespace
+
+        from charmer import readiness
+
+        provider = {"transport": {"kind": "direct-openai", "base_url": "http://box.example.test:8010/v1",
+                                  "auth": {"kind": "bearer", "secret_ref": "env:BOX_API_KEY"}, "network": "tailnet"}}
+        binding = SimpleNamespace(provider=KEYED_ID, selector=KEY, key=KEY)
+        text = "not reachable from this network: box.example.test resolves only to addresses outside its network"
+        row = readiness.slot_readiness("lead", binding, {KEYED_ID: provider},
+                                       readiness.Observations(served=frozenset({KEY}),
+                                                              lan={KEYED_ID: ("unreachable", text)}))
+        self.assertEqual(row.state, readiness.BLOCKED)
+        self.assertEqual((row.first.code, row.first.text), ("lan", text))
+        reachable = readiness.slot_readiness("lead", binding, {KEYED_ID: provider},
+                                             readiness.Observations(served=frozenset({KEY}),
+                                                                    lan={KEYED_ID: ("reachable", "")}))
+        self.assertEqual(reachable.state, readiness.READY)
+
     def test_restart_pending_names_private_network_providers(self) -> None:
         from types import SimpleNamespace
 
