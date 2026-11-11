@@ -446,10 +446,15 @@ class S4ScopeSkillTests(_SpikeTestCase):
         self.assertEqual({entry["env_session"] for entry in entries}, {session_id})
         self.assertEqual(sorted(set(responder.acks)), [1, 2, 3, 4, 5, 6, 7, 8, 9])
         self.assertEqual(responder.relays, 2)
-        # disable-model-invocation: the skill is never listed to the model.
+        # disable-model-invocation: the skill is never listed to the model's
+        # own turns (the requests offering tools). From 2.1.322 the client's
+        # tool-less auxiliary request after a typed /cm carries the skill's
+        # description, as it carries the typed command: recorded, not a
+        # listing.
         self.assertFalse(
-            any("desc" in record_.markers_found for record_ in result.requests)
+            any("desc" in record_.markers_found for record_ in result.requests if record_.tool_count)
         )
+        auxiliary = sum(1 for record_ in result.requests if "desc" in record_.markers_found)
         # Design consequence: no body quoting makes the launcher argv exact
         # for every input; the launcher must refuse unless exactly ONE
         # argument follows `--session <id>` (the single-quoted body yields
@@ -468,7 +473,8 @@ class S4ScopeSkillTests(_SpikeTestCase):
             "' or a backtick fails closed; leading ! arrives as \\!; "
             f"launcher calls={len(tails)} multi-arg={split} -> launcher must "
             "refuse unless exactly one arg follows --session <id>; "
-            f"model-relayed Bash prompts on ';' {self.binary_label}"
+            f"model-relayed Bash prompts on ';'; skill description on {auxiliary} tool-less "
+            f"auxiliary request(s), never a tool-offering turn {self.binary_label}"
         )
 
 
