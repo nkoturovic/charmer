@@ -161,6 +161,30 @@ class RegistrySnapshotTests(unittest.TestCase):
                 self.assertEqual((REGISTRY_SNAPSHOT / name).read_bytes(), (source / name).read_bytes())
 
 
+@uses_shipped_catalog
+class KeyedFableRouteTests(unittest.TestCase):
+    def test_no_keyed_claude_compatible_fable_route_is_shipped(self) -> None:
+        # FA5's known limit stays out of the shipped product: the gateway gives
+        # a Fable model on a keyed Claude-compatible route (OpenRouter's
+        # anthropic/claude-fable-5.2, say) upstream's preserved-thinking
+        # binding, so the shipped catalog renders no such route: no line,
+        # retired line or passthrough route of a Claude-compatible key
+        # provider names a Fable wire. An operator's own line may.
+        from _catalog import SHIPPED_ROOT
+
+        bundle = catalog.load_catalog(SHIPPED_ROOT)
+        keyed = {key for key, provider in bundle.providers.items()
+                 if provider["adapter"] == "cliproxy-claude-compatible-v1"}
+        self.assertIn("openrouter", keyed)
+        wires = [(key, line["wire_model"]) for key, line in bundle.lines.items() if line["provider"] in keyed]
+        wires += [(key, entry.get("last_wire", "")) for key, entry in bundle.retired.items()
+                  if entry.get("provider") in keyed]
+        wires += [(key, route["name"]) for key in keyed
+                  for route in bundle.providers[key].get("passthrough_routes", [])]
+        self.assertTrue(wires)
+        self.assertEqual([item for item in wires if "fable" in item[1].lower()], [])
+
+
 class PinnedRegistryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.registry = catalog.load_pinned_registry(REGISTRY_FIXTURE)

@@ -663,8 +663,9 @@ class ContentChunkRouteInventoryTests(unittest.TestCase):
     def test_goldens_are_independent_omission_controls(self):
         import check_gateway_patch_revert as tool
         patch = "cli-proxy-api-openai-content-chunks.patch"
-        self.assertEqual(len(harness.PATCH_ROWS[patch]), 2)
-        self.assertEqual(len(harness.PATCH_CONTROL_ROWS[patch]), 2)
+        self.assertEqual(len(harness.PATCH_ROWS[patch]), len(STREAMED_NONSTANDARD_PARTS))
+        self.assertEqual(len(harness.PATCH_CONTROL_ROWS[patch]), 4)
+        self.assertLessEqual(set(STREAMED_NONSTANDARD_PARTS), set(harness.CONTENT_CHUNK_LEGACY_MESSAGES))
         for control in harness.PATCH_CONTROL_ROWS[patch]:
             self.assertIn(control, tool.test_ids())
             self.assertNotIn(control, harness.PATCH_ROWS[patch])
@@ -724,6 +725,9 @@ class MistralContentChunkTests(_ContentChunkFixture, unittest.TestCase):
         self.check_chunks(False, "MC2")
 
 
+STREAMED_NONSTANDARD_PARTS = ("unknown", "unknown_mixed", "malformed", "malformed_thinking")
+
+
 class ContentChunkGoldenTests(_ContentChunkFixture, unittest.TestCase):
     def check_golden(self, gateway, alias, route, case, stream):
         reply = harness.content_chunk_request(gateway, alias, stream=stream, mode=case)
@@ -745,12 +749,36 @@ class ContentChunkGoldenTests(_ContentChunkFixture, unittest.TestCase):
                         cases += 1
             for case in harness.CONTENT_CHUNK_LEGACY_MESSAGES:
                 for stream in (False, True):
+                    if stream and case in STREAMED_NONSTANDARD_PARTS:
+                        continue  # the patch's own rows below
                     with self.subTest(route=route, case=case, stream=stream):
                         self.check_golden(gateway, alias, route, case, stream)
                         cases += 1
         if self._outcome.success:
             record("MG1", status="passed", cases=cases, byte_identical=True,
                    shapes=list(harness.CONTENT_CHUNK_SHAPES), unknown_chunks="legacy-per-path")
+
+    # The openai-content-chunks patch's own rows: a streamed content array with
+    # an unknown, mixed or malformed part keeps the legacy bytes (the part
+    # shown as written, never dropped or re-read); pristine 8.0.67 drops the
+    # unknown part of a mixed array, sends a numeric text as a string and
+    # emits no block for a malformed thinking part.
+    def check_streamed_legacy(self, case):
+        for route, gateway, alias in self.routes:
+            with self.subTest(route=route):
+                self.check_golden(gateway, alias, route, case, True)
+
+    def test_streamed_unknown_part_keeps_legacy_bytes(self):
+        self.check_streamed_legacy("unknown")
+
+    def test_streamed_mixed_parts_keep_legacy_bytes(self):
+        self.check_streamed_legacy("unknown_mixed")
+
+    def test_streamed_malformed_part_keeps_legacy_bytes(self):
+        self.check_streamed_legacy("malformed")
+
+    def test_streamed_malformed_thinking_keeps_legacy_bytes(self):
+        self.check_streamed_legacy("malformed_thinking")
 
     def test_native_route_bytes(self):
         for alias in ("gwtest-cc-think-a", "gwtest-ccb-x", "gwtest-codex-e-none"):
