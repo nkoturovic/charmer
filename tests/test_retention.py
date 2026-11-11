@@ -414,7 +414,7 @@ class PruneRuleTests(PruneCase):
         self.assertEqual([name for name, _size in plan.remove], ["2.1.200", "2.1.250"])
         self.assertEqual(self.prune_copies(running=..., proc_root=proc).removed, ("2.1.200", "2.1.250"))
 
-    def test_doctor_shows_copies_in_use_and_never_a_process_line(self):
+    def test_doctor_reports_in_use_copies_with_unidentified_holders(self):
         proc = self.home / "proc"
         for pid in ("31", "32", "33", "34", "35", "36", "37"):
             self.fake_process(proc, pid, name="worker")
@@ -431,7 +431,7 @@ class PruneRuleTests(PruneCase):
             lock.release()
         self.assertEqual(info, ["Claude Code copies kept by charmer: 2.1.300 (the current pin), "
                                 "2.1.280 (the previous release's pin), 2.1.200 (in use).",
-                                "Claude Code 2.1.200 kept: the holder could not be identified."])
+                                "Claude Code copies kept: 2.1.200 — the holder could not be identified."])
         self.assertEqual(attention, ["Claude Code copies no release here needs: 2.1.250 (0 MiB) — "
                                      "`charmer setup --step claude` removes them"])
         attention, info = report()
@@ -466,7 +466,7 @@ class PruneRuleTests(PruneCase):
                                 "2.1.280 (the previous release's pin, in use), "
                                 "2.1.200 (the running gateway's release (0.8.0) pins it, in use), "
                                 "2.1.250 (in use).",
-                                *[f"Claude Code {version} kept: the holder could not be identified."
+                                *[f"Claude Code copies kept: {version} — the holder could not be identified."
                                   for version in ("2.1.300", "2.1.280", "2.1.200", "2.1.250")]])
         self.assertEqual(attention, [])
         # Once the sessions are gone the pins stay, without the use.
@@ -547,7 +547,7 @@ class HolderDetailTests(PruneCase):
             _attention, info = retention.retention_report(self.contract, None, self.env)
         detail = "Claude Code 2.1.200 kept: 1 process observed using it (pid 1234 grep)."
         self.assertIn(detail, lines)
-        self.assertIn(detail, info)
+        self.assertIn("Claude Code copies kept: 2.1.200 — 1 process observed using it (pid 1234 grep).", info)
         self.assertIn("once no process uses them", "\n".join(lines))
         self.assertNotIn("session", "\n".join(lines))
         self.assertTrue(pin.owned_path(self.env, "2.1.200", self.platform).exists())
@@ -599,6 +599,49 @@ class HolderDetailTests(PruneCase):
         self.assertNotIn(str(root), text)
         self.assertNotIn("\x1b", text)
         self.assertNotIn("tool\n", text)
+
+    def test_unknown_lock_does_not_imply_a_holder(self):
+        with mock.patch.object(retention, "use_state", return_value=None), \
+                mock.patch.object(retention, "scan_processes", return_value=retention.ProcessScan()):
+            plan = self.plan()
+            _attention, info = retention.retention_report(self.contract, None, self.env)
+        self.assertEqual(plan.keep["2.1.200"], retention.LOCK_UNKNOWN)
+        self.assertIn("its use lock cannot be checked", "\n".join(info))
+        self.assertNotIn("the holder could not be identified", "\n".join(info))
+        self.process(4242, pin.owned_root(self.env) / "2.1.200" / "claude")
+        observed = retention.scan_processes(pin.owned_root(self.env), self.proc)
+        with mock.patch.object(retention, "use_state", return_value=None), \
+                mock.patch.object(retention, "scan_processes", return_value=observed):
+            _attention, info = retention.retention_report(self.contract, None, self.env)
+        self.assertIn("pid 4242 claude", "\n".join(info))
+        self.assertNotIn("the holder could not be identified", "\n".join(info))
+        self.assertTrue(pin.owned_path(self.env, "2.1.200", self.platform).exists())
+
+    def test_deleted_executable_holder_name_has_no_kernel_suffix(self):
+        self.process(4242, pin.owned_root(self.env) / "2.1.200" / "sleep (deleted)")
+        observed = retention.scan_processes(pin.owned_root(self.env), self.proc)
+        self.assertEqual(observed.holders["2.1.200"], (retention.ProcessHolder(4242, "sleep"),))
+        self.assertEqual(observed.versions, frozenset({"2.1.200"}))
+
+    def test_darwin_never_resolves_unrelated_process_paths(self):
+        root = pin.owned_root(self.env)
+        link = self.home / "link"
+        link.symlink_to(root)
+        candidates = [str(root / "2.1.200" / "tools" / "grep"), str(link / "2.1.280" / "claude")]
+        unrelated = ["/usr/bin/true", "/Volumes/share/bin/tool", "/Applications/Mail.app/Contents/MacOS/Mail"]
+        text = "\n".join(f"{pid} {path}" for pid, path in enumerate(candidates + unrelated, 100))
+        runner = mock.Mock(return_value=subprocess.CompletedProcess([], 0, text.encode(), b""))
+        with mock.patch.object(retention, "_platform", return_value="darwin"), \
+                mock.patch.object(darwin_process, "_tool", return_value="/bin/ps"), \
+                mock.patch.object(retention.os.path, "realpath", wraps=os.path.realpath) as resolve:
+            scan = retention.scan_processes(root, runner=runner)
+        resolved = [str(call.args[0]) for call in resolve.call_args_list]
+        self.assertEqual(scan.versions, frozenset({"2.1.200", "2.1.280"}))
+        for path in candidates:
+            self.assertIn(path, resolved)
+        for path in unrelated:
+            self.assertNotIn(path, resolved)
+        self.assertEqual(runner.call_count, 1)
 
     def test_darwin_holder_seam_reads_pid_and_executable_not_arguments(self):
         root = pin.owned_root(self.env)
@@ -1347,18 +1390,26 @@ class OwnedCopyLaunchTests(V4Case):
         self.assertTrue(any("the next launch copies the verified retained copy" in line for line in info))
         self.assertFalse(self.owned.exists())
 
-    def test_doctor_prints_the_retained_copy_holder_detail(self):
+    def test_doctor_holder_detail_is_verbose_only(self):
+        import charmer.cli.doctor as doctor_reports
+
         old = pin.owned_path(self.env, "2.1.100", pin.host_platform())
         state.ensure_private_dir(old.parent)
         old.write_bytes(FAKE)
         observed = retention.ProcessScan(frozenset({"2.1.100"}),
                                         {"2.1.100": (retention.ProcessHolder(1234, "grep"),)},
                                         {"2.1.100": 1})
-        output = io.StringIO()
-        with mock.patch.object(retention, "scan_processes", return_value=observed):
-            cli.main(["doctor"], runtime=self.make_runtime(), output_stream=output, interactive=False)
-        self.assertIn("Claude Code 2.1.100 kept: 1 process observed using it (pid 1234 grep).", output.getvalue())
-        self.assertNotIn(str(old), output.getvalue())
+        outputs = []
+        for arguments in (["doctor"], ["doctor", "-v"]):
+            output = io.StringIO()
+            with mock.patch.object(retention, "scan_processes", return_value=observed):
+                cli.main(arguments, runtime=self.make_runtime(), output_stream=output, interactive=False)
+            outputs.append(output.getvalue())
+            self.assertNotIn(str(old), output.getvalue())
+        self.assertNotIn("process observed using it", outputs[0])
+        detail = "Claude Code copies kept: 2.1.100 — 1 process observed using it (pid 1234 grep)."
+        self.assertIn(detail, outputs[1])
+        self.assertTrue(doctor_reports.detail_line(detail))  # the card shares this classification
 
     def test_cli_stop_runs_the_owned_copy_under_its_use_lock(self):
         self.retained.unlink()

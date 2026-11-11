@@ -162,7 +162,8 @@ def _proc_executables(proc_root: Path) -> list[tuple[int, Path]] | None:
     targets = []
     for entry in entries:
         try:
-            targets.append((int(entry.name), Path(os.readlink(Path(entry.path) / "exe"))))
+            target = os.readlink(Path(entry.path) / "exe").removesuffix(" (deleted)")
+            targets.append((int(entry.name), Path(target)))
         except OSError:
             continue
     return targets
@@ -180,6 +181,12 @@ def _darwin_executables(runner: Callable | None) -> list[tuple[int, Path]] | Non
         return None
     targets = []
     for pid, path in found:
+        candidate = Path(path)
+        # Preserve client symlinks and versioned helper paths without resolving
+        # unrelated processes' paths (which can live on stalled network mounts).
+        if candidate.name not in ("claude", "claude.exe") and not any(
+                _VERSION.fullmatch(part) for part in candidate.parts):
+            continue
         try:
             targets.append((pid, Path(os.path.realpath(path))))
         except (OSError, ValueError):
@@ -638,14 +645,16 @@ def retention_report(
         if name not in present:
             continue
         observed = plan.processes is not None and name in plan.processes.versions
-        in_use = reason in (IN_USE, RUNNING, LOCK_UNKNOWN)
+        in_use = reason in (IN_USE, RUNNING)
         # A pin keeps its pin reason; process evidence or a use lock adds detail.
-        if not in_use and (observed or use_state(environ, name)):
+        # An unreadable lock alone is not evidence that a holder exists.
+        if reason != LOCK_UNKNOWN and not in_use and (observed or use_state(environ, name)):
             reason = f"{reason}, {IN_USE}"
             in_use = True
         kept.append(f"{name} ({reason})")
-        if in_use:
-            details.append(_holder_line(name, plan.processes))
+        if in_use or observed:
+            # This prefix is routine detail in both doctor and the card.
+            details.append(f"Claude Code copies kept: {name} — {holder_detail(name, plan.processes)}.")
     if kept:
         info.append("Claude Code copies kept by charmer: " + ", ".join(kept) + ".")
     info.extend(details)
