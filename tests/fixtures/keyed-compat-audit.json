@@ -12,7 +12,7 @@
           "client_sha256": "bfb3703ad5380242328459bc62ada4bde8ae7ba57c6e1eeadb9c00e08874c478",
           "errors": 0,
           "failures": 0,
-          "head": "32b1261e140663230745f31e4faa31694b3c48e2",
+          "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
           "inventory": {
             "J1": {
               "count": 9,
@@ -79,7 +79,7 @@
           },
           "journey_tests": 9,
           "keyed_client_budget_seconds": 900,
-          "keyed_client_seconds": 24.087,
+          "keyed_client_seconds": 18.938,
           "keyed_client_tests": 10,
           "keyed_identity": {
             "client_contract_sha256": "9fb6c56ea034fda7e187057883ab5796f38477dac2f72d5e6c6a1f8c2210325e",
@@ -129,7 +129,7 @@
               "src/charmer/profile.py": "ee3d108ef215e55f59b11578bd44626e8eae64399858aba41a037ece59d39db3",
               "src/charmer/qualify.py": "0df154501c552f188057d0fc62547a9929ebb59b93fc47279ae2b709f112f437",
               "src/charmer/render.py": "cdf34a341b54958f6aa4e22f294c769f210b2281a543671943d60ee281b26d43",
-              "src/charmer/scope.py": "b5f98943832f2ace3ff0d58414606863a70928e9459770f58d424189f5ce3762",
+              "src/charmer/scope.py": "60f0b12daff4aa86ad38e689590dd96a88c41e5dc896c02d32f97d85b7420cf7",
               "src/charmer/served_plan.py": "24ba98e3d813a803d90a807f84942fde8077237dfa0d51c8928cb0e82e39feb8"
             }
           },
@@ -170,7 +170,7 @@
             },
             {
               "path": "src/charmer/scope.py",
-              "sha256": "b5f98943832f2ace3ff0d58414606863a70928e9459770f58d424189f5ce3762"
+              "sha256": "60f0b12daff4aa86ad38e689590dd96a88c41e5dc896c02d32f97d85b7420cf7"
             },
             {
               "path": "src/charmer/cli/commands/models.py",
@@ -205,7 +205,7 @@
           "skipped": 0,
           "status": "passed"
         },
-        "sha256": "57dad2331730824e93ebc5b3f70991bb3cff0f9fced192c4cc49da69025a3297"
+        "sha256": "731e9ca073ebdab5cb18525fb7c9ea64f9b32662a08f25bd46921ce02076b348"
       },
       "tests.keyed_journeys.json": {
         "document": {
@@ -222,54 +222,54 @@
           "tables": {
             "J1": [
               {
-                "head": "32b1261e140663230745f31e4faa31694b3c48e2",
+                "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
                 "row": "tests.test_onboarding_isolation.KeyedJourneyTests.test_keyed_cli_changes_and_failed_qualification_remain_selectable_with_warnings",
                 "status": "passed"
               },
               {
-                "head": "32b1261e140663230745f31e4faa31694b3c48e2",
+                "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
                 "row": "tests.test_onboarding_isolation.KeyedJourneyTests.test_keyed_cli_declare_approve_apply_admit_qualify_bind",
                 "status": "passed"
               },
               {
-                "head": "32b1261e140663230745f31e4faa31694b3c48e2",
+                "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
                 "row": "tests.test_packaging.PackageSourceTests.test_package_payload_excludes_operator_credentials_and_grants",
                 "status": "passed"
               },
               {
-                "head": "32b1261e140663230745f31e4faa31694b3c48e2",
+                "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_closed_target_refuses_audit",
                 "status": "passed"
               },
               {
-                "head": "32b1261e140663230745f31e4faa31694b3c48e2",
+                "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_open_target_requires_local_route_and_key_not_admission",
                 "status": "passed"
               },
               {
-                "head": "32b1261e140663230745f31e4faa31694b3c48e2",
+                "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_rechecks_headers_origins_collisions",
                 "status": "passed"
               },
               {
-                "head": "32b1261e140663230745f31e4faa31694b3c48e2",
+                "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_uses_existing_single_commit_barrier",
                 "status": "passed"
               },
               {
-                "head": "32b1261e140663230745f31e4faa31694b3c48e2",
+                "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_json_export_has_logical_refs_and_no_store_reads",
                 "status": "passed"
               },
               {
-                "head": "32b1261e140663230745f31e4faa31694b3c48e2",
+                "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
                 "row": "tests.test_tui_pty.KeyedJourneyPTYTests.test_keyed_tui_optional_admission_qualification_and_binding",
                 "status": "passed"
               }
             ]
           }
         },
-        "sha256": "191434ba2760c5f3400a00f2845730a21c1b9cd26acd4f74685d154d018ac92f"
+        "sha256": "d46163a4bc8683ae14273408695d78a8bdf9284329d9570a20502dd654107f48"
       },
       "tests.test_gateway_keyed_compat.json": {
         "document": {
@@ -325,7 +325,7 @@
               "src/charmer/profile.py": "ee3d108ef215e55f59b11578bd44626e8eae64399858aba41a037ece59d39db3",
               "src/charmer/qualify.py": "0df154501c552f188057d0fc62547a9929ebb59b93fc47279ae2b709f112f437",
               "src/charmer/render.py": "cdf34a341b54958f6aa4e22f294c769f210b2281a543671943d60ee281b26d43",
-              "src/charmer/scope.py": "b5f98943832f2ace3ff0d58414606863a70928e9459770f58d424189f5ce3762",
+              "src/charmer/scope.py": "60f0b12daff4aa86ad38e689590dd96a88c41e5dc896c02d32f97d85b7420cf7",
               "src/charmer/served_plan.py": "24ba98e3d813a803d90a807f84942fde8077237dfa0d51c8928cb0e82e39feb8"
             }
           },
@@ -480,7 +480,7 @@
             ]
           }
         },
-        "sha256": "f89baad4472de487b4a9cf276525e9a10d64091f1f93b29955a9565134887c71"
+        "sha256": "c300bc454db4d72878aa0dfdf8dc0064d5715c6c8d0a53dd3f64535184547c65"
       },
       "tests.test_keyed_compat_client.json": {
         "document": {
@@ -536,7 +536,7 @@
               "src/charmer/profile.py": "ee3d108ef215e55f59b11578bd44626e8eae64399858aba41a037ece59d39db3",
               "src/charmer/qualify.py": "0df154501c552f188057d0fc62547a9929ebb59b93fc47279ae2b709f112f437",
               "src/charmer/render.py": "cdf34a341b54958f6aa4e22f294c769f210b2281a543671943d60ee281b26d43",
-              "src/charmer/scope.py": "b5f98943832f2ace3ff0d58414606863a70928e9459770f58d424189f5ce3762",
+              "src/charmer/scope.py": "60f0b12daff4aa86ad38e689590dd96a88c41e5dc896c02d32f97d85b7420cf7",
               "src/charmer/served_plan.py": "24ba98e3d813a803d90a807f84942fde8077237dfa0d51c8928cb0e82e39feb8"
             }
           },
@@ -640,7 +640,7 @@
             ]
           }
         },
-        "sha256": "57ab6f6654c4708473808d8ec5df12f410fd260405bfd01fb317e4c6e232f9bc"
+        "sha256": "8f0fd2346966091800a08757136898657977814967bcf4f2625cd1e29c87bca4"
       }
     },
     "validated_exit": 0
@@ -883,7 +883,7 @@
   "source_report": {
     "document": {
       "evidence_dir": "tests/fixtures",
-      "head": "32b1261e140663230745f31e4faa31694b3c48e2",
+      "head": "326b6f9fde48e1a0ccd9aebe17ebcc5330a73766",
       "relevant_sources": [
         {
           "path": "src/charmer/catalog.py",
@@ -919,7 +919,7 @@
         },
         {
           "path": "src/charmer/scope.py",
-          "sha256": "b5f98943832f2ace3ff0d58414606863a70928e9459770f58d424189f5ce3762"
+          "sha256": "60f0b12daff4aa86ad38e689590dd96a88c41e5dc896c02d32f97d85b7420cf7"
         },
         {
           "path": "src/charmer/cli/commands/models.py",
@@ -951,7 +951,7 @@
         }
       ]
     },
-    "sha256": "6a5a9bfdb8f4cff81af777b791ef82b00e30a262472a210d91de7a0a44f06205"
+    "sha256": "ab5aed8db5c64c054f68e77004bf1dfb001b26229ee7205a4aa384e123fac3f0"
   },
   "version": 1
 }
