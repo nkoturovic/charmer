@@ -21,6 +21,7 @@ import charmer.cli.gateway_facts as gateway_facts
 import charmer.cli.screens.common as screens_common
 import charmer.cli.screens.launch_sessions as launch_sessions
 import charmer.cli.screens.transition as screens_transition
+import charmer.cli.resume_checks as resume_checks
 import charmer.cli.selection as selection
 import charmer.cli.session_facts as session_facts
 import charmer.cli.streams as streams
@@ -625,8 +626,7 @@ FORK_NEEDS_SESSION = ("--fork needs the session to fork: charmer -r SESSION --fo
 FORK_WITH_CONTINUE = "--fork works with -r SESSION only"
 FORK_WITH_PROFILE = ("--fork starts with the lineup the session would get at its next resume; after the fork "
                      "starts, change it with /cm profile NAME (or T on its row)")
-FORK_INSIDE_SESSION = ("charmer -r SESSION --fork starts a new interactive session: run it in another "
-                       "terminal (in a session, /cm fork prints the command)")
+FORK_INSIDE_SESSION = resume_checks.FORK_INSIDE_SESSION
 FORK_EXEC_LINE = ("charmer: forking session {m8} into new session {n8} ({profile}); the original is not "
                   "changed.\n")
 
@@ -653,9 +653,8 @@ def _fork_preflight(*, session: str | None, continue_session: bool, profile: boo
     """The refusals of ``--fork`` that need only the command line and the
     environment, before anything is read: nothing is written. A command
     line ``--fork`` cannot use exits 2 (``UsageError``); a run inside a
-    managed session exits 1."""
-
-    import charmer.cli.consent as consent  # read-only: the in-session marker
+    managed session exits 1 (``resume_checks.fork_session_refusal``, the
+    guard every fork surface shares)."""
 
     if continue_session:
         raise cli_types.UsageError(FORK_WITH_CONTINUE)
@@ -663,8 +662,9 @@ def _fork_preflight(*, session: str | None, continue_session: bool, profile: boo
         raise cli_types.UsageError(FORK_NEEDS_SESSION)
     if profile:
         raise cli_types.UsageError(FORK_WITH_PROFILE)
-    if consent.session_marker(environ) is not None:
-        raise cli_errors.CLIError(FORK_INSIDE_SESSION)
+    refusal = resume_checks.fork_session_refusal(environ)
+    if refusal is not None:
+        raise cli_errors.CLIError(refusal)
 
 
 def _fork_flow(
@@ -688,8 +688,6 @@ def _fork_flow(
     ``--print-launch`` shows the fork's plan and writes nothing; an
     interactive run with a lineup difference, notices or key problems
     confirms on the line; the line before exec names both sessions."""
-
-    import charmer.cli.resume_checks as resume_checks
 
     record = runtime.session_store.resolve(session_id)
     mid = sessions.managed_id(record)

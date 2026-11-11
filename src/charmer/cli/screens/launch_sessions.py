@@ -1376,13 +1376,17 @@ class _SessionsScreen:
         return result
 
     def _fork(self, win: Any, record: dict[str, Any]) -> tuple | None:
-        """N on a record: ``charmer -r SESSION --fork`` — the fork gate (its
-        refusal shown whole), the fork's preparation, then the card, always
-        (it names the new session); Enter there forks. The record is read,
-        never written."""
+        """N on a record: ``charmer -r SESSION --fork`` — the inside-session
+        refusal and the fork gate (each shown whole), the fork's preparation,
+        then the card, always (it names the new session); Enter there forks.
+        The record is read, never written."""
 
         runtime = self.runtime
         mid = sessions.managed_id(record)
+        refusal = resume_checks.fork_session_refusal(runtime.environ)
+        if refusal is not None:
+            self._say(termtext.visible_text(refusal), "warn")
+            return None
         try:
             refusal = resume_checks.fork_gate_refusal(runtime, record)
             if refusal is not None:

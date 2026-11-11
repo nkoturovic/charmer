@@ -2232,9 +2232,16 @@ class Runtime:
         ceiling or kept environment changed since it was prepared (checked
         again inside the commit barrier). A fresh launch makes the state root a version-4 root
         (``ensure_state_v4``) before ``perform_launch`` takes the shared
-        migration hold (never nested).
+        migration hold (never nested). A fork is refused first when this
+        process runs inside a Claude or managed session
+        (``resume_checks.fork_session_refusal``): every surface's fork
+        commits here.
         """
 
+        if prepared.result.session_action.kind == "fork":
+            refusal = resume_checks.fork_session_refusal(self.environ)
+            if refusal is not None:
+                raise cli_errors.CLIError(refusal)
         if prepared.secret_problems:
             raise cli_types.LaunchPlanError(prepared.secret_problems)
         self.revalidate_operator(prepared)
@@ -2314,9 +2321,11 @@ class Runtime:
         """
 
         action = prepared.result.session_action
-        if action.kind == "fork" and prepared.fork_parent is not None:
-            # A fork's parent passes the fork gate again (no liveness: a
-            # running parent may be forked).
+        if action.kind == "fork":
+            # The parent passes the fork gate again (no liveness: a running
+            # parent may be forked).
+            if prepared.fork_parent is None:
+                raise cli_errors.CLIError("a fork plan names no parent session")
             refusal = resume_checks.fork_gate_refusal(self, self.session_store.load(prepared.fork_parent))
             if refusal is not None:
                 raise cli_errors.CLIError(refusal)
