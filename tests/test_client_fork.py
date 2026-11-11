@@ -33,7 +33,11 @@ measure what the pinned Claude Code does with that argv, end to end:
   prompt snapshot switched off: which prompt each turn sends);
 - G2b: the parent is streaming, or running a tool, when it is forked; the
   fork runs headless (then resumes) or in a PTY;
-- G3 (record only): ``/fork`` typed in a charmer session.
+- G3 (record): Claude Code's ``/fork`` typed in a charmer session never
+  copies the session (refused for the launch flags, or not offered while
+  the agent view is off) and creates no conversation file and no daemon
+  directory; the model's own Agent call of a fork is refused; what
+  ``/fork <directive>`` does is recorded.
 
 Evidence is metadata only: marker names, ids of fixture sessions, counts,
 digests, booleans, role sequences. No request text, transcript text or
@@ -87,10 +91,12 @@ T4 = "FORKPROBE-FORK-TURN-FOUR"
 T5 = "FORKPROBE-FORK-TURN-FIVE"
 HOLD_STREAM = "FORKPROBE-HOLD-STREAM"
 HOLD_TOOL = "FORKPROBE-HOLD-TOOL"
+AGENT_FORK = "FORKPROBE-AGENT-FORK"  # the lead's turn answered with an Agent fork call
 SUMMARY = "FORKPROBE-COMPACT-SUMMARY"
-_TURNS = (HOLD_STREAM, HOLD_TOOL, T1, T2, T3, T4, T5)
+_TURNS = (HOLD_STREAM, HOLD_TOOL, AGENT_FORK, T1, T2, T3, T4, T5)
 _SNAPSHOT_OFF = ("--system-prompt-snapshot", "off")
 _TOOL_ID = "toolu_forkprobe_hold"
+_AGENT_FORK_ID = "toolu_forkprobe_agent_fork"
 _TOOL_OUTPUT = "FORKTOOL-OUT42"  # printed by the tool, never part of its command
 _LEAD_BODY = "You are the lead of a managed session."
 _EXTRA_MARKERS = {
@@ -157,6 +163,19 @@ def _text_blocks(content: Any) -> list[str]:
         if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
             texts.append(block["text"])
     return texts
+
+
+def _agent_fork_class(content: Any) -> str:
+    """The class of the Agent fork call's result (its text stays in memory)."""
+
+    text = json.dumps(content)
+    if "has been denied by permission rule 'Agent(fork)'" in text:
+        return "denied"
+    if "Agent type 'fork' not found" in text:
+        return "unavailable"
+    if "Fork started" in text or "[Subagent hand-back]" in text:
+        return "started"
+    return "other"
 
 
 def _system_text(document: dict[str, Any]) -> str:
@@ -238,10 +257,12 @@ class _ForkResponder:
         tool_names = set(record.tool_names)
         main = bool(tool_names & {"Agent", "Bash"}) and hints.get("x-claude-code-request-class") not in (
             "subagent", "workflow")
-        tool_done = any(
-            isinstance(block, dict) and block.get("type") == "tool_result" and block.get("tool_use_id") == _TOOL_ID
-            for message in messages[-1:] if isinstance(message, dict)
-            for block in (message.get("content") if isinstance(message.get("content"), list) else []))
+        results = {block.get("tool_use_id"): block.get("content")
+                   for message in messages[-1:] if isinstance(message, dict)
+                   for block in (message.get("content") if isinstance(message.get("content"), list) else [])
+                   if isinstance(block, dict) and block.get("type") == "tool_result"}
+        tool_done = _TOOL_ID in results
+        agent_fork = _agent_fork_class(results[_AGENT_FORK_ID]) if _AGENT_FORK_ID in results else None
         compact = tag is None and not tool_done and "summar" in last_user.lower()
         row = {
             "ordinal": context.ordinal,
@@ -251,6 +272,8 @@ class _ForkResponder:
             "tool_done": tool_done,
             "model": record.model,
             "request_class": hints.get("x-claude-code-request-class"),
+            "agent_type": hints.get("x-claude-code-agent-type"),
+            "agent_fork_result": agent_fork,
             "session_hint": hints.get("x-claude-code-session-id"),
             "hint_names": list(record.hint_header_names),
             "system_sentinels": sorted(set(_SENTINEL_RE.findall(system))),
@@ -277,6 +300,13 @@ class _ForkResponder:
         if main and tag == HOLD_TOOL and first_hold and not tool_done:
             block = {"type": "tool_use", "id": _TOOL_ID, "name": "Bash",
                      "input": {"command": self._tool_command, "description": "fork probe wait"}}
+            payload = probe._message_payload([block], model=model, stop_reason="tool_use",
+                                             message_id=f"msg_forkprobe_{context.ordinal:04d}")
+            return 200, probe._sse_message(payload) if stream else payload
+        if main and tag == AGENT_FORK and first_hold and agent_fork is None:
+            block = {"type": "tool_use", "id": _AGENT_FORK_ID, "name": "Agent",
+                     "input": {"description": "fork probe", "prompt": "Reply FORKPROBE-AGENT-FORKED",
+                               "subagent_type": "fork", "run_in_background": False}}
             payload = probe._message_payload([block], model=model, stop_reason="tool_use",
                                              message_id=f"msg_forkprobe_{context.ordinal:04d}")
             return 200, probe._sse_message(payload) if stream else payload
@@ -489,6 +519,19 @@ class _Terminal:
             time.sleep(0.1)
         return False
 
+    def wait_any(self, markers: dict[str, str], *, since: int = 0, timeout: float = 60.0) -> str | None:
+        """The name of the first marker the screen shows, or None."""
+
+        deadline = time.monotonic() + timeout
+        while True:
+            screen = self.text(since)
+            for name, marker in markers.items():
+                if " ".join(marker.split()) in screen:
+                    return name
+            if time.monotonic() >= deadline or self.process.poll() is not None:
+                return None
+            time.sleep(0.1)
+
     def send(self, data: bytes) -> None:
         view = memoryview(data)
         while view:
@@ -682,6 +725,16 @@ class _ForkFixture:
         slug = session_facts._native_project_slug(str(self.fx.project_dir))
         return self.claude_dir / "projects" / slug / f"{runtime_id}.jsonl"
 
+    def conversation_ids(self) -> list[str]:
+        """The fixture project's top-level conversation ids (names only)."""
+
+        folder = self.transcript("x").parent
+        try:
+            return sorted(entry.name.removesuffix(".jsonl") for entry in os.scandir(folder)
+                          if entry.name.endswith(".jsonl") and entry.is_file(follow_symlinks=False))
+        except FileNotFoundError:
+            return []
+
     def record_bytes(self, managed_id: str) -> bytes | None:
         path = self.state_root / "sessions" / f"{managed_id}.json"
         try:
@@ -766,6 +819,10 @@ class ForkLaunchProbe(unittest.TestCase):
     boundary: str | None = None
     rows: dict[str, dict[str, Any]] = {}
     verdicts: dict[str, str] = {}
+    # Every row of the class: the completion record needs all of them.
+    ROWS = ("G1-snapshot", "G1-compacted", "G1-snapshot-off-every-launch", "G1-repeat", "G2-idle",
+            "G2-idle-snapshot-off", "G2b-streaming", "G2b-tool", "G2b-streaming-pty", "G2b-tool-pty",
+            "G3-builtin-fork")
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -784,9 +841,16 @@ class ForkLaunchProbe(unittest.TestCase):
             print(f"client check fork-launch: BOUNDARY {cls.boundary}")
         elif cls.verdicts:
             failed = sorted(name for name, verdict in cls.verdicts.items() if verdict != "pass")
-            overall = "PASS" if not failed else "FAIL"
+            missing = sorted(set(cls.ROWS) - set(cls.verdicts))
             detail = " ".join(f"{name}={verdict}" for name, verdict in sorted(cls.verdicts.items()))
-            print(f"client check fork-launch: {overall} client={cls.version} {detail}")
+            if not failed and not missing:
+                # The completion record: every row ran and passed.
+                print(f"client check fork-launch: PASS client={cls.version} {detail}")
+            elif not failed:
+                print(f"client check fork-launch: INCOMPLETE client={cls.version} {detail} "
+                      f"not run: {','.join(missing)}")
+            else:
+                print(f"client check fork-launch: FAIL client={cls.version} {detail}")
         super().tearDownClass()
 
     def setUp(self) -> None:
@@ -1158,30 +1222,72 @@ class ForkLaunchProbe(unittest.TestCase):
     # ------------------------------------------------------------- G3
 
     def test_g3_builtin_fork_in_a_charmer_session_is_recorded(self) -> None:
+        """Claude Code's own ``/fork`` in a charmer session: its session copy
+        never starts — refused for the launch flags, or not offered while
+        the agent view is off (``/fork`` is then the fork-subagent command,
+        which needs a directive) — no new conversation file and no daemon or
+        jobs directory appear, and the model's own Agent call of a fork is
+        refused. What ``/fork <directive>`` does is recorded: while the agent
+        view is off it starts a fork subagent in-process on the lead's model,
+        which neither the fork gate nor the ``Agent(fork)`` deny reaches."""
+
         fx = self.fixture
         term, plan = self._start_parent()
         if not self._turn(term, T1, reply_text(T1)):
             self.fail(f"session turn one: {term.text()[-600:]}")
+        before = fx.conversation_ids()
+        # The model's own fork: the lead's turn answered with an Agent call
+        # of subagent_type fork.
+        since = time.monotonic()
+        answered = self._turn(term, AGENT_FORK, reply_text(AGENT_FORK))
+        window = [row for row in fx.responder.snapshot() if row["received"] >= since]
+        agent_fork = next((row["agent_fork_result"] for row in window if row["agent_fork_result"]), None)
+        agent_fork_requests = len([row for row in window if row["agent_type"] == "fork"])
         mark = term.mark()
         term.send(b"/fork")
         time.sleep(1.0)
         menu = term.text(mark)
         term.send(b"\r")
-        refused = term.wait_for("Can't fork", since=mark, timeout=20)
-        time.sleep(2.0)
-        screen = term.text(mark)
-        found = re.search(r"Can.t fork:[^⎿❯]{0,480}", screen)
+        bare = term.wait_any({"launch-flag refusal": "Can't fork", "fork-subagent usage": "Usage: /fork"},
+                             since=mark, timeout=20)
+        time.sleep(1.0)
+        found = re.search(r"Can.t fork:[^⎿❯]{0,480}", term.text(mark))
+        mark = term.mark()
+        since = time.monotonic()
+        term.send(b"/fork FORKG3 directive")
+        time.sleep(1.0)
+        term.send(b"\r")
+        directive = term.wait_any({"launch-flag refusal": "Can't fork", "fork subagent started": "forked forkg3",
+                                   "not available": "Forking is not available",
+                                   "before the first turn": "Cannot fork before"}, since=mark, timeout=30)
+        time.sleep(4.0)
+        directive_rows = [row for row in fx.responder.snapshot()
+                          if row["received"] >= since and row["request_class"] == "subagent"]
         daemon = fx.daemon_state()
         exit_code = self._exit(term)
+        copies = sorted(set(fx.conversation_ids()) - set(before))
         problems = []
-        if not refused:
-            problems.append("the client did not refuse /fork")
+        if not answered or agent_fork not in ("denied", "unavailable") or agent_fork_requests:
+            problems.append(f"the model's Agent fork call was not refused: {agent_fork}, "
+                            f"{agent_fork_requests} fork request(s)")
+        if bare is None:
+            problems.append("/fork showed neither the launch-flag refusal nor the fork-subagent usage")
+        if directive is None:
+            problems.append("/fork <directive> showed no known outcome")
+        if copies:
+            problems.append(f"a new conversation file appeared: {len(copies)}")
         if daemon["private_tmp_daemon_dirs"] or daemon["jobs_dir"]:
             problems.append("a daemon or jobs directory appeared")
         self._row("G3-builtin-fork", {
-            "client": self.version, "session": plan["managed_id"][:8], "refused": refused,
-            "refusal": found.group(0)[:480] if found else None,
-            "menu_lists_fork": "/fork" in menu, "daemon": daemon, "exit": exit_code,
+            "client": self.version, "session": plan["managed_id"][:8],
+            "menu_command": ("session copy" if "Copy this conversation into a new background session" in menu
+                             else "fork subagent" if "Spawn a background agent" in menu else None),
+            "bare": bare, "refusal": found.group(0)[:480] if found else None,
+            "agent_fork": agent_fork, "agent_fork_requests": agent_fork_requests,
+            "directive": directive,
+            "directive_subagent_models": sorted({str(row["model"]) for row in directive_rows}),
+            "directive_agent_types": sorted({str(row["agent_type"]) for row in directive_rows}),
+            "new_conversations": len(copies), "daemon": daemon, "exit": exit_code,
         }, problems)
 
 
