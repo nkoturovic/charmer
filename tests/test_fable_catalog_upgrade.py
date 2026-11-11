@@ -90,6 +90,19 @@ class FableUpgradeCase(test_cli.OperatorCommandCase):
             cli.LaunchTarget("record", None, record["profile"], record["follow"], "Session"),
             action="resume", session_id=record["managed_id"], passthrough=[])
 
+    def commit_resume(self):
+        prepared = self.resume()
+        self.runtime.launch_callback = None
+        self.runtime.execve = mock.Mock(return_value=0)
+        # Only the binary is fake. Runtime.perform and perform_launch commit
+        # the real resume plan, under their ordinary barriers and CAS checks.
+        with mock.patch.object(launch, "PinnedCopy") as pinned:
+            pinned.return_value.verify.return_value = SimpleNamespace(inspected_path=Path("/fixture/client"))
+            self.assertEqual(self.runtime.perform(prepared), 0)
+            pinned.return_value.release.assert_called_once()
+        self.runtime.execve.assert_called_once()
+        return self.runtime.session_store.load(test_cli.FIXED_ID)
+
     def resolved(self, name="mine"):
         return profile.resolve(self.runtime.profiles.load(name), self.runtime.lineup_catalog(),
                                bindings=self.runtime.bindings.load()["bindings"], effective=self.runtime.current_effective())
@@ -172,19 +185,6 @@ class MovedFableOperatorLineTests(FableUpgradeCase):
         self.apply_and_serve()
         code, out, err = self.op(["models", "rm", KEY, "--successor", "fable", "--yes"])
         self.assertEqual(code, 0, out + err)
-
-    def commit_resume(self):
-        prepared = self.resume()
-        self.runtime.launch_callback = None
-        self.runtime.execve = mock.Mock(return_value=0)
-        # Only the binary is fake. Runtime.perform and perform_launch commit
-        # the real resume plan, under their ordinary barriers and CAS checks.
-        with mock.patch.object(launch, "PinnedCopy") as pinned:
-            pinned.return_value.verify.return_value = SimpleNamespace(inspected_path=Path("/fixture/client"))
-            self.assertEqual(self.runtime.perform(prepared), 0)
-            pinned.return_value.release.assert_called_once()
-        self.runtime.execve.assert_called_once()
-        return self.runtime.session_store.load(test_cli.FIXED_ID)
 
     def test_displacement_reports_one_attention_with_remedy_and_no_collision(self) -> None:
         layer = self.runtime.operator_snapshot().layer
@@ -285,12 +285,11 @@ class MovedFableOperatorLineTests(FableUpgradeCase):
                                              asset_root=SHIPPED_ROOT, state_root=self.runtime.session_store.root)
         self.assertIn(WIRE, render.rendered_selectors(document))
 
-    def test_removal_before_resume_currently_needs_a_model_choice(self) -> None:
+    def test_removal_before_resume_keeps_the_recorded_successor(self) -> None:
         self.remove()
         self.assertEqual(self.ledger().removed[KEY]["successor"], "fable")
         self.assertEqual(self.runtime.profiles.load("mine")["lead"]["model"], "fable")
-        with self.assertRaisesRegex(cli.NeedsChoiceError, "needs a profile or model choice"):
-            self.resume()
+        self.assertEqual(self.resume().record["applied"]["lead"]["key"], "fable")
         self.assertEqual(self.runtime.session_store.load(test_cli.FIXED_ID), self.record)
 
     def test_live_selector_refuses_removal_even_after_adopting_the_shipped_key(self) -> None:
