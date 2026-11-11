@@ -21,4 +21,4 @@
   Hitless dual-key rotation (charmer doctor --rotate-token); running sessions
   switch within one helper TTL.
 
-  Enter rotate · ? help · Esc back
+  Enter rotate · G providers · M models · ? help · Esc back

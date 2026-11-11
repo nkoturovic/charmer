@@ -1880,7 +1880,9 @@ class ProfileEditorPTYTests(unittest.TestCase):
         child.read_until("unsaved changes ●".encode())
         child.send(b"\x07")  # ^G: the raw JSON in $VISUAL
         child.read_until(b"JSON not applied")
-        child.send(b"\x1b")
+        child.read_until(b"Action result")
+        child.send(b"\x1b")  # acknowledge the complete refusal
+        child.send(b"\x1b")  # now ask to discard the still-dirty draft
         child.read_until(b"Discard")
         child.send(RIGHT_KEY + b"\n")
         self.assertCancelled(child)
@@ -2164,7 +2166,9 @@ class ProvidersTogglePTYTests(_CardChildCase):
         child.send(b" ")
         child.read_until("disabled — applies at the next launch".encode())
         child.send(b" ")
-        child.read_until("enabled — applies at the next launch".encode())
+        # ncurses may emit only the changed letters of disabled → enabled
+        # in the wrapped result block. The persisted final value below
+        # proves the second Space; wait for the parent card, not raw repaint bytes.
         child.send(b"\x1b")
         mark = len(child.output)
         _read_after(child, mark, CARD_READY)

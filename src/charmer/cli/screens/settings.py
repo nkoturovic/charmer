@@ -24,6 +24,7 @@ import dataclasses
 import textwrap
 import charmer.cli.doctor as doctor
 import charmer.cli.doctor_actions as doctor_actions
+import charmer.cli.screens.actions as screen_actions
 import charmer.cli.screens.common as screens_common
 import charmer.cli.screens.models as screens_models
 import charmer.cli.screens.providers as screens_providers
@@ -33,6 +34,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import charmer.cli.runtime as runtime_mod
 
+
+HELP = screen_actions.help_text("settings", cli_text.SETTINGS_HELP)
 
 # The settings.json fields edited here -> (default, bounds or None).
 _SETTINGS_FIELDS: Mapping[str, tuple[Any, tuple[int, int] | None]] = {
@@ -203,7 +206,7 @@ class _SettingsScreen:
             chrome=chrome,
             list_rows=list_rows,
             detail_reserve=0,
-            bar_rows=tui.KeyBar(cli_text.SETTINGS_KEYBAR).rows(width),
+            bar_rows=self._keybar(longest=True).rows(width),
             cols=cli_text.SETTINGS_MIN_COLS,
         )
         return floor.as_tuple()
@@ -219,32 +222,43 @@ class _SettingsScreen:
             and bool(self.runtime.allow_state_writes)
         )
 
-    def keybar_bindings(self) -> tuple[tuple[str, str], ...]:
-        """The footer for the selected row: its supported actions only."""
+    def _keybar(self, *, longest: bool = False) -> tui.KeyBar:
+        if longest:
+            return max((self._row_keybar(row) for kind, row in self.entries if kind == "row"),
+                       key=lambda bar: len(bar.text()), default=self._row_keybar(None))
+        return self._row_keybar(self.selected_row)
 
-        row = self.selected_row
-        tail = (("?", "help"), ("Esc", "back"))
-        if row is None:
-            return tail
-        if row.edit in views.SETTINGS_NAVIGATION_EDITS:
-            return cli_text.SETTINGS_KEYBAR_OPEN
-        if row.key == views.SETTINGS_ENV_KEEP_KEY:
-            return self._env_keep_keybar(row)
-        if row.edit == "token":
-            if self.runtime.allow_state_writes:
-                return cli_text.SETTINGS_KEYBAR_ROTATE
-            return ((cli_text.SETTINGS_READ_ONLY_KEY, cli_text.SETTINGS_READ_ONLY_COMMAND), *tail)
-        if self._can_edit(row):
-            return cli_text.SETTINGS_KEYBAR
-        if row.key == views.SETTINGS_CEILING_KEY and self.runtime.allow_state_writes:
-            reason = cli_text.SETTINGS_READ_ONLY_CHOICES
-        elif not row.edit:
-            reason = cli_text.SETTINGS_READ_ONLY_EVIDENCE
-        elif not self.runtime.allow_state_writes:
-            reason = cli_text.SETTINGS_READ_ONLY_COMMAND
-        else:
-            reason = cli_text.SETTINGS_READ_ONLY_INVALID
-        return ((cli_text.SETTINGS_READ_ONLY_KEY, reason), *tail)
+    def _row_keybar(self, row: views.SettingsRow | None) -> tui.KeyBar:
+        ids = {"providers", "models", "help", "back"}
+        labels = {}
+        reason = ""
+        if row is not None:
+            if row.edit in views.SETTINGS_NAVIGATION_EDITS:
+                ids.add("edit")
+                labels["edit"] = "open"
+            elif row.edit == "token" and self.runtime.allow_state_writes:
+                ids.add("edit")
+                labels["edit"] = "rotate"
+            elif self._can_edit(row) or (row.key == views.SETTINGS_ENV_KEEP_KEY and row.editable
+                                        and self.runtime.allow_state_writes):
+                ids.update(("edit", "reset"))
+                if row.key == settings_mod.REVIEW_ROUND_CAP_KEY:
+                    ids.add("rounds")
+            elif row.key in (views.SETTINGS_CEILING_KEY, views.SETTINGS_ENV_KEEP_KEY) and self.runtime.allow_state_writes:
+                reason = cli_text.SETTINGS_READ_ONLY_CHOICES
+            elif not row.edit:
+                reason = cli_text.SETTINGS_READ_ONLY_EVIDENCE
+            elif not self.runtime.allow_state_writes:
+                reason = cli_text.SETTINGS_READ_ONLY_COMMAND
+            else:
+                reason = cli_text.SETTINGS_READ_ONLY_INVALID
+        bindings = screen_actions.bar("settings", ids, labels=labels)
+        # This is a status annotation, not a handled key.
+        prefix = ((cli_text.SETTINGS_READ_ONLY_KEY, reason, 3),) if reason else ()
+        return tui.KeyBar((*prefix, *bindings))
+
+    def keybar_bindings(self) -> tuple[tuple[str, str], ...]:
+        return tuple(self._keybar().bindings)
 
     def _draw(self, win: Any) -> None:
         palette = self.palette
@@ -254,7 +268,7 @@ class _SettingsScreen:
             screens_common._screen_too_small(win, palette, self.what, rows_needed, cols_needed)
             return
         win.erase()
-        keybar = tui.KeyBar(self.keybar_bindings())
+        keybar = self._keybar()
         bar_rows = keybar.rows(width)
         tui.safe_add(win, 1, 2, cli_text.SETTINGS_TITLE, palette.attr("accent") | tui.curses.A_BOLD)
         tui.safe_add(win, 2, 2, views.rule(width), palette.attr("dim"))
@@ -262,9 +276,7 @@ class _SettingsScreen:
         for line in self._banner_lines(width):
             tui.safe_add(win, row, 2, line, palette.attr("warn"))
             row += 1
-        message_lines = (textwrap.wrap(self.message, max(1, width - 4))
-                         if self.message_role == "warn" else [views.clip(self.message, width - 3)])
-        message_row = height - bar_rows - max(1, len(message_lines))
+        message_row = height - bar_rows - 1
         detail_top = message_row - cli_text.SETTINGS_DETAIL_LINES
         capacity = max(1, detail_top - row)
         visible = capacity
@@ -296,8 +308,8 @@ class _SettingsScreen:
             row += 1
         for offset, line in enumerate(self._detail_lines(width)):
             tui.safe_add(win, row + offset, 2, line, palette.attr("dim"))
-        for offset, line in enumerate(message_lines):
-            tui.safe_add(win, message_row + offset, 2, line, palette.attr(self.message_role))
+        tui.draw_message(win, self.message, palette, self.message_role, message_row,
+                         detail_rows=cli_text.SETTINGS_DETAIL_LINES)
         keybar.draw(win, height - 1, palette)
         win.refresh()
 
@@ -765,6 +777,8 @@ class _SettingsScreen:
         tui.hide_cursor()
         while True:
             self._draw(win)
+            if tui.message_modal(win, self, detail_rows=cli_text.SETTINGS_DETAIL_LINES):
+                continue
             key = tui.read_key(win)
             if key.kind == "resize":
                 continue
@@ -789,7 +803,7 @@ class _SettingsScreen:
                 self.index = len(self.entries)
                 self._move(-1)
             elif key.kind == "char" and key.ch == "?":
-                screens_common._help_modal(win, self.palette, "settings — help", cli_text.SETTINGS_HELP, self._draw)
+                screens_common._help_modal(win, self.palette, "settings — help", HELP, self._draw)
             elif key.kind == "enter":
                 self._enter(win)
             elif key.kind == "char" and key.ch in ("r", "R") and row is not None:

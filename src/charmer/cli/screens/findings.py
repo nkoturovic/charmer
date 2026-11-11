@@ -39,9 +39,12 @@ if TYPE_CHECKING:
 from charmer import errors, termtext, tui, views
 import charmer.cli.doctor as doctor
 import charmer.cli.doctor_actions as doctor_actions
+import charmer.cli.screens.actions as screen_actions
 import charmer.cli.screens.common as screens_common
 import charmer.cli.screens.gateway_actions as screens_gateway
 import charmer.cli.text as cli_text
+
+HELP = screen_actions.help_text("findings", cli_text.FINDINGS_HELP)
 
 _MARKS = {"block": "✗", "attention": "!", doctor.ADVISORY: "·"}
 _ROLES = {"block": "error", "attention": "warn", doctor.ADVISORY: "dim"}
@@ -168,7 +171,7 @@ class FindingsScreen:
     # -- layout ----------------------------------------------------------------
 
     def _keybar(self) -> tui.KeyBar:
-        return tui.KeyBar(cli_text.FINDINGS_KEYBAR)
+        return tui.KeyBar(screen_actions.bar("findings"))
 
     def min_size(self, width: int) -> tuple[int, int]:
         return views.ScreenFloor.compute(
@@ -288,6 +291,8 @@ class FindingsScreen:
         tui.hide_cursor()
         while True:
             self._draw(win)
+            if tui.message_modal(win, self):
+                continue
             key = tui.read_key(win)
             if key.kind == "resize":
                 continue
@@ -358,7 +363,7 @@ class FindingsScreen:
     def _help(self, win: Any) -> None:
         wrap = max(20, min(100, win.getmaxyx()[1] - 8))
         screens_common._ScrollModal(cli_text.FINDINGS_HELP_TITLE,
-                                    screens_common._wrap_help_lines(cli_text.FINDINGS_HELP, wrap)).run(
+                                    screens_common._wrap_help_lines(HELP, wrap)).run(
             win, self.palette, background=self._draw)
 
     # -- the actions -----------------------------------------------------------
