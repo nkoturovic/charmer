@@ -1840,6 +1840,8 @@ class GatewayEnvScrubTests(ProxyControlTestCase):
         "MANAGEMENT_STATIC_PATH", "management_static_path",
         "GITHUB_TOKEN", "github_token",
         "META_MINT_URL", "meta_mint_url",
+        "CPA_VISIBLE_CODEX_COMMENTARY", "cpa_visible_codex_commentary",
+        "CLIPROXY_PLUGIN_DLOPEN_PROBE", "CLIPROXY_PLUGIN_DLOPEN_PROBE_STATUS",
     )
     KEPT = ("PATH", "LANG", "XDG_RUNTIME_DIR", "DEPLOYMENT_NAME", "PGSTORE", "MY_HOME_JWT")
     _capture_exec = RunLoginTests._capture_exec

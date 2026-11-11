@@ -48,7 +48,7 @@ each is the repository's latest release (not a draft or prerelease).
 | Pester | 6.2.0 | PowerShell Gallery Pester 6.2.0 (latest, not a prerelease); github.com/pester/Pester tag 6.2.0 = 98e56d65da1642a7158992b50ded240c42a3ac18 | 2026-11-11 |
 | setuptools | 84.2.1 | PyPI setuptools 84.2.1 (latest), not yanked; wheel hash agrees in PyPI JSON and the simple index; Python >=3.10 (below the supported 3.11 floor) | 2026-11-11 |
 | ShellCheck | 0.11.0 | koalaman/shellcheck v0.11.0 (latest release), Linux x86_64 archive verified against the GitHub release asset digest | 2026-11-11 |
-| Go (CI tools) | gateway/UPSTREAM.json | the gateway's toolchain pin: its go.dev linux-amd64 archive and sha256, verified there; `GOTOOLCHAIN=local` disables automatic toolchain replacement; newest stable is 1.27.4, the gateway re-pin owns the move | 2026-11-11 |
+| Go (CI tools) | gateway/UPSTREAM.json | the gateway's toolchain pin: its go.dev linux-amd64 archive and sha256, verified there; `GOTOOLCHAIN=local` disables automatic toolchain replacement; 1.27.4, the newest stable, pinned by the 8.0.67 gateway re-pin | 2026-11-11 |
 | bubblewrap | 0.13.1 | github.com/containers/bubblewrap tag v0.13.1 (latest release, 2026-10-14), source archive verified against the GitHub release asset digest and the release notes' sha256; built unprivileged | 2026-11-11 |
 
 ## Tool artifacts (pinned by sha256)
@@ -261,10 +261,12 @@ agreed; `nix flake update nixpkgs` recorded the content hash. A
 `nix eval` of the new lock returned the six versions below. A Nix build of
 `gateway-linux-amd64` at the new lock gave sha256
 `092bb347b763d00fc58e8b18ba4199b8deadfe68d3dc36793d1c58068af991d6`,
-identical to the native content-bound build and the signed 2.4.0 manifest.
-Thus the lock move alone leaves the gateway bytes unchanged. This is the
-8.0.45 baseline comparison, not qualification of a later gateway re-pin;
-that pair still needs its own Nix/native comparison at the release candidate.
+identical to the native content-bound build and the signed 2.4.0 manifest:
+the lock move alone left the 8.0.45 gateway bytes unchanged. After the
+8.0.67 re-pin, the Nix build of `gateway-linux-amd64` gives sha256
+`a1f7596211f317666450a6965cbfa9c0ce22972a4d0a59efa0ca94ba5d97c9cb`,
+identical to the native build on all four targets; the release candidate
+compares the pair again.
 
 The input supplies the Nix channel's Python and development tools. The
 gateway uses the recipe's pinned Go archive and vendored modules, and
@@ -417,7 +419,7 @@ are qualified together, separately from the runtime and workflow refresh.
 
 | Input | Pinned | Newest upstream | Source | Result | Checked |
 | --- | --- | --- | --- | --- | --- |
-| Go (gateway toolchain, CI tools) | 1.27.3 | 1.27.4 | go.dev download API | newer security release; move belongs to the gateway re-pin, not an accepted hold | 2026-11-11 |
+| Go (gateway toolchain, CI tools) | 1.27.4 | 1.27.4 | go.dev download API | already newest; moved by the 8.0.67 gateway re-pin | 2026-11-11 |
 | CPython (bundled) | 3.15.2 | 3.15.2 (3.16.0a2 is a prerelease) | CPython release-tag refs | already newest stable; cookiejar finding reviewed separately | 2026-11-11 |
 | python-build-standalone | 20261110 | 20261110 | GitHub latest release, asset digests and SHA256SUMS | moved from 20261026; eight downloaded archives verified | 2026-11-11 |
 | setuptools | 84.2.1 | 84.2.1 | PyPI JSON and simple index, wheel hash as pinned, not yanked | already newest | 2026-11-11 |
