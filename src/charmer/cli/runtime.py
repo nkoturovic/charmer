@@ -198,6 +198,7 @@ class Runtime:
         execve: Callable[[str, list[str], dict[str, str]], Any] | None = None,
         qualify_transport: Callable[[str, str, str], operator_mod.SmokeOutcome] | None = None,
         lan_probe: Callable[[str], Any] | None = None,
+        host_resolver: Callable[[str, int], Any] | None = None,
         listing_transport: Callable[..., Any] | None = None,
         qualify_http: Callable[..., Any] | None = None,
         exact_client_runner: Callable[..., Any] | None = None,
@@ -369,6 +370,11 @@ class Runtime:
         # The LAN reachability seam (None = one short-timeout
         # probe; with the gateway seams injected, never a real dial).
         self.lan_probe = lan_probe
+        # The name-resolution seam of private-network providers, (host,
+        # port) -> getaddrinfo entries: what route approval and doctor show
+        # (None = one bounded lookup; with the gateway or LAN seams injected,
+        # a name is not looked up). Diagnostic only: it never holds a key.
+        self.host_resolver = host_resolver
         # The warning of the default-profile choice, shown by the next fresh
         # prepare.
         self.selection_notices: list[str] = []

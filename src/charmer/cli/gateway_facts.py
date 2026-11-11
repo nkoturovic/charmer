@@ -16,6 +16,7 @@ from charmer import paths
 from charmer import errors as cli_errors
 from charmer import launch
 from charmer import gateway_events
+from charmer import netclass
 from charmer import proxy as proxy_mod
 from charmer import quota
 from charmer import render
@@ -855,17 +856,22 @@ _LAN_REASONS = {
     "refused": "refused the connection",
     "timeout": "did not answer in time",
     "unreachable": "is unreachable",
+    "outside": "resolves only to addresses outside its network",
 }
 
 
 @dataclass(frozen=True)
 class LanReachability:
     """``state``: reachable | unreachable | unknown; ``reason`` names why
-    (nxdomain, refused, timeout, unreachable) or why it was not checked."""
+    (nxdomain, refused, timeout, unreachable, outside) or why it was not
+    checked. For a provider declared on a private network ``answers`` holds
+    every resolved address with its class (only addresses in the network
+    were tried)."""
 
     state: str
     host: str
     reason: str | None = None
+    answers: tuple[tuple[str, str], ...] = ()
 
     def text(self) -> str:
         """The exact network-scoped message (Info, or a fast launch refusal)."""
@@ -892,6 +898,7 @@ def probe_lan(
     url: str, *, timeout: float = LAN_PROBE_TIMEOUT,
     resolve: "Callable[[str, int], Any] | None" = None,
     connect: "Callable[[Any, float], Any] | None" = None,
+    network: str | None = None, gateway_ports: Iterable[int] = (),
 ) -> LanReachability:
     """One bounded reachability probe of ``url``'s host and port.
 
@@ -905,6 +912,10 @@ def probe_lan(
     address's turn. The host is unreachable only when every candidate
     failed. ``connect`` receives one ``getaddrinfo`` entry and its share in
     seconds. Nothing is sent: the socket closes right after the connect.
+
+    With ``network`` (a provider declared on a private network) every
+    answer is classified and recorded, and only addresses in that network
+    are tried, as the gateway would: no answer in it is ``outside``.
     """
 
     import socket
@@ -950,6 +961,12 @@ def probe_lan(
             candidates.append(entry)
     if not candidates:
         return LanReachability("unreachable", host, "nxdomain")
+    answers: tuple[tuple[str, str], ...] = ()
+    if network is not None:
+        answers = _answers(entry[4] for entry in candidates)
+        candidates = [entry for entry in candidates if _in_network(entry[4], network, gateway_ports)]
+        if not candidates:
+            return LanReachability("unreachable", host, "outside", answers)
     def open_address(entry: Any, seconds: float) -> Any:
         """Connect to one ``getaddrinfo`` entry (its family, type, protocol
         and socket address), bounded by ``seconds``; the caller closes it."""
@@ -992,21 +1009,139 @@ def probe_lan(
                 close()
         except OSError:
             pass
-        return LanReachability("reachable", host)
+        return LanReachability("reachable", host, None, answers)
     # Every candidate failed: the most specific reason one of them gave.
     reason = next((r for r in ("refused", "timeout") if r in reasons), "unreachable")
-    return LanReachability("unreachable", host, reason)
+    return LanReachability("unreachable", host, reason, answers)
 
 
-def lan_reachability(runtime: runtime_mod.Runtime, url: str) -> LanReachability:
+def _answers(addresses: Iterable[Any]) -> tuple[tuple[str, str], ...]:
+    """``(address, class)`` per distinct socket address, in resolver order."""
+
+    found: list[tuple[str, str]] = []
+    for address in addresses:
+        try:
+            match = netclass.match(address)
+        except ValueError:
+            continue
+        item = (str(match.address), match.cls)
+        if item not in found:
+            found.append(item)
+    return tuple(found)
+
+
+def _in_network(address: Any, network: str, gateway_ports: Iterable[int]) -> bool:
+    try:
+        return netclass.allowed(address, network, gateway_ports).allowed
+    except ValueError:
+        return False
+
+
+def lan_reachability(runtime: runtime_mod.Runtime, url: str, network: str | None = None) -> LanReachability:
     """The Runtime seam: an injected ``lan_probe``; with the gateway test
-    seams injected and no probe, ``unknown`` (no test ever dials out)."""
+    seams injected and no probe, ``unknown`` (no test ever dials out). A
+    provider declared on a private network is probed through the
+    ``host_resolver`` seam when one is injected, connecting only to its
+    network's addresses."""
 
     if runtime.lan_probe is not None:
         return runtime.lan_probe(url)
     if runtime.health_get is not None or runtime.served_models_callback is not None:
         return LanReachability("unknown", lan_host(url), "seam")
-    return probe_lan(url)
+    if network is None:
+        return probe_lan(url)
+    return probe_lan(url, resolve=runtime.host_resolver, network=network,
+                     gateway_ports=operator_mod.gateway_ports(runtime.catalog.docs))
+
+
+# ------------------------------------------------------------------ name resolution (diagnostic)
+# What a private-network provider's host resolves to now: shown at route
+# approval and by doctor, never a reason to send anything. One bounded
+# resolution on a daemon thread (getaddrinfo has no timeout of its own); an
+# address literal is classified without a lookup. Diagnostic DNS never holds
+# a key, and the gateway checks every connection itself.
+
+RESOLVE_TIMEOUT = 1.5
+
+
+@dataclass(frozen=True)
+class HostResolution:
+    """``state``: resolved | none | unknown; ``answers``: ``(address, class)``."""
+
+    host: str
+    state: str
+    answers: tuple[tuple[str, str], ...] = ()
+    reason: str | None = None
+
+    def outside(self, network: str) -> tuple[tuple[str, str], ...]:
+        """The answers a connection on ``network`` would refuse."""
+
+        return tuple(answer for answer in self.answers if answer[1] != network)
+
+    def text(self) -> str:
+        if self.state == "resolved":
+            return ", ".join(f"{address} ({cls})" for address, cls in self.answers)
+        if self.state == "none":
+            return f"nothing — {self.host} does not resolve from here"
+        return "not checked"
+
+
+def resolve_host(url: str, *, timeout: float = RESOLVE_TIMEOUT,
+                 resolve: "Callable[[str, int], Any] | None" = None) -> HostResolution:
+    """What ``url``'s host resolves to now (a literal: itself, no lookup)."""
+
+    import socket
+    import threading
+    import urllib.parse
+
+    parts = urllib.parse.urlsplit(url)
+    host = parts.hostname or ""
+    try:
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+    except ValueError:
+        return HostResolution(host or url, "unknown", reason="malformed port")
+    if not host:
+        return HostResolution(url, "unknown", reason="no host")
+    literal = _answers((host,))
+    if literal:
+        return HostResolution(host, "resolved", literal)
+    resolver = resolve or (lambda name, number: socket.getaddrinfo(name, number, type=socket.SOCK_STREAM))
+    result: dict[str, Any] = {}
+
+    def run() -> None:
+        try:
+            result["addresses"] = resolver(host, port)
+        except BaseException as exc:  # handed to the caller below
+            result["error"] = exc
+
+    worker = threading.Thread(target=run, name="charmer-resolve", daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        return HostResolution(host, "none", reason="timeout")
+    if "error" in result:
+        return HostResolution(host, "none", reason="nxdomain" if isinstance(result["error"], socket.gaierror)
+                              else "unreachable")
+    entries = [entry[4] for entry in result.get("addresses") or []
+               if isinstance(entry, tuple) and len(entry) == 5 and isinstance(entry[4], tuple)]
+    answers = _answers(entries)
+    return HostResolution(host, "resolved", answers) if answers else HostResolution(host, "none", reason="nxdomain")
+
+
+def host_resolution(runtime: runtime_mod.Runtime, url: str) -> HostResolution:
+    """The Runtime seam: an injected ``host_resolver``; with the gateway or
+    LAN test seams injected and none, a name is ``unknown`` (no test ever
+    resolves a real name); a literal is always classified."""
+
+    if runtime.host_resolver is None and (runtime.lan_probe is not None or runtime.health_get is not None
+                                          or runtime.served_models_callback is not None):
+        found = resolve_host(url, resolve=_unresolved)
+        return found if found.state == "resolved" else HostResolution(found.host, "unknown", reason="seam")
+    return resolve_host(url, resolve=runtime.host_resolver)
+
+
+def _unresolved(_host: str, _port: int) -> list[Any]:
+    raise LookupError("no resolver")
 
 
 # ------------------------------------------------------------------ discovery adapters

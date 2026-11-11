@@ -217,6 +217,8 @@ ENDPOINT_PREVIEW = ("{id}: {kind_label} at {base_url}\nThe key {secret_name} is 
 ENDPOINT_ADDED = "Added {id} — {reload}"
 LAN_PREVIEW = ("{id}: OpenAI-compatible server at {base_url} (no key). Its models are lead-only in this "
                "release: agents need a reviewed route. Nothing is sent now.")
+NETWORK_PREVIEW = ("{id}: OpenAI-compatible server at {base_url} (no key), private network ({network}): the "
+                   "gateway connects only to addresses in that network. Nothing is sent now.")
 KIND_LABELS = {"anthropic-compatible": "Anthropic-compatible, API key",
                "openai-compatible": "OpenAI-compatible, API key",
                "openai-compatible-lan": "server on your network"}
