@@ -454,9 +454,16 @@ class OnboardingActions:
         if choice is None:
             return
         audited = catalog.keyed_compat_audited(self.runtime.catalog.docs.get("gateway"))
+        # The private network a provider is on (OpenAI-compatible kinds),
+        # offered while those routes are open in this build.
+        network_offered = catalog.private_network_audited(self.runtime.catalog.docs.get("gateway"))
         if choice:
             name = choices[choice]
             fields = (("id", "Provider id", name, ()), ("url", "Base URL override (blank keeps preset)", "", ()))
+            if network_offered:
+                fields += (("network", views.NETWORK_FORM_LABEL + " — OpenAI-compatible presets only",
+                            views.NETWORK_NONE, ((views.NETWORK_NONE, "none — not on a private network"),
+                                                 *views.NETWORK_FORM_CHOICES)),)
             values = tui.OnboardingForm("new provider — preset", fields, palette=self.palette,
                                        help_text="Preset kinds stay authoritative. providers add --preset NAME").run(self.win)
             if values is None:
@@ -464,15 +471,20 @@ class OnboardingActions:
             argv = ["providers", "add", "--preset", name, "--as", values["id"]]
             if values["url"]:
                 argv += ["--base-url", values["url"]]
+            if views.network_value(values):
+                argv += ["--network", views.network_value(values)]
         else:
             from charmer import secret_store
 
             help_text = cli_text.PROVIDERS_HELP if audited else (
                 cli_text.OPENAI_COMPAT_CLOSED_FORM_NOTE + "\n" + cli_text.PROVIDERS_HELP)
+            if network_offered:
+                help_text += "\n" + cli_text.NETWORK_FORM_HELP
             # The key's name is checked at its field and never drawn unless it
             # reads as a name: a pasted key shows nowhere, not even in part.
             values = _ProviderForm(
-                "new provider", views.provider_form_fields(keyed_audited=audited), palette=self.palette,
+                "new provider", views.provider_form_fields(keyed_audited=audited, network_offered=network_offered),
+                palette=self.palette,
                 help_text=help_text,
                 checks={"secret": lambda text: secret_store.secret_name_problem(text.removeprefix("env:"))
                         if text else None},
@@ -487,6 +499,8 @@ class OnboardingActions:
                     return
             argv = ["providers", "add", values["id"], "--kind", values["kind"], "--base-url", values["url"],
                     "--auth", values["auth"], "--family", values["family"]]
+            if views.network_value(values):
+                argv += ["--network", views.network_value(values)]
             if values["auth"] != "none":
                 argv += ["--secret-ref", "env:" + values["secret"].removeprefix("env:")]
             if values["auth"] == "header":
