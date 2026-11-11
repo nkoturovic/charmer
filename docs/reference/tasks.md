@@ -44,7 +44,6 @@ Listing alone adds no model.
 | Enter | launch the profile on the card (while nothing is connected: open Get started) |
 | L | launch while nothing is connected yet |
 | U | check for and install a newer charmer |
-| W | open Get started |
 | E | edit the profile on the card |
 | Tab | show the next profile (Shift-Tab: the previous one) |
 | P | open Profiles |
@@ -54,7 +53,8 @@ Listing alone adds no model.
 | G | open Providers |
 | M | open Models |
 | O | open Settings |
-| H | doctor's findings: act on a row, the full report, the gateway's actions |
+| H | doctor's findings (first-run checks while nothing is connected) |
+| W | open Get started |
 | ? | this screen's help |
 | Esc | leave without launching |
 
@@ -187,7 +187,7 @@ In full: [guides/models.md](../guides/models.md).
 | inspect one line: origin, selectors, efforts, context, admission | card → M → Enter: a catalog line; card → M → V: a line; profile editor → Enter on an agent → V: a model in the picker | `charmer models show <line>` | not a `/cm` request | asks nothing |
 | the resolved entry or its evidence as JSON | not in the launcher: a machine-readable report for scripts and issue reports; the screens show the same facts | `charmer models show <line> --resolved`; `charmer models show <line> --evidence` | not a `/cm` request | for scripts; asks nothing |
 | advisory candidates from the registry and the gateway | card → M → Enter on candidates: the candidates row | `charmer models --candidates`; `charmer models --candidates --all` | not a `/cm` request | asks nothing |
-| declare a model of yours (New · not admitted) | card → G → A → enter a model by hand: a provider row | `charmer models add <provider> <wire> --context <n> --source docs\|operator\|registry` | not a `/cm` request | asks nothing |
+| declare a model of yours (New · not admitted) | card → G → A → enter a model by hand: a provider row; card → M → A: choose a provider | `charmer models add <provider> <wire> --context <n> --source docs\|operator\|registry` | not a `/cm` request | asks nothing |
 | declare a candidate, its form prefilled | card → M → Enter on candidates → Declare…: an attributed candidate | `charmer discover <provider> --add <wire> [--as <new-id>]` | not a `/cm` request | asks nothing |
 | edit a model you declared | card → M → E: a model you declared | `charmer models edit <line>` | not a `/cm` request | asks nothing |
 | record an optional local admission badge (zero inference) | card → M → Enter: a New line | `charmer models admit <line>` | not a `/cm` request | asks first: y/N, default No |
@@ -218,7 +218,7 @@ In full: [guides/profiles.md](../guides/profiles.md).
 | a profile's evaluated lineup | card → V: the card shows a profile; charmer -r → V: the resume card | `charmer profile show [<name>]` | not a `/cm` request | asks nothing |
 | create a profile (from scratch or from another) | card → P → N | `charmer profile new <name> [--from <profile>]`; `charmer profile new <name> --from <profile> --keep-fallback` | not a `/cm` request | asks nothing |
 | copy a profile | card → P → C: a profile that can be loaded | `charmer profile duplicate <name> <new>`; `charmer profile duplicate <name> <new> --keep-fallback` | not a `/cm` request | asks nothing |
-| edit a profile and save it (or reload it after a conflict) | card → P → E; card → E: a fresh card; profile editor → Enter: a row of the editor; profile editor → U: an agent row; profile editor → Enter on an agent → Enter: a picker row; profile editor → Enter on an agent → ← →: a model with efforts; profile editor → Ctrl-S: the editor | `charmer profile edit <name>` | not a `/cm` request | asks nothing |
+| edit a profile and save it (or reload it after a conflict) | card → P → E; card → E: a fresh card; profile editor → Enter: a row of the editor; profile editor → U: an agent row; profile editor → Enter on an agent → Enter: a picker row; profile editor → Enter on an agent → ← →: a model with efforts; profile editor → Ctrl-S: the editor; profile editor → save → A: running followers are offered | `charmer profile edit <name>` | not a `/cm` request | asks nothing |
 | preview where reviews route in a profile | profile editor → R: the editor | `charmer profile show [<name>]` | not a `/cm` request | asks nothing |
 | rename a profile (the default and followers move with it) | card → P → R: a profile of yours | `charmer profile rename <name> <new>` | not a `/cm` request | asks nothing |
 | remove a profile of yours (a copy is kept) | card → P → X: a profile of yours | `charmer profile rm <name>`; `charmer profile rm <name> --yes` | not a `/cm` request | asks first: y/N, default No; --yes off a terminal |
@@ -297,7 +297,7 @@ In full: [settings.md](settings.md).
 | Task | TUI | CLI | In-session | Notes |
 | --- | --- | --- | --- | --- |
 | the launcher settings and their effect | card → O | no command: an interactive, validated editor of local choices; no general settings command is promised | not a `/cm` request | asks nothing |
-| edit a setting (applies at the next launch or resume) | card → O → Enter: an editable row | no command: an interactive, validated editor of local choices; no general settings command is promised | not a `/cm` request | asks nothing |
+| edit a setting (applies at the next launch or resume) | card → O → Enter: an editable row; card → O → review rounds → ← →: the writable review-rounds row | no command: an interactive, validated editor of local choices; no general settings command is promised | not a `/cm` request | asks nothing |
 | reset a setting to its default | card → O → R: a row with a default | no command: an interactive, validated editor of local choices; no general settings command is promised | not a `/cm` request | asks first: dialog with Cancel focused first |
 | offer or withhold Claude Code's feedback drafts | card → O → feedback drafts | no command: an interactive, validated editor of local choices; no general settings command is promised | not a `/cm` request | asks nothing |
 | keep chosen API-key variables (names only) in sessions | card → O → kept environment | no command: a names-only Settings choice, validated against the providers' key names when it is saved and at every launch; no general settings command is promised | not a `/cm` request | asks nothing |
