@@ -421,6 +421,78 @@ class GatewayFallbackProbe(_GatedCase):
             self.assertIn(record, upgrade.ESSENTIAL_EVIDENCE_PREFIXES)
 
 
+def memory_class(turns: list[list[dict[str, Any]]]) -> str:
+    """What a terminal session does on its next turn after the gateway refused
+    tool search once (2.1.314: "remembers it"): ``GFM-remembered`` when the
+    next turn's first request already lacks it, ``GFM-retried`` when it
+    carries it again. Raises when the refusal never happened."""
+
+    if len(turns) != 2 or not all(turns):
+        raise _Inconclusive("a turn of the memory control sent no main request")
+    first, second = turns
+    if "ToolSearch" not in first[0].get("tools", ()):
+        raise _Inconclusive("the memory control's refused request carried no tool search")
+    if "ToolSearch" in first[-1].get("tools", ()):
+        raise _Inconclusive("the memory control never resent without tool search")
+    return "GFM-retried" if "ToolSearch" in second[0].get("tools", ()) else "GFM-remembered"
+
+
+class RefusalMemoryProbe(_GatedCase):
+    """The refused part stays off for the rest of a session: the fixture
+    gateway refuses tool search on the first turn only, and the next turn of
+    the same terminal session shows whether the client sends it again. The
+    candidate is specified ``GFM-remembered`` (2.1.314); the previous
+    release's pin (``CHARMER_TEST_PREVIOUS_CLAUDE``), run the same way, is
+    recorded beside it. The line: ``client check gateway-fallbacks-memory:
+    <STATUS> class=<class> <detail>`` (a control for the documentation, not an
+    essential record)."""
+
+    probe_id = "gateway-fallbacks-memory"
+
+    def _session(self, trusted: probe.TrustedExecutable) -> list[list[dict[str, Any]]]:
+        fixture = self._fixture()
+        settings = self._settings(fixture, _LEAD, [_LEAD])
+        provider = _OneTurnRefusal()
+        marks: list[int] = []
+        prompt = "❯".encode()
+        steps = [probe.PTYInteraction(b"Choose", b"2\r"), probe.PTYInteraction(b"Press", b"\r"),
+                 probe.PTYInteraction(prompt, b"client check one\r"),
+                 probe.PTYInteraction(b"PROBE-OK", b"", preserve_after_wait=True),
+                 probe.PTYInteraction(prompt, b"client check two\r",
+                                      before_send=lambda: (marks.append(len(provider.rows)), provider.stop())),
+                 probe.PTYInteraction(b"PROBE-OK", b"", preserve_after_wait=True),
+                 probe.PTYInteraction(prompt, b"/exit\r")]
+        with provider:
+            result = probe.run_native_pty(
+                ("--settings", str(settings), "--model", _LEAD, "--effort", _EFFORT), steps,
+                trusted=trusted, fixture=fixture, provider=provider, timeout=150, allow_real=True,
+                environ=self.environ)
+        if result.timed_out or not marks:
+            raise _Inconclusive("the memory control's session did not finish both turns")
+        return [_main(provider.rows[:marks[0]]), _main(provider.rows[marks[0]:])]
+
+    def test_a_refused_part_stays_off_for_the_session(self) -> None:
+        observed_class = self._guard(lambda: memory_class(self._guard(lambda: self._session(self.trusted))))
+        previous = _client_roles.named_control(_client_roles.PREVIOUS_ENV)
+        control = f"previous pin unavailable ({_client_roles.PREVIOUS[0]} not named by {_client_roles.PREVIOUS_ENV})"
+        if previous is not None:
+            control = (f"previous pin {_client_roles.PREVIOUS[0]}: "
+                       f"{self._guard(lambda: memory_class(self._guard(lambda: self._session(previous))))}")
+        detail = f"{control} client={self.gate.version} sha256={self.trusted.sha256[:12]}"
+        type(self).verdict = ("PASS" if observed_class == "GFM-remembered" else "FAIL", observed_class, detail)
+        self.assertEqual(observed_class, "GFM-remembered", detail)
+
+
+class _OneTurnRefusal(_Provider):
+    """The fixture gateway refusing tool search until ``stop``."""
+
+    def __init__(self) -> None:
+        super().__init__(refuse="tools")
+
+    def stop(self) -> None:
+        self.refuse = None
+
+
 _ALL_BETAS = [EFFORT_BETA, CONTEXT_BETA, TOOL_SEARCH_BETA]
 
 
@@ -505,6 +577,16 @@ class VerdictTests(unittest.TestCase):
                     for turn, index in ((0, 0), (0, 1), (1, 0)):
                         with self.subTest(expected=expected, change=change, label=label, turn=turn, index=index):
                             self.assertEqual(verdict(self.changed(rows, label, turn, index, **change)), expected)
+
+    def test_the_memory_class_needs_the_refusal_and_its_resend(self) -> None:
+        refused, without = _row(), _row(search=False)
+        self.assertEqual(memory_class([[refused, without], [_row(search=False)]]), "GFM-remembered")
+        self.assertEqual(memory_class([[refused, without], [_row()]]), "GFM-retried")
+        for turns in ([[without], [without]], [[refused, refused], [without]], [[refused, without], []],
+                      [[refused, without]]):
+            with self.subTest(turns=len(turns)):
+                with self.assertRaises(_Inconclusive):
+                    memory_class(turns)
 
     def test_a_request_row_keeps_the_promised_facts(self) -> None:
         document = {"model": _LEAD, "output_config": {"effort": "high"}, "context_management": {"edits": []},
