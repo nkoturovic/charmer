@@ -59,6 +59,7 @@ _LONG_BLOCKED_BASE = frozenset(
         "--continue",
         "--disable-slash-commands",
         "--autocompact",
+        "--system-prompt-snapshot",
     }
 )
 # Contingency lead delivery (the only mode) owns the prompt flags.
@@ -91,6 +92,11 @@ _FLAG_OWNERS = {
     # Claude Code takes a --autocompact window over every settings source;
     # only the compiled window variable outranks it. The window is charmer's.
     "--autocompact": "the session compaction window; set it with charmer window-ceiling",
+    # Claude Code records a conversation's system prompt on its first request
+    # and re-sends that record on every resume until a compaction; a fork's
+    # copy carries its parent's record, so the launcher switches it off for
+    # every launch of a fork (its own lead prompt is the one sent).
+    "--system-prompt-snapshot": "the launcher's system-prompt record policy",
     "--system-prompt": "contingency lead delivery",
     "--append-system-prompt": "contingency lead delivery",
     "--append-system-prompt-file": "contingency lead delivery",
@@ -148,13 +154,21 @@ FORK_UNVERIFIED_GUIDANCE = (
 )
 
 
+SYSTEM_PROMPT_SNAPSHOT_FLAG = "--system-prompt-snapshot"
+SYSTEM_PROMPT_SNAPSHOT_OFF = "off"
+
+
 @dataclass(frozen=True)
 class SessionAction:
-    """Stable charmer identity plus the native UUID targeted by argv."""
+    """Stable charmer identity plus the native UUID targeted by argv.
 
-    kind: str  # "fresh" | "resume"
+    A fork starts a new runtime (``runtime_session_id``, the new managed id)
+    from a copy of ``fork_from``'s conversation (the parent's runtime id)."""
+
+    kind: str  # "fresh" | "resume" | "fork"
     managed_id: str
     runtime_session_id: str
+    fork_from: str | None = None
 
     @property
     def session_id(self) -> str:
@@ -180,6 +194,17 @@ def build_resume(
         kind="resume",
         managed_id=managed_id,
         runtime_session_id=runtime_session_id or managed_id,
+    )
+
+
+def build_fork(managed_id: str, parent_runtime_id: str) -> SessionAction:
+    """A new managed session ``managed_id`` (its runtime id too) started from
+    a copy of the conversation ``parent_runtime_id``."""
+
+    if not parent_runtime_id or parent_runtime_id == managed_id:
+        raise CompilerError("a fork needs the runtime id of another session to copy")
+    return SessionAction(
+        kind="fork", managed_id=managed_id, runtime_session_id=managed_id, fork_from=parent_runtime_id,
     )
 
 
@@ -929,8 +954,13 @@ def compile_lineup_launch(
     default_mode: str | None = None,
     env_keep: Sequence[str] = (),
     subagent_status_line: Mapping[str, str] | None = None,
+    fork_record: bool = False,
 ) -> CompileResult:
     """The one v2 launch plan for every session, managed or direct.
+
+    ``fork_record``: the session was started as a fork of another
+    (``forked_from``); every launch of it, like the fork launch itself,
+    switches Claude Code's system-prompt record off.
 
     ``agent_gate`` is the ``profile.AgentGate`` the lineup was
     evaluated with; the fence admits T2 selectors only for bound agents and
@@ -1077,6 +1107,11 @@ def compile_lineup_launch(
         argv += ["--session-id", session_action.runtime_session_id]
     elif session_action.kind == "resume":
         argv += ["--resume", session_action.runtime_session_id]
+    elif session_action.kind == "fork":
+        if not session_action.fork_from:
+            raise CompilerError("a fork action needs the runtime id it copies")
+        argv += ["--resume", session_action.fork_from, "--fork-session",
+                 "--session-id", session_action.runtime_session_id]
     else:
         raise CompilerError(f"unknown session action {session_action.kind!r}")
     argv += [
@@ -1093,6 +1128,11 @@ def compile_lineup_launch(
         "--append-system-prompt-file",
         str(prompt_path),
     ]
+    if session_action.kind == "fork" or fork_record:
+        # The copied conversation carries the parent's recorded system
+        # prompt, which Claude Code would otherwise send instead of this
+        # session's own until a compaction (also on every later resume).
+        argv += [SYSTEM_PROMPT_SNAPSHOT_FLAG, SYSTEM_PROMPT_SNAPSHOT_OFF]
     argv += safe_args
 
     return CompileResult(
