@@ -526,29 +526,8 @@ PROVIDERS_TITLE = "providers — local status"
 PROVIDERS_LEGEND = ("credential: API key or sign-in · served: models the local gateway serves now "
                     "(not a test of the provider)")
 PROVIDERS_APPLY_BANNER = "The gateway is not serving your latest provider changes — P applies them."
-# The bar while the list is empty.
+# Compatibility footer; Providers builds its contextual bar from screens.actions.
 PROVIDERS_KEYBAR = (("N", "new"), ("R", "refresh"), ("?", "help"), ("Esc", "back"))
-PROVIDERS_KEYBAR_KEY_MISSING = (("Enter", "set key"), ("A", "add models"), ("Space", "on/off"), ("V", "details"),
-                                ("N", "new"), ("R", "refresh"), ("?", "help"), ("Esc", "back"))
-PROVIDERS_KEYBAR_KEY_SET = (("Enter", "details"), ("K", "replace key"), ("X", "remove key"), ("T", "test"),
-                            ("A", "add models"), ("Space", "on/off"), ("N", "new"), ("?", "help"), ("Esc", "back"))
-PROVIDERS_KEYBAR_ACCOUNT = (("Enter", "{primary}"), ("L", "sign in/out"), ("T", "test"), ("Space", "on/off"),
-                            ("V", "details"), ("N", "new"), ("?", "help"), ("Esc", "back"))
-# An account provider whose active connection is its API key: key actions
-# first; L still lists and manages the saved accounts.
-PROVIDERS_KEYBAR_ACCOUNT_KEY = (("Enter", "{primary}"), ("K", "{key_label}"), ("X", "remove key"),
-                                ("L", "accounts"), ("T", "test"), ("Space", "on/off"), ("V", "details"),
-                                ("N", "new"), ("?", "help"), ("Esc", "back"))
-PROVIDERS_KEYBAR_OWN = (("Enter", "{primary}"), ("E", "edit"), ("K", "{key_label}"), ("X", "remove"),
-                        ("A", "add models"), ("T", "test"), ("Space", "on/off"), ("N", "new"), ("?", "help"),
-                        ("Esc", "back"))
-PROVIDERS_KEYBAR_OWN_KEYLESS = (("Enter", "details"), ("E", "edit"), ("X", "remove"), ("A", "add models"),
-                                ("T", "test"), ("Space", "on/off"), ("N", "new"), ("?", "help"), ("Esc", "back"))
-PROVIDERS_KEYBAR_KEYLESS = (("Enter", "details"), ("T", "test"), ("A", "add models"), ("Space", "on/off"),
-                            ("N", "new"), ("R", "refresh"), ("?", "help"), ("Esc", "back"))
-PROVIDERS_APPLY_BINDING = ("P", "apply")
-# Joins the bar while the local gateway is not reachable (before ?).
-PROVIDERS_GATEWAY_BINDING = ("W", "gateway")
 PROVIDERS_PRIMARY = {"approve": "approve", "set-key": "set key", "connect": "connect", "sign-in": "sign in",
                      "account": "sign in/out", "details": "details"}
 PROVIDERS_KEY_LABELS = {"set": "set key", "replace": "replace key"}
@@ -562,24 +541,11 @@ DETAILS_TRANSPORT = "Transport: {transport}"
 DETAILS_TRANSPORT_KEY = "{display} API key"
 DETAILS_TITLE = "provider — full details"
 PROVIDERS_HELP = (
-    "Enter does the main thing for the selected provider: set its API key, sign in, approve its route,\n"
-    "or show details.\n"
-    "K sets or replaces an API key (typed masked; saving reloads the gateway; nothing is sent to the\n"
-    "provider). X removes a key, signs out, or removes a provider you added; profiles that use it stop\n"
-    "being connected.\n"
-    "L signs in to or out of a Claude or ChatGPT account (personal use; it runs in this terminal).\n"
     "Anthropic and OpenAI: Enter chooses between your account and an API key (one at a time; an\n"
     "OpenAI API key serves only the models reviewed for it).\n"
-    "T tests a provider with one request (you confirm first; it may be billed).\n"
-    "A adds models (a listing you confirm, or by hand). N adds your own endpoint (from a reviewed\n"
-    "preset or by hand) or a server on your network. E edits a provider you added; Enter approves its\n"
-    "route.\n"
-    "P applies your changes when the gateway is not serving them yet.\n"
-    "Space turns a provider on or off for new sessions; running sessions keep theirs.\n"
-    "V shows details: models, served state, signed-in accounts, quota. R refreshes.\n"
-    "W opens the local gateway: start or restart it now, or read its log (stopping it is a terminal\n"
-    "command: charmer gateway stop).\n"
-    "Changing credentials needs a terminal outside Claude Code."
+    "Changing credentials needs a terminal outside Claude Code.\n"
+    "CLI: charmer setup --keys-file FILE; charmer providers remove-key REMOVED_PROVIDER --name KEY_NAME; "
+    "charmer discover --all"
 )
 # The key modal (set or replace an API key).
 KEY_MODAL_TITLE = "{display} API key"

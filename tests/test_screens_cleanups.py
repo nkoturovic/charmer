@@ -25,14 +25,15 @@ class ShortcutLabelsTests(unittest.TestCase):
     def test_details_and_named_binding_aliases_are_silent(self) -> None:
         from charmer.cli import text
 
-        for bar in (text.PROVIDERS_KEYBAR_KEY_MISSING, text.PROVIDERS_KEYBAR_ACCOUNT,
-                    text.PROVIDERS_KEYBAR_ACCOUNT_KEY):
-            self.assertIn(("V", "details"), bar)
-            self.assertNotIn(("Q", "details"), bar)
+        from charmer.cli.screens import actions, providers
+
+        bar = tui.KeyBar(actions.bar("providers", [row.id for row in actions.ACTIONS["providers"]])).bindings
+        self.assertIn(("V", "details"), bar)
+        self.assertNotIn(("Q", "details"), bar)
         self.assertIn(("B", "named bindings"), tui.PROFILE_EDITOR_KEYBAR)
         self.assertNotIn(("N", "named bindings"), tui.PROFILE_EDITOR_KEYBAR)
         self.assertIn("B edits named bindings", tui.PROFILE_EDITOR_HELP)
-        self.assertIn("V shows details", text.PROVIDERS_HELP)
+        self.assertIn("V shows details", providers.HELP)
 
 
 class PresentationTests(unittest.TestCase):

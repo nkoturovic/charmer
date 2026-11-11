@@ -1,16 +1,15 @@
-"""The TUI's actions by stable id: one row per key a screen's bar offers.
+"""The TUI's keys by stable id, shared by bars, help and documentation.
 
-The screens dispatch on keys and draw their bars from the text constants;
-this table names what each key does with an id that stays the same when a
-label changes, and the command that does the same from a shell when there
-is one. ``tests/test_tui_actions.py`` checks it against the bars in both
-directions: every key a bar shows has a row here, and every row's key is on
-one of that screen's bars. Pure data: nothing here is imported by a screen.
+Screens select applicable ids using their handler predicates. Labels and
+ranks may follow the selected row; help always names every non-silent key.
+Help-only keys carry a reason; compatibility aliases stay silent. The key
+census checks handlers, table rows, rendered bars and help together.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Iterable, Mapping
 
 
 @dataclass(frozen=True)
@@ -22,6 +21,19 @@ class Action:
     key: str
     does: str
     command: str | None = None
+    label: str = ""
+    rank: int = 2
+    help: str = ""
+    help_only: str | None = None
+    silent: bool = False
+
+    def __post_init__(self) -> None:
+        if self.rank not in (1, 2, 3):
+            raise ValueError(f"{self.id}: rank must be 1, 2 or 3")
+        if self.help_only is not None and (not self.help_only.strip() or self.rank == 1):
+            raise ValueError(f"{self.id}: help-only keys need a reason and cannot be primary")
+        if not self.help:
+            object.__setattr__(self, "help", f"{self.key} — {self.does}")
 
 
 def _rows(screen: str, *rows: tuple[str, str, str] | tuple[str, str, str, str | None]) -> tuple[Action, ...]:
@@ -117,27 +129,47 @@ ACTIONS: dict[str, tuple[Action, ...]] = {
         _HELP,
         ("back", "Esc", "back"),
     ),
-    "providers": _rows(
-        "providers",
-        ("primary", "Enter", "the row's main action: set a key, sign in, connect, approve or details"),
-        ("apply", "P", "make the gateway serve your changes", "charmer providers apply"),
-        ("set-key", "K", "set or replace an API key", "charmer providers set-key <provider>"),
-        ("remove", "X", "remove the key, the sign-in or a provider you added", "charmer providers remove-key <provider>"),
-        ("sign-in", "L", "sign in or out of an account provider", "charmer providers sign-in <provider>"),
-        ("test", "T", "test the provider", "charmer providers test <provider>"),
-        ("add-models", "A", "add models to the provider", "charmer models add"),
-        ("toggle", "Space", "turn the provider on or off", "charmer providers enable <provider>"),
-        ("details", "V", "the provider's details", "charmer providers show <provider>"),
-        ("edit", "E", "edit a provider you added", "charmer providers edit <provider>"),
-        ("new", "N", "add a provider", "charmer providers add"),
-        ("refresh", "R", "read the gateway again"),
-        ("gateway", "W", "start the local gateway or read its log", "charmer gateway start"),
-        ("key-file", "F", "choose the private key file used for every API key", "charmer setup --keys-file <file>"),
-        ("remove-orphan-key", "O", "list saved keys no provider uses and remove one",
-         "charmer providers remove-key <provider> --name <key>"),
-        ("discover-all", "D", "list every connected provider's models in one consented pass", "charmer discover --all"),
-        _HELP,
-        ("back", "Esc", "back"),
+    "providers": (
+        Action("providers.primary", "Enter", "the row's main action: set a key, sign in, connect, approve or details",
+               label="details", rank=1),
+        Action("providers.apply", "P", "make the gateway serve your changes", "charmer providers apply",
+               label="apply", rank=1, help="P applies your changes when the gateway is not serving them yet."),
+        Action("providers.add-models", "A", "add models to the provider", "charmer models add",
+               label="add models", rank=1, help="A adds models (a listing you confirm, or by hand)."),
+        Action("providers.edit", "E", "edit a provider you added", "charmer providers edit <provider>",
+               label="edit", rank=1, help="E edits a provider you added; Enter approves its route."),
+        Action("providers.sign-in", "L", "sign in or out of an account provider", "charmer providers sign-in <provider>",
+               label="sign in/out", rank=1,
+               help="L signs in to or out of a Claude or ChatGPT account (personal use; it runs in this terminal)."),
+        Action("providers.set-key", "K", "set or replace an API key", "charmer providers set-key <provider>",
+               label="set key", rank=1,
+               help="K sets or replaces an API key (typed masked; saving reloads the gateway; nothing is sent to the provider)."),
+        Action("providers.remove", "X", "remove the key, the sign-in or a provider you added", "charmer providers remove-key <provider>",
+               label="remove key", rank=1,
+               help="X removes a key, signs out, or removes a provider you added; profiles that use it stop being connected."),
+        Action("providers.test", "T", "test the provider", "charmer providers test <provider>", label="test",
+               help="T tests a provider with one request (you confirm first; it may be billed)."),
+        Action("providers.toggle", "Space", "turn the provider on or off", "charmer providers enable <provider>", label="on/off",
+               help="Space turns a provider on or off for new sessions; running sessions keep theirs."),
+        Action("providers.details", "V", "the provider's details", "charmer providers show <provider>", label="details",
+               help="V shows details: models, served state, signed-in accounts, quota."),
+        Action("providers.new", "N", "add a provider", "charmer providers add", label="new",
+               help="N adds your own endpoint (from a reviewed preset or by hand) or a server on your network."),
+        Action("providers.refresh", "R", "read the gateway again", label="refresh", rank=3),
+        Action("providers.gateway", "W", "start the local gateway or read its log", "charmer gateway start", label="gateway", rank=3,
+               help="W opens the local gateway: start or restart it now, or read its log (stopping it is a terminal command: charmer gateway stop)."),
+        Action("providers.key-file", "F", "choose the private key file used for every API key", "charmer setup --keys-file <file>",
+               label="key file", rank=3,
+               help="F — key file: choose an existing private NAME=value file for all provider API keys."),
+        Action("providers.remove-orphan-key", "O", "list saved keys no provider uses and remove one",
+               "charmer providers remove-key <provider> --name <key>", label="orphan keys", rank=3,
+               help="O — orphan keys: list saved names no provider uses and confirm a removal. Values are never shown."),
+        Action("providers.discover-all", "D", "list every connected provider's models in one consented pass", "charmer discover --all",
+               label="list all", rank=3,
+               help="D — list all: disclose every listing request before one confirmation; nothing is declared or admitted."),
+        Action("providers.help", "?", "this screen's help", label="help"),
+        Action("providers.back", "Esc", "back", label="back"),
+        Action("providers.details-alias", "Q", "the provider's details", silent=True),
     ),
     "models": _rows(
         "models",
@@ -209,6 +241,39 @@ ACTIONS: dict[str, tuple[Action, ...]] = {
         ("back", "Esc", "back"),
     ),
 }
+
+
+def bar(screen: str, ids: Iterable[str], *, labels: Mapping[str, str] | None = None,
+        ranks: Mapping[str, int] | None = None) -> tuple[tuple[str, str, int], ...]:
+    """Applicable keys in table order. Ids may be local verbs or full ids."""
+
+    def local(name: str) -> str:
+        return name.removeprefix(screen + ".")
+
+    selected = {local(name) for name in ids}
+    labels = {local(name): value for name, value in (labels or {}).items()}
+    ranks = {local(name): value for name, value in (ranks or {}).items()}
+    rows = ACTIONS[screen]
+    unknown = (selected | labels.keys() | ranks.keys()) - {local(row.id) for row in rows}
+    if unknown:
+        raise KeyError(f"{screen}: unknown actions {', '.join(sorted(unknown))}")
+    bindings = []
+    for row in rows:
+        verb = local(row.id)
+        if verb not in selected or row.silent or row.help_only:
+            continue
+        label, rank = labels.get(verb, row.label), ranks.get(verb, row.rank)
+        if not label or rank not in (1, 2, 3):
+            raise ValueError(f"{row.id}: a bar key needs a label and rank 1, 2 or 3")
+        bindings.append((row.key, label, rank))
+    return tuple(bindings)
+
+
+def help_text(screen: str, notes: str = "") -> str:
+    """Every non-silent key, one help line each, then the screen's notes."""
+
+    keys = "\n".join(row.help for row in ACTIONS[screen] if not row.silent)
+    return keys + ("\n\n" + notes if notes else "")
 
 
 def action(action_id: str) -> Action:

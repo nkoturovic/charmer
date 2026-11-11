@@ -909,112 +909,74 @@ class Badge:
 
 
 class KeyBar:
-    """Footer hint bar: ``Enter launch · E edit · Esc cancel`` with accented keys.
+    """At most two footer rows, with accented keys and ranked overflow.
 
-    Draws at ``col 2``; when the bindings do not fit one row the bar wraps
-    upward (using the row above the given one) instead of clipping keys —
-    the exit binding is always fully visible.
+    Pairs default to rank 2. Triples supply a rank (1 primary, 2 screen,
+    3 housekeeping); highest rank drops first, last first within a rank.
+    Help and Esc never drop. Help names the hidden count; without help,
+    an ellipsis marks omitted bindings. Fitting bars keep their order.
     """
 
-    def __init__(self, bindings: Sequence[tuple[str, str]]):
-        self.bindings = list(bindings)
+    def __init__(self, bindings: Sequence[tuple[str, str] | tuple[str, str, int]]):
+        self.bindings = [(binding[0], binding[1]) for binding in bindings]
+        self.ranks = [binding[2] if len(binding) == 3 else 2 for binding in bindings]
 
     def text(self) -> str:
         return " · ".join(f"{key} {label}" for key, label in self.bindings)
 
-    def _rows_needed(self, width: int) -> int:
-        col = 2
-        rows = 1
-        for index, (key, label) in enumerate(self.bindings):
-            entry = len(key) + 1 + len(label) + (3 if index else 0)
-            if col + entry > width - 2 and index:
-                rows += 1
-                col = 2 + len(key) + 1 + len(label)
-                continue
-            col += entry
+    @staticmethod
+    def _wrap(bindings: Sequence[tuple[str, str]], width: int, col: int = 2) -> list[list[tuple[str, str]]]:
+        rows: list[list[tuple[str, str]]] = [[]]
+        x = col
+        for key, label in bindings:
+            length = len(key) + (1 + len(label) if label else 0)
+            if rows[-1] and x + 3 + length > width - 2:
+                rows.append([])
+                x = col
+            x += length + (3 if rows[-1] else 0)
+            rows[-1].append((key, label))
         return rows
+
+    def _rows_needed(self, width: int) -> int:
+        return len(self._wrap(self.bindings, width))
+
+    def _layout(self, width: int, col: int = 2) -> list[list[tuple[str, str]]]:
+        kept = list(range(len(self.bindings)))
+        help_keys = {"?", "F1"}
+        has_help = any(key in help_keys for key, _ in self.bindings)
+        while True:
+            hidden = len(self.bindings) - len(kept)
+            drawn = [(key, f"{hidden} more" if hidden and key in help_keys else label)
+                     for index in kept for key, label in (self.bindings[index],)]
+            if hidden and not has_help:
+                exit_index = next((i for i, (key, _) in enumerate(drawn) if key == "Esc"), len(drawn))
+                drawn.insert(exit_index, ("…", ""))
+            rows = self._wrap(drawn, width, col)
+            candidates = [i for i in kept if self.bindings[i][0] not in (*help_keys, "Esc")]
+            if len(rows) <= 2 or not candidates:
+                return rows[:2]
+            kept.remove(max(candidates, key=lambda i: (self.ranks[i], i)))
 
     def rows(self, width: int) -> int:
         """Rows the bar will occupy when drawn (capped at 2, wrapping upward)."""
 
-        return min(self._rows_needed(width), 2)
+        return len(self._layout(width))
 
     def draw(self, win: Any, row: int, palette: Palette, col: int = 2) -> None:
-        height, width = win.getmaxyx()
-        used = self.rows(width)
-        if self._rows_needed(width) > used:
-            # Overflow beyond two rows: the contract is that the exit
-            # binding is never clipped; the help binding (? — the discovery
-            # mechanism) shares the guaranteed bottom-row spot when the
-            # screen put it immediately before the exit. Middle bindings
-            # compact behind an ellipsis.
-            origin = max(0, row - (used - 1))
+        _height, width = win.getmaxyx()
+        rows = self._layout(width, col)
+        origin = max(0, row - len(rows) + 1)
+        for offset, bindings in enumerate(rows):
             x = col
-            index = 0
-            protected = (
-                self.bindings[-2:]
-                if len(self.bindings) >= 2 and self.bindings[-2][0] == "?"
-                else self.bindings[-1:]
-            )
-            body = self.bindings[: -len(protected)]
-            while index < len(body):
-                key, label = body[index]
-                entry = len(key) + 1 + len(label) + (3 if index else 0)
-                if index and x + entry > width - 2:
-                    break
+            for index, (key, label) in enumerate(bindings):
                 if index:
-                    safe_add(win, origin, x, " · ", palette.attr("dim"))
+                    safe_add(win, origin + offset, x, " · ", palette.attr("dim"))
                     x += 3
-                safe_add(win, origin, x, key, palette.attr("accent"))
+                safe_add(win, origin + offset, x, key, palette.attr("dim" if key == "…" else "accent"))
                 x += len(key)
-                safe_add(win, origin, x, f" {label}", palette.attr("normal"))
-                x += 1 + len(label)
-                index += 1
-            # Use the bottom row too, reserving the ellipsis and protected
-            # keys before admitting another whole binding.
-            x = col
-            reserved = len("… · " + KeyBar(protected).text())
-            while index < len(body):
-                key, label = body[index]
-                entry = len(key) + 1 + len(label) + (3 if x > col else 0)
-                if x + entry + 3 + reserved > width - 2:
-                    break
-                if x > col:
-                    safe_add(win, origin + 1, x, " · ", palette.attr("dim"))
-                    x += 3
-                safe_add(win, origin + 1, x, key, palette.attr("accent"))
-                x += len(key)
-                safe_add(win, origin + 1, x, f" {label}", palette.attr("normal"))
-                x += 1 + len(label)
-                index += 1
-            tail = (" · " if x > col else "") + ("… · " if index < len(body) else "")
-            safe_add(win, origin + 1, x, tail, palette.attr("dim"))
-            x += len(tail)
-            for offset, (key, label) in enumerate(protected):
-                if offset:
-                    safe_add(win, origin + 1, x, " · ", palette.attr("dim"))
-                    x += 3
-                safe_add(win, origin + 1, x, key, palette.attr("accent"))
-                x += len(key)
-                safe_add(win, origin + 1, x, f" {label}", palette.attr("normal"))
-                x += 1 + len(label)
-            return
-        origin = max(0, row - (used - 1))
-        current = origin
-        for index, (key, label) in enumerate(self.bindings):
-            entry = len(key) + 1 + len(label) + (3 if index else 0)
-            if index and col + entry > width - 2 and current < origin + used - 1:
-                current += 1
-                col = 2
-            elif index:
-                safe_add(win, current, col, " · ", palette.attr("dim"))
-                col += 3
-            safe_add(win, current, col, key, palette.attr("accent"))
-            col += len(key)
-            safe_add(win, current, col, f" {label}", palette.attr("normal"))
-            col += 1 + len(label)
-            if col >= width - 2 and current >= row:
-                break
+                if label:
+                    safe_add(win, origin + offset, x, f" {label}", palette.attr("normal"))
+                    x += 1 + len(label)
 
 
 @dataclass

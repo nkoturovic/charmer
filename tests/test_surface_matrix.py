@@ -76,7 +76,7 @@ def proxy_inventory(commands=None) -> dict[str, tuple[str, ...]]:
 
 
 def tui_inventory(actions=None) -> list[str]:
-    return [row.id for rows in (actions or tui_actions.ACTIONS).values() for row in rows]
+    return [row.id for rows in (actions or tui_actions.ACTIONS).values() for row in rows if not row.silent]
 
 
 @functools.lru_cache(maxsize=None)

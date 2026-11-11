@@ -27,6 +27,7 @@ from charmer import tui
 from charmer import views
 import charmer.cli.consent as consent
 import charmer.cli.gateway_facts as gateway_facts
+import charmer.cli.screens.actions as screen_actions
 import charmer.cli.screens.common as screens_common
 import charmer.cli.screens.gateway_actions as screens_gateway
 import charmer.cli.text as cli_text
@@ -87,13 +88,9 @@ ORPHAN_OWNED = "Key {name} is now used by a provider — nothing changed"
 LIST_ALL_TITLE = "List connected providers"
 LIST_ALL_INTRO = ("List models from every connected provider with listing support. "
                  "Nothing is declared or admitted.")
-PROVIDERS_FILE_BINDINGS = (("F", "key file"), ("O", "orphan keys"), ("D", "list all"))
-PROVIDERS_FILE_HELP = (
-    "\n\nF — key file: choose an existing private NAME=value file for all provider API keys.\n"
-    "O — orphan keys: list saved names no provider uses and confirm a removal. Values are never shown.\n"
-    "D — list all: disclose every listing request before one confirmation; nothing is declared or admitted.\n"
-    "CLI: charmer setup --keys-file FILE; charmer providers remove-key REMOVED_PROVIDER --name KEY_NAME; "
-    "charmer discover --all")
+PROVIDERS_FILE_HELP = "\n\n" + "\n".join(
+    screen_actions.action("providers." + verb).help for verb in ("key-file", "remove-orphan-key", "discover-all"))
+HELP = screen_actions.help_text("providers", cli_text.PROVIDERS_HELP)
 
 
 class _ListingConsent(tui.TextView):
@@ -1016,7 +1013,7 @@ class _ProvidersScreen:
     # -- data --------------------------------------------------------------
 
     def _load_facts(self, *, refresh_pool: bool = False) -> None:
-        from charmer.setup import status
+        from charmer.setup import check, status
 
         loaded = gateway_facts._provider_facts(self.runtime)
         self.facts = loaded.facts
@@ -1039,6 +1036,13 @@ class _ProvidersScreen:
         self.rows = self._rows()
         self.selected = min(self.selected, max(0, len(self.rows) - 1))
         self.apply_offer = self._apply_needed()
+        # A connected row need not have a served test target. Use the same
+        # read-only plan as T, once per refresh (never send a request here).
+        try:
+            plan = check.plan_test(self.runtime, [row.id for row in self.rows])
+            self.testable = {target.provider_id for target in plan.targets}
+        except (cli_errors.CharmerError, OSError, ValueError):
+            self.testable = set()
 
     def _apply_needed(self) -> bool:
         """Drift or a connected provider served below its expected set."""
@@ -1128,39 +1132,44 @@ class _ProvidersScreen:
             return "set-key"
         return "details"
 
-    def _keybar_bindings(self) -> list[tuple[str, str]]:
+    def _keybar(self) -> tui.KeyBar:
+        ids = {"new", "refresh", "gateway", "key-file", "remove-orphan-key", "discover-all", "help", "back"}
+        labels: dict[str, str] = {}
         fact = self._fact()
-        if fact is None:
-            bindings = list(cli_text.PROVIDERS_KEYBAR)
-        else:
-            primary = cli_text.PROVIDERS_PRIMARY[self._primary(fact)]
+        if fact is not None:
+            primary = self._primary(fact)
+            ids.update(("primary", "add-models", "toggle"))
+            labels["primary"] = cli_text.PROVIDERS_PRIMARY[primary]
+            if primary != "details":
+                ids.add("details")
             if self._own(fact):
-                if self._keyless(fact):
-                    bindings = list(cli_text.PROVIDERS_KEYBAR_OWN_KEYLESS)
-                else:
-                    set_ = str(fact.get("credential", "")).endswith(" present")
-                    label = cli_text.PROVIDERS_KEY_LABELS["replace" if set_ else "set"]
-                    bindings = [(key, text.format(primary=primary, key_label=label))
-                                for key, text in cli_text.PROVIDERS_KEYBAR_OWN]
-            elif self._account(fact):
-                bindings = [(key, text.format(primary=primary)) for key, text in cli_text.PROVIDERS_KEYBAR_ACCOUNT]
-            elif self._account_capable(fact):
-                set_ = str(fact.get("credential", "")).endswith(" present")
-                label = cli_text.PROVIDERS_KEY_LABELS["replace" if set_ else "set"]
-                bindings = [(key, text.format(primary=primary, key_label=label))
-                            for key, text in cli_text.PROVIDERS_KEYBAR_ACCOUNT_KEY]
-            elif self._keyless(fact):
-                bindings = list(cli_text.PROVIDERS_KEYBAR_KEYLESS)
-            elif str(fact.get("credential", "")).endswith(" missing"):
-                bindings = list(cli_text.PROVIDERS_KEYBAR_KEY_MISSING)
-            else:
-                bindings = list(cli_text.PROVIDERS_KEYBAR_KEY_SET)
+                ids.update(("edit", "remove"))
+                labels["remove"] = "remove"
+            if self._account_capable(fact):
+                ids.add("sign-in")
+                if not self._account(fact):
+                    labels["sign-in"] = "accounts"
+            key_choice = self._key_choice(fact)
+            if key_choice or (not self._account(fact) and not self._keyless(fact) and primary != "set-key"):
+                ids.add("set-key")
+                present = str(fact.get("credential", "")).endswith(" present")
+                labels["set-key"] = ("API key" if key_choice and self._account(fact)
+                                     else cli_text.PROVIDERS_KEY_LABELS["replace" if present else "set"])
+            # Account removal is already in L's modal. A missing key has
+            # nothing to remove; an operator provider itself can be removed.
+            if not self._account(fact) and not self._keyless(fact) and str(fact.get("credential", "")).endswith(" present"):
+                ids.add("remove")
+            if str(fact["id"]) in self.testable:
+                ids.add("test")
         if self.apply_offer:
-            bindings.insert(1 if bindings and bindings[0][0] == "Enter" else 0, cli_text.PROVIDERS_APPLY_BINDING)
-        if self.gateway_down:
-            bindings.insert(len(bindings) - 2, cli_text.PROVIDERS_GATEWAY_BINDING)
-        bindings[-2:-2] = PROVIDERS_FILE_BINDINGS
-        return bindings
+            ids.add("apply")
+        return tui.KeyBar(screen_actions.bar("providers", ids, labels=labels,
+                                            ranks={"gateway": 1 if self.gateway_down else 3}))
+
+    def _keybar_bindings(self) -> list[tuple[str, str]]:
+        """The bar's labels, without its display ranks."""
+
+        return self._keybar().bindings
 
     # -- layout ------------------------------------------------------------
 
@@ -1170,12 +1179,7 @@ class _ProvidersScreen:
         return legend, (screens_common._wrapped(banner, width - 4) if banner else [])
 
     def _bar_rows(self, width: int) -> int:
-        bars = [cli_text.PROVIDERS_KEYBAR_KEY_MISSING, cli_text.PROVIDERS_KEYBAR_KEY_SET,
-                cli_text.PROVIDERS_KEYBAR_ACCOUNT, cli_text.PROVIDERS_KEYBAR_ACCOUNT_KEY, cli_text.PROVIDERS_KEYBAR_OWN,
-                cli_text.PROVIDERS_KEYBAR_OWN_KEYLESS, cli_text.PROVIDERS_KEYBAR_KEYLESS]
-        return max(tui.KeyBar((bar[0], cli_text.PROVIDERS_APPLY_BINDING, *bar[1:-2],
-                               cli_text.PROVIDERS_GATEWAY_BINDING, *PROVIDERS_FILE_BINDINGS,
-                               *bar[-2:])).rows(width) for bar in bars)
+        return self._keybar().rows(width)
 
     def min_size(self, width: int) -> tuple[int, int]:
         """(rows, cols) floor: chrome + min(list, 3) + detail reserve + bar."""
@@ -1199,7 +1203,7 @@ class _ProvidersScreen:
             screens_common._screen_too_small(win, palette, self.what, rows_needed, cols_needed)
             return
         win.erase()
-        keybar = tui.KeyBar(self._keybar_bindings())
+        keybar = self._keybar()
         bar_rows = keybar.rows(width)
         tui.safe_add(win, 1, 2, cli_text.PROVIDERS_TITLE, palette.attr("accent") | tui.curses.A_BOLD)
         tui.safe_add(win, 2, 2, views.rule(width), palette.attr("dim"))
@@ -1490,7 +1494,7 @@ class _ProvidersScreen:
                 self.selected = max(0, len(self.rows) - 1)
             elif letter == "?":
                 screens_common._help_modal(win, self.palette, "providers — help",
-                                           cli_text.PROVIDERS_HELP + PROVIDERS_FILE_HELP, self._draw)
+                                           HELP, self._draw)
             elif letter == "R":
                 self._refresh()
                 self._say("refreshed.")

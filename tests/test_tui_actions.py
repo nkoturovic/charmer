@@ -29,12 +29,7 @@ BARS = {
                       cli_text.SESSIONS_MARK_BINDING, cli_text.SESSIONS_REPAIR_BINDING),
     "lineup-dialog": _keys(cli_text.LINEUP_DIALOG_KEYBAR),
     "direct": _keys(cli_text.DIRECT_KEYBAR, cli_text.DIRECT_EFFORT_BINDING, cli_text.DIRECT_GATEWAY_BINDING),
-    "providers": _keys(cli_text.PROVIDERS_KEYBAR, cli_text.PROVIDERS_KEYBAR_KEY_MISSING,
-                       cli_text.PROVIDERS_KEYBAR_KEY_SET, cli_text.PROVIDERS_KEYBAR_ACCOUNT,
-                       cli_text.PROVIDERS_KEYBAR_ACCOUNT_KEY,
-                       cli_text.PROVIDERS_KEYBAR_OWN, cli_text.PROVIDERS_KEYBAR_OWN_KEYLESS,
-                       cli_text.PROVIDERS_KEYBAR_KEYLESS, cli_text.PROVIDERS_APPLY_BINDING,
-                       cli_text.PROVIDERS_GATEWAY_BINDING, screens_providers.PROVIDERS_FILE_BINDINGS),
+    # Providers is covered per selected row by ProviderKeyTests, not by a union.
     "models": _keys(cli_text.MODELS_KEYBAR, cli_text.MODELS_KEYBAR_NEW, cli_text.MODELS_KEYBAR_ADMITTED),
     "settings": _keys(cli_text.SETTINGS_KEYBAR, cli_text.SETTINGS_KEYBAR_OPEN, cli_text.SETTINGS_KEYBAR_ROTATE),
     "profiles": _keys(cli_text.PROFILES_KEYBAR_YOURS, cli_text.PROFILES_KEYBAR_SEED,
@@ -48,12 +43,31 @@ BARS = {
 }
 
 
+class ProviderCensusTests(unittest.TestCase):
+    def test_providers_handlers_have_table_rows(self) -> None:
+        import _key_census as census
+
+        self.assertEqual(census.unmapped("providers", census.screen_keys("providers"), actions.ACTIONS["providers"]), [])
+
+    def test_census_reports_a_synthetic_unmapped_key(self) -> None:
+        import _key_census as census
+
+        source = '''class Screen:
+    def run(self, win):
+        key = read_key(win)
+        if key.ch.upper() == "Z":
+            unknown()
+'''
+        self.assertEqual(census.unmapped("providers", census.handled_keys(source, "Screen"), actions.ACTIONS["providers"]),
+                         ["providers handles Z: not in its bar candidates nor its help"])
+
+
 class ActionTableTests(unittest.TestCase):
     def test_every_bar_key_has_an_action_and_every_action_is_on_a_bar(self) -> None:
-        self.assertEqual(set(actions.ACTIONS), set(BARS))
-        for screen, rows in actions.ACTIONS.items():
+        self.assertEqual(set(actions.ACTIONS) - {"providers"}, set(BARS))
+        for screen in BARS:
             with self.subTest(screen=screen):
-                self.assertEqual({row.key for row in rows}, BARS[screen])
+                self.assertEqual({row.key for row in actions.ACTIONS[screen]}, BARS[screen])
 
     def test_ids_are_stable_names(self) -> None:
         seen: set[str] = set()

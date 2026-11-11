@@ -115,6 +115,20 @@ def providers_golden(root: Path) -> str:
         )
 
 
+def providers_row_golden(root: Path, kind: str) -> str:
+    """The first account or key-set row, selected explicitly at either size."""
+
+    from charmer.cli.screens import providers
+
+    with golden_runtime(root) as runtime:
+        journal = fx.journal_window(dead_pool=first_oauth_pool(runtime))
+        screen = providers._ProvidersScreen(runtime, palette=tui.MONO_PALETTE, journal=lambda: journal)
+        screen.selected = next(index for index, fact in enumerate(screen.facts)
+                               if (fact["kind"] == "oauth-pool" if kind == "account"
+                                   else str(fact.get("credential", "")).endswith(" present")))
+        return render(lambda: screen)
+
+
 def settings_golden(root: Path, selected: str | None = None, *, writes: bool = True) -> str:
     """``selected`` names the row key whose footer the frame shows
     (None: the screen's initial row); ``writes=False`` is a read-only Runtime."""
@@ -938,8 +952,12 @@ WIDE_SCREENS: dict[str, Callable[[Path], str]] = {
     "findings-wide": findings_golden,
 }
 
+PROVIDER_ROW_SIZES = {f"providers-row-{kind}-{width}x{height}": (width, height)
+                      for kind in ("account", "key-set") for width, height in ((80, 24), WIDE)}
+
 # Goldens drawn at another size than 80x24 (their file names say so).
-GOLDEN_SIZES: dict[str, tuple[int, int]] = {"card-wide": (120, 30), **{name: WIDE for name in WIDE_SCREENS}}
+GOLDEN_SIZES: dict[str, tuple[int, int]] = {"card-wide": (120, 30), **{name: WIDE for name in WIDE_SCREENS},
+                                         **PROVIDER_ROW_SIZES}
 
 
 GOLDENS: dict[str, Callable[[Path], str]] = {
@@ -1030,12 +1048,14 @@ GOLDENS: dict[str, Callable[[Path], str]] = {
     "card-long-name": card_long_name_golden,
     "card-wide": card_wide_golden,
     **{name: at_size(builder, WIDE) for name, builder in WIDE_SCREENS.items()},
+    **{name: at_size(lambda root, kind=name.removeprefix("providers-row-").rsplit("-", 1)[0]:
+                    providers_row_golden(root, kind), size) for name, size in PROVIDER_ROW_SIZES.items()},
 }
 
 
 def golden_name(name: str) -> str:
     width, height = GOLDEN_SIZES.get(name, (WIDTH, HEIGHT))
-    return f"{name}-{width}x{height}.txt"
+    return f"{name}.txt" if name.endswith(f"-{width}x{height}") else f"{name}-{width}x{height}.txt"
 
 
 def build(name: str) -> str:
