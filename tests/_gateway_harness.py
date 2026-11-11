@@ -277,18 +277,18 @@ def gateway_check_selections():
 # as well, then attribute the prerequisite's rows by difference against the
 # dependent-only omission. Never infer edges from build failures: each edge
 # below is a hunk that no longer applies, or a file of the dependent that no
-# longer compiles, when only the prerequisite is omitted (8.0.45 omission
+# longer compiles, when only the prerequisite is omitted (8.0.67 omission
 # matrix); "hunk" is that hunk's start line, 0 for a file the dependent adds.
 PATCH_DEPENDENCIES = {
     "cli-proxy-api-context-error-normalization.patch": {
         "cli-proxy-api-codex-api-key-safety.patch": {
-            "file": "internal/runtime/executor/codex_executor_execute.go", "hunk": 143,
+            "file": "internal/runtime/executor/codex_executor_execute.go", "hunk": 256,
             "reason": "the key route's overflow is marked where 20 rebuilds its failures (also the stream)",
         },
     },
     "cli-proxy-api-log-reduction.patch": {
         "cli-proxy-api-openai-compat-keyed-safety.patch": {
-            "file": "sdk/cliproxy/auth/conductor_execution.go", "hunk": 1913,
+            "file": "sdk/cliproxy/auth/conductor_execution.go", "hunk": 2034,
             "reason": "the redacted key and account identities replace the masked branches beside the keyed "
                       "compat identity, and the patch updates that identity test's control",
         },
@@ -315,7 +315,7 @@ PATCH_DEPENDENCIES = {
     },
     "cli-proxy-api-openai-compat-keyed-safety.patch": {
         "cli-proxy-api-credentialed-redirects.patch": {
-            "file": "internal/runtime/executor/openai_compat_executor.go", "hunk": 210,
+            "file": "internal/runtime/executor/openai_compat_executor.go", "hunk": 226,
             "reason": "keyed error handling replaces the redirect-guarded request paths",
         },
     },
@@ -330,7 +330,7 @@ PATCH_DEPENDENCIES = {
             "reason": "the fixed failure texts and the bounded error-body read come from internal/compatsafe",
         },
         "cli-proxy-api-codex-client-identity.patch": {
-            "file": "internal/runtime/executor/codex_executor_request.go", "hunk": 453,
+            "file": "internal/runtime/executor/codex_executor_request.go", "hunk": 558,
             "reason": "the plain-key Version default replaces the codex client Version default (also the websocket hunk)",
         },
     },
