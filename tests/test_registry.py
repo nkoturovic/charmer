@@ -95,7 +95,7 @@ class RegistrySnapshotTests(unittest.TestCase):
     def test_reviewed_static_thinking_facts(self) -> None:
         models = json.loads((REGISTRY_SNAPSHOT / "models.json").read_bytes())
         claude = {entry["id"]: entry for entry in models["claude"]}
-        for wire in ("claude-opus-5-5", "claude-fable-5", "claude-fable-5-1"):
+        for wire in ("claude-opus-5-5", "claude-fable-5", "claude-fable-5-1", "claude-fable-5-2"):
             with self.subTest(wire=wire):
                 self.assertEqual(claude[wire]["thinking"], {
                     "zero_allowed": False, "dynamic_allowed": True,
@@ -107,6 +107,22 @@ class RegistrySnapshotTests(unittest.TestCase):
             self.assertIs(claude[wire]["thinking"]["dynamic_allowed"], True)
         self.assertEqual(claude["claude-sonnet-5-5"]["thinking"]["disable_type"], "between_tools")
         self.assertNotIn("disable_type", claude["claude-haiku-5-5"]["thinking"])
+
+    def test_fable_5_2_is_a_static_claude_entry(self) -> None:
+        # FA8: the snapshot lists claude-fable-5-2 (19a0a854) once, in the
+        # Claude section, with what the launcher reads (presence and meta:
+        # display name, window, output, efforts, created), so the fable line
+        # needs no registry overlay (its static thinking facts are in the row
+        # above). No generic row covers it: the presence rule runs the frozen
+        # fixture catalog, and the shipped fable line was still 5.1.
+        models = json.loads((REGISTRY_SNAPSHOT / "models.json").read_bytes())
+        self.assertEqual(sum(entry["id"] == "claude-fable-5-2" for entry in models["claude"]), 1)
+        self.assertEqual([section for section, rows in models.items()
+                          if any(entry.get("id") == "claude-fable-5-2" for entry in rows)], ["claude"])
+        registry = catalog.load_pinned_registry(REGISTRY_SNAPSHOT)
+        self.assertIn("claude-fable-5-2", registry.sections["claude"])
+        self.assertEqual(registry.meta["claude"]["claude-fable-5-2"], catalog.RegistryModel(
+            "Claude Fable 5.2", 1000000, 128000, ("low", "medium", "high", "xhigh", "max"), 1794250800))
 
     def test_sol_static_listing_does_not_rewrite_trusted_bounds(self) -> None:
         from _catalog import SHIPPED_ROOT

@@ -215,6 +215,26 @@ class BindingClassifierTests(unittest.TestCase):
             self.assertEqual(delta(original, changed), ("thinking",))
             self.assertEqual(recognition.d11_disposition("subagent", delta(original, changed)), "blocks")
 
+    def test_fable_5_2_replay_addition_is_permitted_and_the_set_stays_exact(self):
+        # FA7: Fable 5.2 joins the preserved-thinking models (6db7d4b8) with
+        # the same single permitted addition; Fable 5, which the executor does
+        # not bind, still blocks it. The permitted mutation set is unchanged.
+        delta = lambda a, b: recognition.d11_body_delta(json.dumps(a).encode(), json.dumps(b).encode())
+        self.assertEqual(recognition.D11_PERMITTED, frozenset({
+            "metadata.user_id.device_id", "metadata.user_id.account_uuid", recognition.D11_AGENT_SESSION,
+            "system:cch", recognition.D11_THINKING_BINDING}))
+        for model, disposition in (("claude-fable-5-2", "confirmed"), ("claude-fable-5", "blocks")):
+            for thinking in ({"type": "adaptive"}, {"type": "enabled", "budget_tokens": 2048}):
+                with self.subTest(model=model, thinking=thinking["type"]):
+                    original = request_body(model, thinking=thinking, messages=[{"role": "assistant", "content": [
+                        {"type": "thinking", "thinking": "fixture", "signature": SIGNATURE}]}])
+                    changed = copy.deepcopy(original)
+                    changed["thinking"]["block_binding"] = {"prefix_mismatch_behavior": "drop_block"}
+                    observed = delta(original, changed)
+                    self.assertEqual(observed, (recognition.D11_THINKING_BINDING,) if disposition == "confirmed"
+                                     else ("thinking",))
+                    self.assertEqual(recognition.d11_disposition("main", observed), disposition)
+
 
 class ThinkingWireTests(unittest.TestCase):
     def test_disabled_and_budget_zero_per_static_wire(self):
@@ -222,7 +242,7 @@ class ThinkingWireTests(unittest.TestCase):
             upstream_factory=lambda path: harness.FakeUpstream(path, direct_reply))
         self.addCleanup(gateway.close)
         rows = []
-        for wire in ("claude-opus-5-5", "claude-fable-5", "claude-fable-5-1",
+        for wire in ("claude-opus-5-5", "claude-fable-5", "claude-fable-5-1", "claude-fable-5-2",
                      "claude-sonnet-5-5", "claude-haiku-5-5"):
             for thinking in ({"type": "disabled"}, {"type": "enabled", "budget_tokens": 0}):
                 for stream in (False, True):

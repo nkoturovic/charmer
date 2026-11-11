@@ -724,7 +724,8 @@ def _binding_only_delta(client, upstream) -> bool:
     traffic probe separately asserts the accompanying beta on the real wire.
     """
     model = str(client.get("model", "")).removesuffix("[1m]")
-    if model not in {"claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5-5", "claude-haiku-5-5"}:
+    # The pinned executor's preserved-thinking models (Fable 5.2 since 6db7d4b8).
+    if model not in {"claude-opus-5-5", "claude-fable-5-1", "claude-fable-5-2", "claude-sonnet-5-5", "claude-haiku-5-5"}:
         return False
     if (client.get("tool_choice") or {}).get("type") in {"any", "tool"}:
         return False
