@@ -544,7 +544,9 @@ class PostmodelSeamTests(_SeamCase):
         self.assertTrue(self.record["follow"])
         code, output, errors = self.postmodel()
         self.assertEqual(code, 0, errors)
-        self.assertEqual(self.context(output), hooks.PIN_WARNING.format(m8=self.mid[:8]))
+        label = f"{self.row['display']} · {self.expected_lead(self.record)['effort']}"
+        self.assertEqual(self.context(output), hooks.PIN_WARNING.format(label=label, p="balanced"))
+        self.assertEqual(strict_json.loads(output)["systemMessage"], self.context(output))
         saved = self.store.load(self.mid)
         self.assertFalse(saved["follow"])
         self.assertEqual(saved["profile"], "balanced")

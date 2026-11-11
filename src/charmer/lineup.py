@@ -1377,6 +1377,71 @@ def _save_record_only(
     return updated, dropped
 
 
+def _post_notice(runtime: Any, record: Mapping[str, Any], message: str) -> None:
+    """An outside change, under the record's lifecycle lock, reaches its running user."""
+
+    if _is_live(runtime, record) and not inside_session(runtime.environ, record["managed_id"]):
+        hooks.post_message(runtime.session_store.root, record["runtime_session_id"], message)
+
+
+def _notice_reasons(reasons: Sequence[str]) -> str:
+    if not reasons:
+        return "the recorded session change"
+    first = hooks._clip_message(_one_line(reasons[0]), 100)
+    return first + (f"; +{len(reasons) - 1} more" if len(reasons) > 1 else "")
+
+
+def _notify_decision(runtime: Any, before: Mapping[str, Any], decision: Decision) -> Decision:
+    """Notify only committed, externally requested changes; preview, no-op and exec never post."""
+
+    if decision.kind not in ("live", "pending", "record"):
+        return decision
+    after = runtime.session_store.load(before["managed_id"])
+    fields = ("profile", "follow", "pending", "lead_target", "applied_hash", "lineup_generation")
+    if all(before.get(key) == after.get(key) for key in fields):
+        return decision
+    mid = before["managed_id"]
+    changes = _change_rows(runtime.lineup_catalog(), before["applied"]["agents"], after["applied"]["agents"])
+    if changes:
+        label, _old, new = changes[0]
+        first = hooks._clip_message(f"{label} → {new}", 80)
+        more = f"; +{len(changes) - 1} more" if len(changes) > 1 else ""
+        message = (f"charmer: this session's agents changed (lineup gen {after['lineup_generation']}: "
+                   f"{first}{more}) — type /reload-plugins before new agents start")
+        if after.get("pending"):
+            message += f"; {_notice_reasons(after['pending']['reasons'])} at the next resume (exit, then charmer -r {mid})"
+        if before["follow"] and not after["follow"]:
+            message += ("; now pinned (follow off); /cm follow returns to the profile" if after.get("profile")
+                        else "; now an ad-hoc lineup; /cm profile <name> follows a profile")
+        elif after["follow"] and (not before["follow"] or before["profile"] != after["profile"]):
+            message += f"; now follows profile {after['profile']}"
+    elif decision.kind == "pending":
+        pending = after["pending"]
+        subject = f"profile {pending['profile']}" if pending.get("kind") == "profile" else "the lineup change"
+        message = (f"charmer: {subject} needs a relaunch here ({_notice_reasons(pending['reasons'])}) "
+                   f"— exit, then charmer -r {mid}")
+    elif not after["follow"]:
+        if after.get("profile"):
+            message = (f"charmer: this session is now pinned (follow off); edits of profile {after['profile']} "
+                       "do not reach it — /cm follow follows it again")
+        else:
+            message = "charmer: this session now keeps an ad-hoc lineup — /cm profile <name> follows a profile"
+        if before.get("pending") and not after.get("pending"):
+            message += "; the pending change was dropped"
+        if after.get("lead_target"):
+            message += "; switch the requested lead with /model (press s), or resume it"
+    else:
+        message = f"charmer: this session now follows profile {after['profile']}"
+        if after.get("lead_target"):
+            message += "; switch the requested lead with /model (press s), or resume it"
+        elif before.get("pending"):
+            message += "; the earlier pending change was dropped"
+        else:
+            message += "; its lineup already matches"
+    _post_notice(runtime, after, message)
+    return decision
+
+
 def _forced_profile_pending(record: Mapping[str, Any], name: str | None) -> bool:
     pending = record.get("pending") or {}
     return (pending.get("kind") == "profile" and pending.get("profile") == name
@@ -1476,7 +1541,8 @@ def decide_locked(
         if dropped:
             lines.append(_dropped_line(record))
         lines.append(NEXT_RECORDED)
-        return Decision("record", text="\n".join(lines) + "\n", managed_id=mid, generation=generation)
+        return _notify_decision(runtime, record, Decision(
+            "record", text="\n".join(lines) + "\n", managed_id=mid, generation=generation))
 
     target = build_target(record, request, runtime)
     if target.kind == "profile" and _forced_profile_pending(record, target.profile):
@@ -1514,7 +1580,8 @@ def decide_locked(
         if dropped:
             lines.append(_dropped_line(record))
         lines.append(NEXT_RECORDED)
-        return Decision("record", text="\n".join(lines) + "\n", managed_id=mid, generation=generation)
+        return _notify_decision(runtime, record, Decision(
+            "record", text="\n".join(lines) + "\n", managed_id=mid, generation=generation))
 
     live_dir = scope.scope_dir(store.root, mid)
     classification: Classification | None = None
@@ -1614,7 +1681,7 @@ def decide_locked(
         )
     if request.verb == "fallback" and decision.kind != "exec":
         decision.text = _fallback_text(preview, decision, record)
-    return decision
+    return _notify_decision(runtime, record, decision)
 
 
 def _binding_changes(
@@ -3074,31 +3141,42 @@ def _on_saved_in_phase(
             dot = "●" if live else "○"
             where = f"{m8} {_cwd_name(record)}"
             rid = record["runtime_session_id"]
+
+            def reported(text: str, message: str) -> Decision:
+                _post_notice(runtime, record, message)
+                return Decision("line", text=text)
+
             if not follower.follow:
                 return Decision("line", text=f"{dot} {where}: pinned (follow off) — not changed; "
                                 "/cm follow there, or Sessions → F, follows the profile again")
             if follower.has_pending:
                 if not follower.pending_follow:
                     remedy = "/cm follow there" if live else f"charmer lineup --session {rid} follow"
-                    return Decision("line", text=f"{dot} {where}: a pending change pins it at its "
-                                    f"next resume — not applied; {remedy} takes the profile instead")
+                    return reported(f"{dot} {where}: a pending change pins it at its next resume — not applied; "
+                                    f"{remedy} takes the profile instead",
+                                    f"charmer: profile {record['profile']} changed, but a pending /cm change pins "
+                                    "this session at its next resume — /cm follow takes the profile instead")
                 if follower.pending_forced:
-                    return Decision("line", text=f"{dot} {where}: has a forced relaunch change; "
-                                    f"not applied — exit it, then charmer -r {mid}")
+                    return reported(f"{dot} {where}: has a forced relaunch change; not applied — exit it, "
+                                    f"then charmer -r {mid}", f"charmer: profile {record['profile']} changed and "
+                                    "needs a relaunch here (a forced change is still pending) — "
+                                    f"exit, then charmer -r {mid}")
                 if follower.pending_kind != "profile" or follower.pending_profile != record["profile"]:
                     remedy = "/cm follow there" if live else f"charmer lineup --session {rid} follow"
-                    return Decision("line", text=f"{dot} {where}: has another pending relaunch change; "
-                                    f"not applied — {remedy} takes this profile instead")
+                    return reported(f"{dot} {where}: has another pending relaunch change; not applied — "
+                                    f"{remedy} takes this profile instead", f"charmer: profile {record['profile']} "
+                                    "changed; another pending change still applies at the next resume — "
+                                    "/cm follow takes this profile instead")
             generation = record["lineup_generation"]
             if generation == 0 or not scope.scope_dir(store.root, mid).is_dir():
                 return Decision("line", text=f"○ {where}: no lineup-enabled scope yet; applies at the next resume")
             if not live:
                 return Decision("line", text=f"○ {where}: applies at the next resume")
             if not propagation_eligible(follower) or (not apply_live and not served):
-                return Decision(
-                    "line",
-                    text=f"● {where}: not applied — apply with: charmer lineup --session {rid} follow",
-                )
+                return reported(f"● {where}: not applied — apply with: charmer lineup --session {rid} follow",
+                                f"charmer: profile {record['profile']} changed; this session keeps its lineup "
+                                "until you type /cm follow (agents now) or resume it "
+                                f"(charmer -r {mid})")
             try:
                 decision = decide_locked(
                     runtime,
@@ -3110,7 +3188,10 @@ def _on_saved_in_phase(
                     now=now,
                 )
             except LineupRefusal as exc:
-                return Decision("line", text=f"● {where}: not applied ({_one_line(str(exc))})")
+                detail = hooks._clip_message(_one_line(str(exc)), 220)
+                return reported(f"● {where}: not applied ({_one_line(str(exc))})",
+                                f"charmer: profile {record['profile']} changed but cannot apply here ({detail}) "
+                                f"— inspect it with charmer lineup --session {rid} show")
             if decision.kind == "live":
                 if decision.reasons:
                     return Decision("written", text=f"● {where}: agents applied live (lineup gen "
