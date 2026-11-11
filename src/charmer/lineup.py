@@ -1348,6 +1348,15 @@ def _save_record_only(
     return updated, dropped
 
 
+def _no_subagents_refusal(record: Mapping[str, Any], lineup: profile.ResolvedLineup,
+                          profile_name: str | None) -> str | None:
+    if record["applied"].get("no_subagents") and lineup.agents:
+        return (f"session {_m8(record['managed_id'])} was started with --no-subagents: "
+                "delegation stays denied for its whole life, so it cannot take agents — nothing changed. "
+                f"For agents, start a new session: charmer --profile {profile_name or catalog_mod.DEFAULT_SEED}")
+    return None
+
+
 def decide_locked(
     runtime: Any,
     record: dict[str, Any],
@@ -1445,6 +1454,9 @@ def decide_locked(
     lineup = _evaluate(
         runtime, target.document or {}, eff, lcat, profile_name=target.profile, bindings=bindings
     )
+    refusal = _no_subagents_refusal(record, lineup, target.profile)
+    if refusal:
+        raise LineupRefusal(refusal)
     # An unchanged (key, effort) agent keeps its recorded context class
     # until resume; only new or changed slots take the class the installed
     # catalog and the session window decide.
@@ -2242,6 +2254,8 @@ def show_text(runtime: Any, record: Mapping[str, Any]) -> str:
         ]
         return "\n".join(lines) + "\n"
     block = profiles_block(runtime, lcat, current=record["profile"])
+    if record["applied"].get("no_subagents") and record["applied"]["agents"]:
+        block.insert(0, "! delegation is denied in this session (--no-subagents): its agents cannot run")
     if record["profile"] is None:
         header = "profile (ad-hoc direct)"
     else:
