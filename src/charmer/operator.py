@@ -590,7 +590,7 @@ def normalize_endpoint(url: Any, *, keyed: bool, lan: bool, network: str | None 
     if loopback and effective_port in set(gateway_ports):
         raise ValueError("the charmer gateway port is not a provider")
     if network is not None:
-        # Precedence (D263): a never address, then the gateway port (any
+        # Precedence: a never address, then the gateway port (any
         # host form on loopback), then the address outside the network.
         verdict = (netclass.allowed(address, network, gateway_ports, port=effective_port)
                    if address is not None else None)
