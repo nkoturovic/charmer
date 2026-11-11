@@ -437,6 +437,30 @@ class ObservationTests(unittest.TestCase):
         self.assertEqual(_ESSENTIAL_CLASSES["FD"],
                          ("FD-env-off", "FD-env-off-subagent-withheld", "FD-client-gateway-withheld"))
 
+    def test_feedback_without_the_previous_release_control_is_a_named_boundary(self):
+        """A pin that offers SendFeedback to nobody under notify needs the
+        previous release's control: without it the check is a BOUNDARY that
+        names it, never a FAIL; with it the class is decided; a pin that
+        offers the tool never asks for it."""
+
+        nobody = {case: {"lead_offered": False, "child_offered": False} for case in _FEEDBACK_CASES}
+        with self.assertRaises(unittest.SkipTest) as raised:
+            _feedback_outcome(nobody, lambda: None)
+        self.assertTrue(str(raised.exception).startswith("BOUNDARY: "))
+        self.assertIn(_client_roles.PREVIOUS_ENV, str(raised.exception))
+        self.assertIn(_client_roles.PREVIOUS[0], str(raised.exception))
+        offers = {"version": "fixture", "lead_offered": True}
+        self.assertEqual(_feedback_outcome(nobody, lambda: offers), ("FD-client-gateway-withheld", offers))
+        with self.assertRaises(_Inconclusive):
+            _feedback_outcome(nobody, lambda: {"version": "fixture", "lead_offered": False})
+        notify = dict(nobody, **{case: {"lead_offered": True, "child_offered": True}
+                                 for case in _FEEDBACK_CASES if case.startswith("notify")})
+
+        def unused():
+            raise AssertionError("the control is not needed when the pin offers the tool")
+
+        self.assertEqual(_feedback_outcome(notify, unused), ("FD-env-off", None))
+
     def test_feedback_gateway_withheld_needs_the_previous_release_control(self):
         """Offered to nobody under either value is the client's gateway
         boundary only when the previous release's pin, run the same way,
@@ -1875,6 +1899,27 @@ def _feedback_class(observations, control=None):
     return "FD-env-off-subagent-withheld"
 
 
+def _feedback_outcome(observations, previous_control):
+    """``(class, control)`` of the FD matrix. The previous release's notify
+    run (``previous_control()``, None when that client is not named) is
+    needed only when the pin offered SendFeedback to nobody under notify;
+    without it the outcome cannot be told (a client boundary or a missing
+    stimulus), so the check is a BOUNDARY that names the missing control,
+    never a FAIL. Where the record is required (the release batteries,
+    whose completion check needs it) that control is staged."""
+
+    notify = [observations[case] for case in _FEEDBACK_CASES if case.startswith("notify")]
+    control = None
+    if not any(row["lead_offered"] or row["child_offered"] for row in notify):
+        control = previous_control()
+        if control is None:
+            raise unittest.SkipTest(
+                f"BOUNDARY: the pin offered SendFeedback to nobody under notify, and the previous-release "
+                f"control ({_client_roles.PREVIOUS[0]}, named by {_client_roles.PREVIOUS_ENV}) that tells "
+                f"a client boundary from a missing stimulus is not available")
+    return _feedback_class(observations, control), control
+
+
 class FeedbackDraftsProbe(_ProbeCase, unittest.TestCase):
     """FD: ``claude_feedback_drafts`` off removes SendFeedback from
     the lead's and the subagent's tool lists through the scope env alone."""
@@ -1932,12 +1977,8 @@ class FeedbackDraftsProbe(_ProbeCase, unittest.TestCase):
                 "lead_offered": any(responder.lead), "child_offered": any(responder.child),
             }
         self.evidence["feedback_drafts"] = observations
-        notify = [observations[case] for case in _FEEDBACK_CASES if case.startswith("notify")]
-        control = None
-        if not any(row["lead_offered"] or row["child_offered"] for row in notify):
-            control = self._previous_release_control()
+        outcome, control = _feedback_outcome(observations, self._previous_release_control)
         self.evidence["feedback_control"] = control
-        outcome = _feedback_class(observations, control)
         detail = "; ".join(f"{case} lead={observations[case]['lead_offered']} "
                            f"child={observations[case]['child_offered']}" for case in _FEEDBACK_CASES)
         detail += f"; marked_exit_retry={'used' if retry_used else 'unused'}"
