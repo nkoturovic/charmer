@@ -45,7 +45,8 @@ _DIAGNOSTICS = frozenset({"U1", "X5", "RL", "RET", "SC", "SX", "SF", "SK", "OC",
 # failure policy (the compiled PreModelSwitch hook blocks when its shim cannot
 # answer), so a changed class fails.
 _ESSENTIAL_CLASSES = {"CE": ("CE-A",), "DAH": ("DAH-override",),
-                      "FD": ("FD-env-off", "FD-env-off-subagent-withheld"), "CC": ("CC-bash-child",),
+                      "FD": ("FD-env-off", "FD-env-off-subagent-withheld", "FD-client-gateway-withheld"),
+                      "CC": ("CC-bash-child",),
                       "XC": ("XC-exact",), "R19": ("R19-closed",)}
 
 
@@ -433,7 +434,30 @@ class ObservationTests(unittest.TestCase):
         explicit_off = matrix(notify=(True, True))
         explicit_off["off-explicit"]["child_offered"] = True
         self.assertEqual(_feedback_class(explicit_off), "FD-env-ignored")
-        self.assertEqual(_ESSENTIAL_CLASSES["FD"], ("FD-env-off", "FD-env-off-subagent-withheld"))
+        self.assertEqual(_ESSENTIAL_CLASSES["FD"],
+                         ("FD-env-off", "FD-env-off-subagent-withheld", "FD-client-gateway-withheld"))
+
+    def test_feedback_gateway_withheld_needs_the_previous_release_control(self):
+        """Offered to nobody under either value is the client's gateway
+        boundary only when the previous release's pin, run the same way,
+        still offers SendFeedback to the lead."""
+
+        nobody = {case: {"lead_offered": False, "child_offered": False} for case in _FEEDBACK_CASES}
+        offers = {"version": "fixture", "lead_offered": True}
+        self.assertEqual(_feedback_class(nobody, offers), "FD-client-gateway-withheld")
+        for control in (None, {"version": "fixture", "lead_offered": False}):
+            with self.subTest(control=control), self.assertRaises(_Inconclusive):
+                _feedback_class(nobody, control)
+        leaked = dict(nobody, off={"lead_offered": True, "child_offered": False})
+        self.assertEqual(_feedback_class(leaked, offers), "FD-env-ignored")
+        partial = dict(nobody, notify={"lead_offered": True, "child_offered": False})
+        with self.assertRaises(_Inconclusive):
+            _feedback_class(partial, offers)
+        # A pin that still offers the tool under notify never takes the
+        # gateway class, whatever the control says.
+        recorded = dict(nobody, notify={"lead_offered": True, "child_offered": False},
+                        **{"notify-explicit": {"lead_offered": True, "child_offered": False}})
+        self.assertEqual(_feedback_class(recorded, offers), "FD-env-off-subagent-withheld")
 
     def test_exact_client_refuses_every_silent_payload_change(self):
         def run(requested, **row):
@@ -599,7 +623,7 @@ with os.fdopen(fd, 'w') as out: out.write(json.dumps(r) + '\\n')
         return [strict_json.loads(line) for line in path.read_bytes().splitlines()] if path.exists() else []
 
     def _run(self, fixture, *, document=None, responder=None, model=_LEAD,
-             prompt="client probe", steps=None, extra=(), timeout=120, **options):
+             prompt="client probe", steps=None, extra=(), timeout=120, trusted=None, **options):
         document = document if document is not None else {}
         settings = self._settings(fixture, document)
         argv = ("--model", model, "--settings", str(settings), *extra)
@@ -607,7 +631,7 @@ with os.fdopen(fd, 'w') as out: out.write(json.dumps(r) + '\\n')
             argv = ("-p", prompt, "--dangerously-skip-permissions", *argv)
         responder = responder or _Recorder()
         with probe.FakeAnthropicProvider(responder=responder) as provider:
-            common = dict(trusted=self.trusted, fixture=fixture, provider=provider,
+            common = dict(trusted=trusted or self.trusted, fixture=fixture, provider=provider,
                           allow_real=True, environ=self.environ, timeout=timeout, **options)
             try:
                 result = (probe.run_native(argv, **common) if steps is None else
@@ -1822,18 +1846,30 @@ class _FeedbackResponder(_Recorder):
         return _reply(document)
 
 
-def _feedback_class(observations):
+def _feedback_class(observations, control=None):
     """FD-env-off only with a positive notify control for the lead AND a
     subagent; FD-env-off-subagent-withheld when the client withholds the
     tool from every subagent shape even under notify (an explicit client
-    boundary: the subagent's absence is not caused by the preference)."""
+    boundary: the subagent's absence is not caused by the preference);
+    FD-client-gateway-withheld when the client offers the tool to nobody
+    under either value, behind the fixture gateway, while ``control`` (the
+    same notify run on the previous release's pin) still offers it to the
+    lead: the client withholds it behind a gateway, so the preference has
+    nothing to suppress."""
 
     off = [observations[case] for case in _FEEDBACK_CASES if case.startswith("off")]
     notify = [observations[case] for case in _FEEDBACK_CASES if case.startswith("notify")]
-    if not all(row["lead_offered"] for row in notify):
-        raise _Inconclusive("control: the notify run never offered SendFeedback to the lead")
     if any(row["lead_offered"] or row["child_offered"] for row in off):
         return "FD-env-ignored"
+    if not any(row["lead_offered"] or row["child_offered"] for row in notify):
+        if control is None:
+            raise _Inconclusive("control: the notify run never offered SendFeedback to the lead, and no "
+                                "previous-release client tells a client boundary from a missing stimulus")
+        if not control.get("lead_offered"):
+            raise _Inconclusive("control: neither the pin nor the previous release offered SendFeedback")
+        return "FD-client-gateway-withheld"
+    if not all(row["lead_offered"] for row in notify):
+        raise _Inconclusive("control: the notify run never offered SendFeedback to the lead")
     if any(row["child_offered"] for row in notify):
         return "FD-env-off"
     return "FD-env-off-subagent-withheld"
@@ -1896,13 +1932,37 @@ class FeedbackDraftsProbe(_ProbeCase, unittest.TestCase):
                 "lead_offered": any(responder.lead), "child_offered": any(responder.child),
             }
         self.evidence["feedback_drafts"] = observations
-        outcome = _feedback_class(observations)
+        notify = [observations[case] for case in _FEEDBACK_CASES if case.startswith("notify")]
+        control = None
+        if not any(row["lead_offered"] or row["child_offered"] for row in notify):
+            control = self._previous_release_control()
+        self.evidence["feedback_control"] = control
+        outcome = _feedback_class(observations, control)
         detail = "; ".join(f"{case} lead={observations[case]['lead_offered']} "
                            f"child={observations[case]['child_offered']}" for case in _FEEDBACK_CASES)
         detail += f"; marked_exit_retry={'used' if retry_used else 'unused'}"
         if outcome == "FD-env-off-subagent-withheld":
             detail += " (subagent notify control unavailable: the client withholds SendFeedback from subagents)"
+        if outcome == "FD-client-gateway-withheld":
+            detail += (f" (behind the gateway the pin offers SendFeedback to nobody; the previous release "
+                       f"{control['version']} still offers it to the lead under notify)")
         return outcome, detail
+
+    def _previous_release_control(self):
+        """The notify run on the previous release's pin (``_client_roles``),
+        None when that control is not named."""
+
+        previous = _client_roles.named_control(_client_roles.PREVIOUS_ENV)
+        if previous is None:
+            return None
+        fixture = self._fixture()
+        _seed_feature_cache(fixture, {_FEEDBACK_FLAG: True})
+        self._agent(fixture)
+        result, responder = self._run(
+            fixture, responder=_FeedbackResponder(), steps=self._turns(), trusted=previous,
+            document={"env": scope.feedback_drafts_env("notify"), "availableModels": [_LEAD, _AGENT]})
+        self._complete(result)
+        return {"version": _client_roles.PREVIOUS[0], "lead_offered": any(responder.lead)}
 
 
 class FeedbackRetryTests(unittest.TestCase):

@@ -64,6 +64,7 @@ SKILL_DENIES = [
     "Skill(fewer-permission-prompts)",
     "Skill(init)",
     "Skill(keybindings-help)",
+    "Skill(plugin-authoring)",
     "Skill(pr)",
     "Skill(run-skill-generator)",
     "Skill(schedule)",
@@ -72,6 +73,8 @@ SKILL_DENIES = [
     "Skill(update-config)",
     "Skill(verify)",
 ]
+# The session's dev-mods folder of the managed client (~/.claude).
+MOD_FOLDER_DENIES = ["Edit(~/.claude/dev-mods/**)"]
 
 
 # ------------------------------------------------------------------ oracles
@@ -151,7 +154,7 @@ def oracle_context(lines, rows, percent):
 
 def oracle_denies(native: dict[str, str], aliases, no_subagents: bool) -> list[str]:
     if no_subagents:
-        return ["Agent", *SKILL_DENIES, *SECRET_DENIES]
+        return ["Agent", *SKILL_DENIES, *MOD_FOLDER_DENIES, *SECRET_DENIES]
     denies = []
     if native["explore"] == "native" or native["plan"] == "native":
         if native["explore"] != "native":
@@ -165,7 +168,7 @@ def oracle_denies(native: dict[str, str], aliases, no_subagents: bool) -> list[s
     for alias in sorted(set(aliases)):
         if f"Agent({alias})" not in denies:
             denies.append(f"Agent({alias})")
-    return [*denies, *SKILL_DENIES, *SECRET_DENIES]
+    return [*denies, *SKILL_DENIES, *MOD_FOLDER_DENIES, *SECRET_DENIES]
 
 
 def oracle_family_env(lines, providers, enabled):
