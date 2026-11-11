@@ -3248,6 +3248,8 @@ class EvidenceJobTests(unittest.TestCase):
             self.assertTrue(required(f"tests.test_scope_probe.RealPinnedBinaryTests.{name}"), name)
         self.assertTrue(required("setUpClass (tests.test_scope_probe.RealPinnedBinaryTests)"))
         self.assertTrue(required("tests.test_client_hooks.SpikeHooks.test_s5"))
+        self.assertTrue(required(
+            "tests.test_client_fork.ForkLaunchProbe.test_g1_fork_of_a_parent_with_an_established_prompt_snapshot"))
         self.assertTrue(required("setUpClass (tests.test_client_models.SelectorRecognitionProbe)"))
         self.assertFalse(required("tests.test_client_check.ClientCheckTests.test_x"))
         evidence = load_tool(SCRIPTS / "evidence.py", "evidence")

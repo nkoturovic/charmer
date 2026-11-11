@@ -164,6 +164,9 @@ ESSENTIAL_EVIDENCE_PREFIXES = (
     # shell write are refused in default, auto and bypass, while the compile
     # without them loads the model's mod at the next start (the control).
     "client check mod-authoring: PASS class=AP-closed ",
+    # The charmer fork: a fork of a parent with an established system-prompt
+    # snapshot sends its own lead prompt, fresh and after its own resume.
+    "client check fork-launch: PASS ",
 )
 
 # Named alternative completion lines that satisfy an essential prefix. The
