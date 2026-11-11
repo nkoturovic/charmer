@@ -365,6 +365,25 @@ def main(
 
         report = output_stream or output
         force = bool(args.force)
+        if getattr(args, "fork", False):
+            # `charmer -r SESSION --fork`: refused before anything is read
+            # when the session, -c, a profile or a running session says so.
+            launch_flow._fork_preflight(
+                session=args.resume or None, continue_session=bool(args.continue_last),
+                profile=args.profile is not None or args.profile_file is not None,
+                environ=runtime.environ,
+            )
+            return launch_flow._fork_flow(
+                runtime,
+                selection._resolve_resume_target(runtime, args.resume),
+                passthrough=passthrough,
+                interactive=bool(interactive),
+                confirm=True,
+                input_stream=inp,
+                output_stream=tty_output,
+                report_stream=report,
+                print_launch=bool(args.print_launch),
+            )
         if args.resume == "":
             # Bare -r: the sessions screen on a curses-capable terminal;
             # --line, a dumb or pipe terminal and --print-launch keep the line

@@ -30,7 +30,8 @@ state, or ``os.execve`` raises ``OSError``, cleanup is action-aware and
 ownership-guarded (CAS-by-own-write on the mutation token and the exact
 committed bytes). A fresh launch forgets its record, compare-and-clears the
 per-CWD pointer and removes only its live scope (a pre-existing ``.prev``
-survives). A resume (every relaunch is one) restores the exact pre-launch
+survives); a fork does the same but compare-and-restores the pointer it
+replaced. A resume (every relaunch is one) restores the exact pre-launch
 record bytes (or overlays the hooks' lifecycle onto them when a hook wrote
 meanwhile), puts the swapped-out scope back from ``.prev`` byte-exactly and
 restores the prior pointer; when a newer attempt has committed, it owns the
@@ -688,6 +689,22 @@ MIGRATION_BUSY_LAUNCH = (
     "migration or restore in progress; retry in a moment (nothing was launched)"
 )
 BARRIER_BUSY_LAUNCH = "nothing was launched; retry in a moment"
+# The fork's commit backstop: the parent no longer matches what the fork was
+# prepared from (``sessions.fork_fingerprint``).
+FORK_CHANGED = ("session {m8} changed while the fork was being prepared; nothing was launched — "
+                "run the command again")
+
+
+def _forget_pointer(store: SessionStore, action_kind: str, cwd: str, stable_id: str,
+                    prior: bytes | None) -> None:
+    """A failed fresh launch clears the directory's pointer; a failed fork
+    puts back the pointer the fork replaced (only while it still names the
+    fork: a later launch's pointer is kept)."""
+
+    if action_kind == "fork":
+        store.restore_pointer_bytes(cwd, stable_id, prior)
+    else:
+        store.clear_last(cwd, stable_id, blocking=True)
 
 
 def disk_generation(scope_dir: Path | str) -> int:
@@ -757,9 +774,22 @@ def _perform_launch(
     retain_root: Path | None = None,
     barrier_timeout: float | None = state.SERVED_BARRIER_TIMEOUT,
     revalidate: Callable[[], None] | None = None,
+    fork_parent: str | None = None,
+    fork_fingerprint: str | None = None,
     pinned: PinnedCopy,
 ) -> Any:
     """Execute a v4 launch: verify -> readiness -> state -> execve.
+
+    A fork (``session_action.kind == "fork"``) is a fresh record of its own
+    (``forked_from`` = ``fork_parent``) whose commit is backed by its
+    parent: under the fork's lifecycle lock the parent's lifecycle lock is
+    taken (lock order: the new record first; nothing else ever holds a
+    brand-new record's lock), the parent is read without being written and
+    its :func:`sessions.fork_fingerprint` must still be ``fork_fingerprint``
+    (else :data:`FORK_CHANGED`, nothing written). The parent's lock is
+    released once the fork is committed. A failure before or at exec removes
+    the fork's record and scope and puts the directory's previous continue
+    pointer back while the pointer still names the fork.
 
     ``retain_root`` names the retained-copy root a missing owned copy may be
     copied from (a launch that may write); None verifies without writing.
@@ -803,8 +833,13 @@ def _perform_launch(
         runtime_id = sessions.runtime_session_id(record)
     except sessions.SessionError as exc:
         raise LaunchError(str(exc)) from exc
-    if action_kind not in {"fresh", "resume"}:
+    if action_kind not in {"fresh", "resume", "fork"}:
         raise LaunchError(f"unsupported session action {action_kind!r}")
+    if action_kind == "fork" and (
+        not fork_parent or not fork_fingerprint or record.get("forked_from") != fork_parent
+        or fork_parent == stable_id
+    ):
+        raise LaunchError(f"fork session {stable_id} is not tied to the parent it was prepared from")
     if record.get("version") != sessions.RECORD_VERSION:
         raise LaunchError(
             f"session {stable_id}: only version-{sessions.RECORD_VERSION} records launch"
@@ -897,6 +932,7 @@ def _perform_launch(
     pre_existing: bytes | None = None
     prior_pointer: bytes | None = None
     lock = store.lifecycle_lock(stable_id)
+    parent_lock: state.FileLock | None = None
     try:
         lock.acquire(blocking=True)
     except BaseException:
@@ -905,21 +941,41 @@ def _perform_launch(
         guard.release()
         raise
 
+    def release_parent() -> None:
+        nonlocal parent_lock
+        held, parent_lock = parent_lock, None
+        if held is not None:
+            held.release()
+
     def release_locks() -> None:
         try:
-            lock.release()
+            release_parent()
         finally:
             try:
-                barrier.release()
+                lock.release()
             finally:
-                guard.release()
+                try:
+                    barrier.release()
+                finally:
+                    guard.release()
 
     try:
         pre_existing = store.read_record_bytes(stable_id)
         committed_record = record
-        if action_kind == "fresh":
+        if action_kind in ("fresh", "fork"):
             if pre_existing is not None:
-                raise LaunchError(f"fresh session {stable_id} already has a record")
+                raise LaunchError(f"{action_kind} session {stable_id} already has a record")
+            if action_kind == "fork":
+                assert fork_parent is not None
+                parent_lock = store.lifecycle_lock(fork_parent)
+                parent_lock.acquire(blocking=True)
+                try:
+                    parent = store.load(fork_parent)
+                except sessions.SessionError:
+                    parent = None
+                if parent is None or sessions.fork_fingerprint(parent) != fork_fingerprint:
+                    raise LaunchError(FORK_CHANGED.format(m8=fork_parent[:8]))
+                prior_pointer = store.read_pointer_bytes(committed_record["cwd"])
         else:
             if pre_existing is None:
                 raise LaunchError(f"resume session {stable_id} has no managed record")
@@ -1021,6 +1077,7 @@ def _perform_launch(
         store.save(committed_record)
         committed_bytes = store.read_record_bytes(stable_id)
         store.update_last(committed_record["cwd"], stable_id, blocking=True)
+        release_parent()
     except BaseException:
         try:
             if committed_token is None:
@@ -1045,7 +1102,7 @@ def _perform_launch(
                     store.restore_pointer_bytes(record["cwd"], stable_id, prior_pointer)
                 except Exception:
                     pass
-            elif action_kind == "fresh":
+            elif action_kind in ("fresh", "fork"):
                 try:
                     current = store.load(stable_id)
                 except sessions.SessionError:
@@ -1053,7 +1110,7 @@ def _perform_launch(
                 if current is not None and current.get("mutation_token") == committed_token:
                     store._forget_unlocked(stable_id)
                 try:
-                    store.clear_last(record["cwd"], stable_id, blocking=True)
+                    _forget_pointer(store, action_kind, record["cwd"], stable_id, prior_pointer)
                 except Exception:
                     pass
                 if scope_written:
@@ -1127,10 +1184,10 @@ def _perform_launch(
                         store.restore_pointer_bytes(record["cwd"], stable_id, prior_pointer)
                     except Exception:
                         pass
-            elif action_kind == "fresh" and owns_mutation:
+            elif action_kind in ("fresh", "fork") and owns_mutation:
                 store._forget_unlocked(stable_id)
                 try:
-                    store.clear_last(record["cwd"], stable_id, blocking=True)
+                    _forget_pointer(store, action_kind, record["cwd"], stable_id, prior_pointer)
                 except Exception:
                     pass
                 try:

@@ -116,12 +116,12 @@ def profile_pick_order(runtime: runtime_mod.Runtime, *, current: str | None = No
 
 
 def _card_action(plan: cli_types.PreparedLaunch) -> str:
-    """``fresh`` / ``resume`` / ``relaunch`` of a prepared launch (the card's action word)."""
+    """``fresh`` / ``resume`` / ``relaunch`` / ``fork`` of a prepared launch (the card's action word)."""
 
     if plan.target.kind == "relaunch":
         return "relaunch"
-    if plan.result.session_action.kind == "fresh":
-        return "fresh"
+    if plan.result.session_action.kind in ("fresh", "fork"):
+        return plan.result.session_action.kind
     return "resume"
 
 
