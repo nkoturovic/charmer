@@ -170,6 +170,16 @@ RESERVED_LEAD_ENV_KEYS = frozenset(
         # the client never prefetches fast-mode availability with the
         # gateway key; a lead env must never switch it back on.
         "CLAUDE_CODE_DISABLE_FAST_MODE",
+        # Compiled into every managed launch env and flag settings: no
+        # background service; a lead env must never switch it back on.
+        "CLAUDE_CODE_DISABLE_AGENT_VIEW",
+        # Claude Code 2.1.313+ host switches every launch clears
+        # (compiler.V2_ENV_UNSET): session identity, the config folder's
+        # repair, the person's hooks and nested sessions' transcripts.
+        "CLAUDE_CODE_SESSION_BEGAN_AS_COPY",
+        "CLAUDE_CODE_HOST_OWNED_CONFIG_DIR",
+        "CLAUDE_CODE_PERSONAL_HOOKS_OFF",
+        "CLAUDE_CODE_DISABLE_NESTED_SESSION_ID",
     }
 )
 

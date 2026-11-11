@@ -857,6 +857,7 @@ _LAN_REASONS = {
     "timeout": "did not answer in time",
     "unreachable": "is unreachable",
     "outside": "resolves only to addresses outside its network",
+    "local": "is reached only from a local address outside the tailnet",
 }
 
 
@@ -981,6 +982,18 @@ def probe_lan(
             raise
         return sock
 
+    def policy_refusal(sock: Any) -> str | None:
+        """The gateway's connect-time check on a network-scoped probe: the
+        connected socket's peer in the network and, on the tailnet, its local
+        address a tailnet address too (None: the gateway would use it)."""
+
+        try:
+            peer_ok = netclass.in_network(sock.getpeername(), network, gateway_ports)
+            local_ok = netclass.local_allowed(sock.getsockname(), network).allowed
+        except (AttributeError, OSError, ValueError):
+            return "unreachable"
+        return None if peer_ok and local_ok else ("outside" if not peer_ok else "local")
+
     opener = connect or open_address
     reasons: list[str] = []
     for index, entry in enumerate(candidates):
@@ -1004,14 +1017,20 @@ def probe_lan(
             reasons.append("unreachable")
             continue
         try:
-            close = getattr(sock, "close", None)
-            if close is not None:
-                close()
-        except OSError:
-            pass
+            refusal = policy_refusal(sock) if network is not None else None
+        finally:
+            try:
+                close = getattr(sock, "close", None)
+                if close is not None:
+                    close()
+            except OSError:
+                pass
+        if refusal is not None:
+            reasons.append(refusal)
+            continue
         return LanReachability("reachable", host, None, answers)
     # Every candidate failed: the most specific reason one of them gave.
-    reason = next((r for r in ("refused", "timeout") if r in reasons), "unreachable")
+    reason = next((r for r in ("local", "refused", "timeout", "outside") if r in reasons), "unreachable")
     return LanReachability("unreachable", host, reason, answers)
 
 

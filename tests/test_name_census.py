@@ -83,8 +83,7 @@ HISTORICAL_FILES = {
 # inside one of them.
 SPANS = {
     "src/charmer/data/catalog/native-contract.json": [
-        (f"{OLD}-* ids are unknown", 1, "U17: a client check that was run, recorded as observed"),
-        (f"deepwork-{OLD}-durable-session-config-phase0-2.1.312", 1, "the evidence id of a run lifecycle probe"),
+        (f"deepwork-{OLD}-durable-session-config-phase0-2.1.322", 1, "the evidence id of a run lifecycle probe"),
     ],
     "tests/fixtures/assets/catalog/native-contract.json": [
         (f"while {OLD}-* Anthropic ids are unknown", 1, "the fixture mirror of the recorded U17 note"),
@@ -411,7 +410,7 @@ class NameCensusMutationTests(unittest.TestCase):
         fabricated = f'    "{legacy.LEGACY_SELECTOR_PREFIX}fabricated": ("x", "y", None),\n'.encode()
         self.assertTrue(self.mutated("tests/test_catalog.py", lambda data: data.replace(first, first + fabricated, 1)))
 
-    def test_the_u17_note_elsewhere(self) -> None:
+    def test_the_contract_span_elsewhere(self) -> None:
         rel = "src/charmer/data/catalog/native-contract.json"
         span = SPANS[rel][0][0].encode()
         self.assertTrue(self.mutated(rel, lambda data: data + b"\n" + span + b"\n"))

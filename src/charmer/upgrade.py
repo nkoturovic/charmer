@@ -144,7 +144,10 @@ ESSENTIAL_EVIDENCE_PREFIXES = (
     # control and counter paths, and without the compiled capability table the
     # client still switches an unrecognized model (the counter's premise). A
     # part whose run touches the live daemon domain skips as BOUNDARY and one
-    # off its outcome prints FAIL; neither prints the record.
+    # off its outcome prints FAIL; neither prints the record. The fable part
+    # routes the newest Fable by its canonical selector; the fences part the
+    # managed deny list, older-only and target-less fences, the Opus family
+    # default, "Ask each time" on agents and a server-named target in auto mode.
     "client check refusal-routing-lead: PASS ",
     "client check refusal-routing-shapes: PASS ",
     "client check refusal-routing-agents: PASS ",
@@ -152,15 +155,28 @@ ESSENTIAL_EVIDENCE_PREFIXES = (
     "client check refusal-routing-controls: PASS ",
     "client check refusal-routing-counter: PASS ",
     "client check refusal-routing-uncountered: PASS ",
+    "client check refusal-routing-fable: PASS ",
+    "client check refusal-routing-fences: PASS ",
+    # The 2.1.322 re-pin: a mod the model writes into the session's dev-mods
+    # folder through the client's own authoring skill would load at the next
+    # start without a question in every permission mode; with the compiled
+    # folder deny and the skill deny, the skill call and every file-tool and
+    # shell write are refused in default, auto and bypass, while the compile
+    # without them loads the model's mod at the next start (the control).
+    "client check mod-authoring: PASS class=AP-closed ",
 )
 
 # Named alternative completion lines that satisfy an essential prefix. The
-# feedback-draft probe: the full lead-and-subagent proof, or the explicit
+# feedback-draft probe: the full lead-and-subagent proof, the explicit
 # client boundary (off suppresses both, notify restores the lead, and the
-# client never offers SendFeedback to a subagent, even one that lists it).
+# client never offers SendFeedback to a subagent, even one that lists it),
+# or the client's gateway boundary (behind a gateway the pin offers the tool
+# to nobody under either value, while the previous release's pin, run the
+# same way, still offers it to the lead).
 ESSENTIAL_EVIDENCE_ALTERNATIVES = {
     "client probe FD: PASS class=FD-env-off ": (
         "client probe FD: PASS class=FD-env-off-subagent-withheld ",
+        "client probe FD: PASS class=FD-client-gateway-withheld ",
     ),
 }
 
@@ -880,7 +896,9 @@ class UpgradeOutcome:
     messages: tuple[str, ...]
 
 
-_SYNC_TEST_FILES = ("tests/test_catalog.py", "tests/test_native_contract.py")
+# The name census pins the contract's lifecycle evidence id, which names the
+# pinned version, as an exact span.
+_SYNC_TEST_FILES = ("tests/test_catalog.py", "tests/test_native_contract.py", "tests/test_name_census.py")
 
 
 def _sync_pinned_test_literals(

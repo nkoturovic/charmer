@@ -104,6 +104,12 @@ COMPILED_SETTINGS_KEYS = frozenset(
     }
 )
 
+# The same closed doctrine one level down: the compiled ``permissions`` carry
+# only these keys. Claude Code's permissions.blockWritesOutsideWorkingDirectories
+# and permissions.denyInsteadOfPrompting stay the user's own: each only
+# narrows what a session may do.
+COMPILED_PERMISSIONS_KEYS = frozenset({"deny", "defaultMode"})
+
 # The three workflow keys the package base settings.json must supply.
 _BASE_WORKFLOW_KEYS = ("disableWorkflows", "workflowSizeGuideline", "workflowKeywordTriggerEnabled")
 
@@ -664,11 +670,25 @@ def skill_md_bytes() -> bytes:
 
 
 SKILL_MD_BYTES = skill_md_bytes()
-# The skill files earlier releases compiled (all under the earlier name,
-# in charmer.legacy): a live scope that still carries one differs only by
-# the skill text, which doctor reports as lazy state (it applies at the next
-# resume or repair), and a rollback repair restores it. Oldest first.
-PREVIOUS_SKILL_MD_BYTES: tuple[bytes, ...] = legacy.SKILL_MD_BYTES
+# The skill file 2.4.0 compiled (its ``skill_md_bytes()``, exactly).
+_SKILL_MD_BYTES_2_4_0 = (
+    b"---\nname: cm\ndescription: Show or change this charmer session's agent lineup (/cm, /cm profiles, "
+    b"/cm profile NAME, /cm set AGENT=MODEL[:EFFORT], /cm unset AGENT, /cm direct [MODEL[:EFFORT]], /cm pin, "
+    b"/cm follow, /cm fallback PROVIDER [--preview], /cm review [high-stakes] [RANGE], /cm quota)\n"
+    b'argument-hint: "profiles \xc2\xb7 profile NAME \xc2\xb7 set AGENT=MODEL[:EFFORT] \xc2\xb7 unset AGENT '
+    b"\xc2\xb7 direct [MODEL[:EFFORT]] \xc2\xb7 pin \xc2\xb7 follow \xc2\xb7 fallback PROVIDER [--preview] "
+    b'\xc2\xb7 review [high-stakes] [RANGE] \xc2\xb7 quota"\n'
+    b"disable-model-invocation: true\nallowed-tools: Bash(charmer lineup:*)\n---\n"
+    b"!`charmer lineup --session ${CLAUDE_SESSION_ID} '$ARGUMENTS'`\n"
+)
+# The skill files earlier releases compiled (those under the earlier name
+# in charmer.legacy, then 2.4.0's): a live scope that still carries one
+# differs only by the skill text, which doctor reports as lazy state (it
+# applies at the next resume or repair), and a rollback repair restores it.
+# Oldest first; a release's bytes equal to this release's are the current
+# skill, not a previous one.
+PREVIOUS_SKILL_MD_BYTES: tuple[bytes, ...] = tuple(
+    skill for skill in (*legacy.SKILL_MD_BYTES, _SKILL_MD_BYTES_2_4_0) if skill != SKILL_MD_BYTES)
 
 # The named inventory of the
 # pinned client's bundled skills that launch agents outside the bound cm
@@ -700,6 +720,7 @@ SKILL_POLICY: tuple[tuple[str, str, str], ...] = (
     ("fewer-permission-prompts", "reads transcripts and edits project settings", "ask"),
     ("init", "writes CLAUDE.md and optional skills or hooks", "model"),
     ("keybindings-help", "edits ~/.claude/keybindings.json", "ask"),
+    ("plugin-authoring", "writes mods into the session's dev-mods folder (see MOD_FOLDER_DENIES)", "model"),
     ("pr", "opens a pull request", "absent"),
     ("run-skill-generator", "writes a project skill", "user"),
     ("schedule", "schedules remote agents", "absent"),
@@ -710,6 +731,29 @@ SKILL_POLICY: tuple[tuple[str, str, str], ...] = (
 )
 SKILL_POLICY_CLASSES = ("model", "ask", "user", "absent")
 MANAGED_SKILL_DENIES: tuple[str, ...] = tuple(f"Skill({name})" for name, _why, _pin in SKILL_POLICY)
+# The named skill denies earlier releases compiled (2.4.0 and before: the
+# inventory without plugin-authoring). A live scope that carries them holds
+# another release's managed skill policy: lazy state, like a scope without
+# any skill deny.
+PREVIOUS_MANAGED_SKILL_DENIES: tuple[tuple[str, ...], ...] = (
+    ("Skill(batch)", "Skill(code-review)", "Skill(commit)", "Skill(commit-push-pr)", "Skill(debug)",
+     "Skill(design-sync)", "Skill(doctor)", "Skill(fewer-permission-prompts)", "Skill(init)",
+     "Skill(keybindings-help)", "Skill(pr)", "Skill(run-skill-generator)", "Skill(schedule)",
+     "Skill(security-review)", "Skill(simplify)", "Skill(update-config)", "Skill(verify)"),
+)
+
+# The client's own mod authoring. A mod in a session's dev-mods folder
+# (``~/.claude/dev-mods/<session id>``: a managed session's Claude config
+# folder is always ``~/.claude``, see ``paths.claude_settings_dir``) loads at
+# that session's next start or resume without a question in every permission
+# mode, and its hooks then run as the person's own code. Every managed
+# session denies the file-tool writes into that folder (the client checks a
+# Bash redirect's or ``mkdir``'s path against Edit rules too) and, through
+# ``SKILL_POLICY``, the model's call of the bundled ``plugin-authoring``
+# skill that names the folder. The mods a person loads from a plugin folder
+# of their own are untouched. Not a sandbox: in bypass mode a program the
+# model runs can still write the folder, as it can read a file a deny names.
+MOD_FOLDER_DENIES: tuple[str, ...] = ("Edit(~/.claude/dev-mods/**)",)
 
 # Writer grades need worktree isolation, which
 # needs a git work tree at the session cwd.
@@ -1740,6 +1784,15 @@ FEEDBACK_DRAFTS_VALUES = settings_mod.FEEDBACK_DRAFTS_VALUES
 # it, so the flag settings (which win over those layers) state it as well.
 FAST_MODE_ENV = "CLAUDE_CODE_DISABLE_FAST_MODE"
 
+# Claude Code's agent view and its background service: ``claude agents``,
+# ``--bg``, ``/background``, the exit dialog's "Move to background and exit",
+# the fleet ``/fork`` and the on-demand daemon. A session handed to it runs on
+# the daemon's own binary and environment, without the lead prompt or the
+# launch environment, so every managed session turns it off; like the
+# fast-mode disable, the flag settings state it as well. The real-binary
+# proof is tests/test_client_background (client check background-service).
+AGENT_VIEW_ENV = "CLAUDE_CODE_DISABLE_AGENT_VIEW"
+
 
 # Claude Code 2.1.296+ runs every workflow agent on
 # CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL when it is set, over a cm-* agentType's
@@ -1898,6 +1951,7 @@ def compile_lineup_scope(
     env[compiler.FORK_SUBAGENT_ENV] = compiler.FORK_SUBAGENT_OFF
     env.update(feedback_drafts_env(feedback_drafts))
     env[FAST_MODE_ENV] = "1"
+    env[AGENT_VIEW_ENV] = "1"
     env[MODEL_CAPABILITIES_ENV] = refusal_fallback_capabilities(fence)
 
     _, denies = compiler.compile_native_policy(
@@ -1907,10 +1961,12 @@ def compile_lineup_scope(
     # --no-subagents also turns workflows off (a workflow agent() without
     # an agentType is not stopped by the Agent deny).
     settings["disableWorkflows"] = lineup.workflows == "off" or no_subagents
-    # The named skill denies join (never replace) the native-agent
-    # and secret denies, in every lineup (direct and --no-subagents included).
+    # The named skill denies and the mod-folder deny join (never replace) the
+    # native-agent and secret denies, in every lineup (direct and
+    # --no-subagents included).
     settings["permissions"] = {
-        "deny": [*(["Agent"] if no_subagents else denies), *MANAGED_SKILL_DENIES, *secret_denies]
+        "deny": [*(["Agent"] if no_subagents else denies), *MANAGED_SKILL_DENIES, *MOD_FOLDER_DENIES,
+                 *secret_denies]
     }
     if default_mode is not None:
         if default_mode != PERMISSION_DEFAULT_MODE:
@@ -1948,6 +2004,11 @@ def compile_lineup_scope(
     if unknown:
         raise ScopeError(
             f"compiled settings carry keys outside the closed allowlist: {unknown}"
+        )
+    unknown = sorted(set(settings["permissions"]) - COMPILED_PERMISSIONS_KEYS)
+    if unknown:
+        raise ScopeError(
+            f"compiled permissions carry keys outside the closed allowlist: {unknown}"
         )
     missing = [key for key in _BASE_WORKFLOW_KEYS if key not in settings]
     if missing:
@@ -2389,9 +2450,9 @@ _SKILL_POLICY_DRIFT_LINES = frozenset(
 
 
 def _skill_denies(settings: Mapping[str, Any]) -> tuple[Any, list[Any]] | None:
-    """``(settings without the named skill denies, those denies in order)``;
-    None when ``permissions.deny`` is not a list of strings (damage, never
-    skill-policy drift)."""
+    """``(settings without the named skill and mod-folder denies, those
+    denies in order)``; None when ``permissions.deny`` is not a list of
+    strings (damage, never skill-policy drift)."""
 
     permissions = settings.get("permissions")
     if not isinstance(permissions, Mapping) or not isinstance(permissions.get("deny"), list):
@@ -2399,7 +2460,7 @@ def _skill_denies(settings: Mapping[str, Any]) -> tuple[Any, list[Any]] | None:
     deny = permissions["deny"]
     if not all(isinstance(entry, str) for entry in deny):
         return None
-    named = set(MANAGED_SKILL_DENIES)
+    named = set(MANAGED_SKILL_DENIES) | set(MOD_FOLDER_DENIES)
     rest = {**settings, "permissions": {**permissions, "deny": [e for e in deny if e not in named]}}
     return rest, [entry for entry in deny if entry in named]
 
@@ -2411,6 +2472,26 @@ def _without_default_mode(settings: Mapping[str, Any]) -> Any:
     return {**settings, "permissions": {k: v for k, v in permissions.items() if k != "defaultMode"}}
 
 
+# The mod-authoring denies this release added (the authoring skill and the
+# dev-mods folder): a scope another release compiled carries both or neither.
+_AUTHORING_DENIES = ("Skill(plugin-authoring)", *MOD_FOLDER_DENIES)
+
+
+def _without_authoring_denies(settings: Mapping[str, Any]) -> Any:
+    """``settings`` without the mod-authoring denies when it carries both or
+    neither; unchanged when it carries only one (a difference that stays)."""
+
+    permissions = settings.get("permissions")
+    if not isinstance(permissions, Mapping) or not isinstance(permissions.get("deny"), list):
+        return settings
+    deny = permissions["deny"]
+    present = [rule for rule in _AUTHORING_DENIES if rule in deny]
+    if present and len(present) != len(_AUTHORING_DENIES):
+        return settings
+    return {**settings, "permissions": {**permissions, "deny": [rule for rule in deny
+                                                                if rule not in _AUTHORING_DENIES]}}
+
+
 def _status_line_of(settings: Any) -> tuple[bool, Any]:
     if not isinstance(settings, Mapping) or SUBAGENT_STATUS_LINE_KEY not in settings:
         return False, None
@@ -2419,11 +2500,12 @@ def _status_line_of(settings: Any) -> tuple[bool, Any]:
 
 def _without_lazy_keys(settings: Mapping[str, Any]) -> Any:
     """``settings`` without the keys whose difference alone is lazy state:
-    ``permissions.defaultMode`` and a ``subagentStatusLine`` a release
+    ``permissions.defaultMode``, a ``subagentStatusLine`` a release
     compiles (:func:`is_status_line_setting`; any other value stays, so it
-    remains a difference)."""
+    remains a difference) and the mod-authoring denies, both or neither
+    (:func:`_without_authoring_denies`)."""
 
-    rest = _without_default_mode(settings)
+    rest = _without_authoring_denies(_without_default_mode(settings))
     present, value = _status_line_of(rest)
     if present and is_status_line_setting(value):
         rest = {key: item for key, item in rest.items() if key != SUBAGENT_STATUS_LINE_KEY}
@@ -2518,8 +2600,10 @@ def skill_policy_drift(live: Path, plan: ScopePlan, drifted: Sequence[str]) -> b
     lazy state that resume or ``doctor --repair`` resolves.
 
     ``settings.json`` may differ from ``plan`` only by the named skill
-    denies, all of them or none (a scope without the deny, or one with it
-    under a rollback compile); the ``/cm`` skill may hold a previous release's exact
+    denies, all of them, a previous release's exact set
+    (:data:`PREVIOUS_MANAGED_SKILL_DENIES`) or none (a scope without the
+    deny, or one with it under a rollback compile), and by the mod-folder
+    deny, all of it or none; the ``/cm`` skill may hold a previous release's exact
     bytes. A ``permissions.defaultMode`` or release-compiled
     ``subagentStatusLine`` difference alongside is lazy too. A partial deny
     set, any other permissions change or any other file is not: doctor
@@ -2538,7 +2622,10 @@ def skill_policy_drift(live: Path, plan: ScopePlan, drifted: Sequence[str]) -> b
         if (on_disk is None or expected is None
                 or _without_lazy_keys(on_disk[0]) != _without_lazy_keys(expected[0])):
             return False
-        if on_disk[1] not in ([], list(MANAGED_SKILL_DENIES)):
+        skills = [entry for entry in on_disk[1] if entry not in MOD_FOLDER_DENIES]
+        folder = [entry for entry in on_disk[1] if entry in MOD_FOLDER_DENIES]
+        released = ([], list(MANAGED_SKILL_DENIES), *(list(denies) for denies in PREVIOUS_MANAGED_SKILL_DENIES))
+        if skills not in released or folder not in ([], list(MOD_FOLDER_DENIES)):
             return False
         if (on_disk[1] == expected[1]
                 and f"{SKILL_RELPATH} content differs" not in drifted):

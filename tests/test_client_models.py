@@ -62,6 +62,7 @@ from charmer.probe import ProbeError
 
 import _v3
 from _catalog import uses_shipped_catalog
+from _client_policy import managed_settings
 from _tier import real_binary_gate
 from _layout import REPO_ROOT, RESOURCES_ROOT  # the one root source
 
@@ -95,6 +96,15 @@ _OPUS5 = "claude-opus-5[1m]"
 _SONNET5 = "claude-sonnet-5[1m]"
 _MULTI_OPUS = "charmer-" + _OPUS.removeprefix("claude-")
 _MULTI_FABLE = "charmer-" + _FABLE.removeprefix("claude-")
+# The pinned client's own newest Fable: what a bare ``fable`` requests with
+# no family default stated (its baked alias table; measured 2026-11-11, while
+# the client's built-in catalog seed, which expires 2026-11-16, still named
+# Fable 5.1 and did not apply).
+_CLIENT_FABLE = "claude-fable-5-2"
+# Fable 5.2 by its canonical selector, the one an operator line on the
+# Anthropic pool and a catalog line naming it both compile; the refusal
+# matrix adds it to a compiled fence (a no-op once the shipped line names it).
+_FABLE52 = "claude-fable-5-2[1m]"
 # A managed scope configured nowhere compiles this default mode;
 # without it 2.1.284+ starts in auto mode, which (through a gateway) cannot
 # classify Agent spawns and refuses them.
@@ -112,6 +122,8 @@ REFUSAL_ROUTING_RECORDS = (
     "client check refusal-routing-controls: PASS ",
     "client check refusal-routing-counter: PASS ",
     "client check refusal-routing-uncountered: PASS ",
+    "client check refusal-routing-fable: PASS ",
+    "client check refusal-routing-fences: PASS ",
 )
 _OPUS_MARKER = "client-check-marker-opus"
 _FABLE_MARKER = "client-check-marker-fable"
@@ -184,7 +196,7 @@ class RefusalRoutingRecordTests(unittest.TestCase):
     def test_the_records_are_essential(self) -> None:
         for record in REFUSAL_ROUTING_RECORDS:
             self.assertIn(record, upgrade.ESSENTIAL_EVIDENCE_PREFIXES)
-        self.assertEqual(len(set(REFUSAL_ROUTING_RECORDS)), 7)
+        self.assertEqual(len(set(REFUSAL_ROUTING_RECORDS)), 9)
 
     def test_a_skipped_or_failed_part_never_satisfies_its_record(self) -> None:
         for record in REFUSAL_ROUTING_RECORDS:
@@ -201,6 +213,29 @@ class RefusalRoutingRecordTests(unittest.TestCase):
                 with self.subTest(part=part, line=line):
                     self.assertEqual(upgrade._missing_evidence_prefixes(others + "\n" + line + "\n"), (record,))
             self.assertEqual(upgrade._missing_evidence_prefixes(others + "\n" + record + "fixture\n"), ())
+
+
+class RefusalPolicyTests(unittest.TestCase):
+    """The specified outcomes the matrix states before each run."""
+
+    def test_an_unknown_opus_default_specifies_no_switch(self) -> None:
+        production = tuple(sorted({wire + "[1m]" for wire in catalog.REFUSAL_FALLBACK_WIRES}))
+        unknown = {**_FAMILY, "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-check-unknown-opus"}
+        for family, arms in ((None, True), (_FAMILY, True), (unknown, False),
+                             ({**_FAMILY, "ANTHROPIC_DEFAULT_OPUS_MODEL": _OPUS48}, True),
+                             ({name: value for name, value in _FAMILY.items()
+                               if name != "ANTHROPIC_DEFAULT_OPUS_MODEL"}, True)):
+            with self.subTest(family=(family or {}).get("ANTHROPIC_DEFAULT_OPUS_MODEL")):
+                self.assertEqual(opus_default_arms(family), arms)
+                self.assertEqual(expected_switch(_OPUS, "bio", production, switches=arms),
+                                 "claude-opus-5" if arms else None)
+
+    def test_fable_5_2_follows_the_general_table(self) -> None:
+        production = tuple(sorted({wire + "[1m]" for wire in catalog.REFUSAL_FALLBACK_WIRES}))
+        for category, target in (("cyber", "claude-opus-4-8"), ("bio", "claude-opus-5"),
+                                 ("frontier_llm", "claude-opus-5"), ("reasoning_extraction", None), (None, None)):
+            self.assertEqual(expected_switch(_FABLE52, category, production), target)
+            self.assertEqual(expected_switch(_FABLE52, category, (_FABLE52,)), None)
 
 
 def _wire(selector: str) -> str:
@@ -528,12 +563,16 @@ class SelectorRecognitionProbe(_SpikeTestCase):
                 )
                 observed[f"{alias}/{label}"] = rows[0]
         # Plain ANTHROPIC_BASE_URL is firstParty: bare aliases request the
-        # CURRENT generation, which is the compiled family default's wire
-        # (asserted against the catalog-derived default, no literal).
+        # client's CURRENT generation. For opus and sonnet that is the
+        # compiled family default's wire (asserted against the
+        # catalog-derived default, no literal); bare fable is the pinned
+        # client's own newest Fable, which the compiled default names only
+        # once the catalog's fable line does (a managed scope always states
+        # ANTHROPIC_DEFAULT_FABLE_MODEL, the env rows below).
         self.assertEqual(observed["opus/plain"]["model"], _wire(_OPUS))
         self.assertEqual(observed["opus/plain"]["max_tokens"], 128000)
         self.assertFalse(_has_beta(observed["opus/plain"], "context-1m-"))
-        self.assertEqual(observed["fable/plain"]["model"], _wire(_FABLE))
+        self.assertEqual(observed["fable/plain"]["model"], _CLIENT_FABLE)
         self.assertEqual(observed["sonnet/plain"]["model"], _wire(_SONNET))
         # Each family override retargets only its own alias.
         self.assertEqual(observed["opus/env"]["model"], _OPUS_MARKER)
@@ -543,7 +582,8 @@ class SelectorRecognitionProbe(_SpikeTestCase):
             f"bare opus->{observed['opus/plain']['model']} "
             f"fable->{observed['fable/plain']['model']} "
             f"sonnet->{observed['sonnet/plain']['model']} "
-            "(= the compiled family defaults; DEFAULT_OPUS/FABLE/SONNET_MODEL retarget each alias)"
+            "(opus and sonnet = the compiled family defaults, fable = the client's own newest Fable; "
+            "DEFAULT_OPUS/FABLE/SONNET_MODEL retarget each alias)"
         )
 
     def _selector_classes(self) -> str:
@@ -742,15 +782,19 @@ class _ModelLimitsHandler(probe._ProviderHandler):
 class SelectorLimitsProbe(_SpikeTestCase):
     """Canonical suffixless/[1m] limits on the first turn, fresh or switched."""
 
-    def _case(self, selector, *, switched):
+    def _case(self, selector, *, switched, start=_FABLE, extra=()):
+        """``start``: the lead a switched case begins on; ``extra``: more
+        fenced and offered selectors (the Fable 5.2 lane's own)."""
+
         fixture = self._fixture()
-        lead = _FABLE if switched else selector
-        settings_argv = self._settings_argv(fixture, lead, (_OPUS, _wire(_OPUS), _FABLE))
+        lead = start if switched else selector
+        offered = (_wire(_OPUS), _OPUS, _FABLE, *extra)
+        settings_argv = self._settings_argv(fixture, lead, offered)
         settings_path = Path(settings_argv[1])
         settings = strict_json.load(settings_path)
         settings["modelPicker"] = {
             "options": [{"model": model, "label": f"CHECKS7MODEL{index}", "description": "fixture"}
-                        for index, model in enumerate((_wire(_OPUS), _OPUS, _FABLE))],
+                        for index, model in enumerate(offered)],
             "replaceBuiltInOptions": True,
         }
         # A fixture status line reports only model/window metadata, so the
@@ -1058,6 +1102,191 @@ class AgentEffortProbe(_SpikeTestCase):
         })
         print(f"client check S8-explicit: PASS {self._identity()} session=medium "
               f"frontmatter=low; Agent argument wire={observed}")
+
+    def test_s8_subagent_effort_variable(self) -> None:
+        """CLAUDE_CODE_SUBAGENT_EFFORT (2.1.316+) in the user's settings env
+        applies only to an agent whose definition names no effort and whose
+        call names none: frontmatter effort (every compiled cm-* agent names
+        one) and an explicit Agent effort keep theirs."""
+
+        fixture = self._fixture()
+        state.atomic_write(fixture.claude_config_dir / "settings.json", strict_json.canonical_file_bytes(
+            {"env": {"CLAUDE_CODE_SUBAGENT_EFFORT": "low"}}))
+        cases = {"frontmatter": ("high", None), "unnamed": (None, None), "argument": (None, "max")}
+        markers, agents, explicit = {}, [], {}
+        for label, (frontmatter, argument) in cases.items():
+            name = f"client-check-subagent-effort-{label}"
+            marker = f"CLIENT-CHECK-S8-SUBAGENT-{label.upper()}-MARK"
+            self._write_agent(fixture, name, model=_OPUS, effort=frontmatter, marker=marker)
+            markers[label] = marker
+            agents.append(name)
+            if argument is not None:
+                explicit[name] = argument
+        result, rows = self._run(
+            "S8-subagent-effort", _OPUS,
+            responder=_SpikeResponder(agents=tuple(agents), agent_efforts=explicit),
+            extra=("--effort", "medium", "--dangerously-skip-permissions"),
+            fixture=fixture, markers=markers,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(rows[0]["effort"], "medium")
+        observed = {}
+        for label in cases:
+            tagged = [row for row in rows if row["markers"] == (label,)]
+            self.assertEqual(len(tagged), 1, label)
+            observed[label] = tagged[0]["effort"]
+        self.assertEqual(observed, {"frontmatter": "high", "unnamed": "low", "argument": "max"})
+        print(f"client check S8-subagent-effort: PASS {self._identity()} session=medium, user env "
+              f"CLAUDE_CODE_SUBAGENT_EFFORT=low; wire={observed} (frontmatter and Agent argument keep theirs)")
+
+
+class _SpeedResponder(_SpikeResponder):
+    """The spike responder that also keeps each message request's ``speed``."""
+
+    def __init__(self, **options: Any):
+        super().__init__(**options)
+        self.speeds: list[Any] = []
+
+    def respond(self, document: dict[str, Any], path: str, context: Any) -> Any:
+        if path.split("?", 1)[0].rstrip("/").endswith("/messages"):
+            with self._lock:
+                self.speeds.append(document.get("speed"))
+        return super().respond(document, path, context)
+
+
+class Fable52Probe(_SpikeTestCase):
+    """Fable 5.2 by its canonical selector, in both forms, whatever the
+    shipped ``fable`` line names: the same lanes run unchanged once the
+    catalog moves. Each expectation is the pinned client's own model row
+    (native 1M window, 128K default output cap, ``medium`` default effort,
+    adaptive thinking that cannot be turned off, fast-mode capable) and is
+    stated before the run. The lines: ``client check fable-5-2-<part>: PASS``."""
+
+    _FORMS = (_wire(_FABLE52), _FABLE52)
+    _LEVELS = ("low", "medium", "high", "xhigh", "max")
+
+    def _first(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
+        main = [row for row in rows if row["model"] == _wire(_FABLE52) and row["tool_count"]]
+        self.assertTrue(main, "Fable 5.2 sent no main-thread turn")
+        return main[0]
+
+    def test_fable52_selectors_lead_efforts_and_resume(self) -> None:
+        expected = {"model": _wire(_FABLE52), "max_tokens": 128000, "thinking_type": "adaptive", "beta_1m": False}
+        observed: dict[str, Any] = {}
+        for selector in self._FORMS:
+            result, rows = self._run("fable-5-2", selector, responder=_SpikeResponder(), fence=(selector,))
+            first = self._first(rows)
+            shape = {"model": first["model"], "max_tokens": first["max_tokens"],
+                     "thinking_type": first["thinking_type"], "beta_1m": _has_beta(first, "context-1m-")}
+            self.assertEqual(shape, expected, selector)
+            # No --effort: the client's own default for the model.
+            self.assertEqual(first["effort"], "medium", selector)
+            self.assertNotIn(_UNRECOGNIZED_MARKER, result.stderr, selector)
+            observed[selector] = {**shape, "effort": first["effort"]}
+        for level in self._LEVELS:
+            _result, rows = self._run("fable-5-2", _FABLE52, responder=_SpikeResponder(), fence=(_FABLE52,),
+                                      extra=("--effort", level))
+            self.assertEqual(self._first(rows)["effort"], level, level)
+        fixture = self._fixture()
+        session = str(uuid.uuid4())
+        for argv in (("--session-id", session), ("--resume", session)):
+            _result, rows = self._run("fable-5-2", _FABLE52, responder=_SpikeResponder(), fence=(_FABLE52,),
+                                      extra=(*argv, "--effort", "xhigh"), fixture=fixture)
+            first = self._first(rows)
+            self.assertEqual((first["effort"], first["max_tokens"], first["thinking_type"]),
+                             ("xhigh", 128000, "adaptive"), argv[0])
+        print(f"client check fable-5-2-selectors: PASS {self._identity()} {observed}; --effort "
+              f"{'/'.join(self._LEVELS)} sent verbatim; --resume keeps --effort xhigh, 128000, adaptive")
+
+    def test_fable52_agent_efforts(self) -> None:
+        fixture = self._fixture()
+        cases = {**{level: (level, None) for level in self._LEVELS},
+                 "unnamed": (None, None), "override": ("low", "max"), "omitted": ("low", None)}
+        markers, agents, explicit = {}, [], {}
+        for label, (frontmatter, argument) in cases.items():
+            name = f"client-check-fable52-{label}"
+            markers[label] = f"CLIENT-CHECK-F52-{label.upper()}-MARK"
+            self._write_agent(fixture, name, model=_FABLE52, effort=frontmatter, marker=markers[label])
+            agents.append(name)
+            if argument is not None:
+                explicit[name] = argument
+        # The session effort (xhigh) differs from the client's own default
+        # (medium), so an agent that inherits is told apart from one that
+        # gets the model default.
+        result, rows = self._run("fable-5-2-agents", _FABLE52, fence=(_FABLE52,),
+                                 responder=_SpikeResponder(agents=tuple(agents), agent_efforts=explicit),
+                                 extra=("--effort", "xhigh", "--dangerously-skip-permissions"),
+                                 fixture=fixture, markers=markers)
+        self.assertEqual(result.returncode, 0)
+        observed = {}
+        for label in cases:
+            tagged = [row for row in rows if row["markers"] == (label,)]
+            self.assertEqual(len(tagged), 1, label)
+            self.assertEqual((tagged[0]["model"], tagged[0]["thinking_type"]), (_wire(_FABLE52), "adaptive"), label)
+            observed[label] = tagged[0]["effort"]
+        self.assertEqual(observed, {**{level: level for level in self._LEVELS},
+                                    "unnamed": "xhigh", "override": "max", "omitted": "low"})
+        print(f"client check fable-5-2-agents: PASS {self._identity()} session=xhigh; agent wire={observed}")
+
+    def test_fable52_thinking_and_fast_mode(self) -> None:
+        """Settings that try to turn thinking off and fast mode on: thinking
+        stays adaptive and, with the compiled fast-mode disable (flag
+        settings env), no request carries ``speed``. Without the disable the
+        same layers sent no ``fast`` either on 2.1.322 (measured 2026-11-11):
+        this harness has no positive control for a Fable 5.2 fast request, so
+        that half is recorded, not asserted; the FM lanes
+        (tests/test_managed_skill_policy) prove the disable with one."""
+
+        trying = {"alwaysThinkingEnabled": False, "fastMode": True,
+                  "env": {"MAX_THINKING_TOKENS": "0", "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1"}}
+        observed = {}
+        for label, flag_env in (("compiled", {scope.FAST_MODE_ENV: "1"}), ("control", None)):
+            fixture = self._fixture()
+            state.atomic_write(fixture.claude_config_dir / "settings.json", strict_json.canonical_file_bytes(trying))
+            responder = _SpeedResponder()
+            _result, rows = self._run("fable-5-2-thinking", _FABLE52, responder=responder, fence=(_FABLE52,),
+                                      extra=("--effort", "high"), fixture=fixture, settings_env=flag_env)
+            first = self._first(rows)
+            self.assertEqual(first["thinking_type"], "adaptive", label)
+            observed[label] = sorted({str(speed) for speed in responder.speeds})
+        self.assertEqual(observed["compiled"], ["None"])
+        print(f"client check fable-5-2-thinking: PASS {self._identity()} thinking adaptive under "
+              f"alwaysThinkingEnabled=false, MAX_THINKING_TOKENS=0 and CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1; "
+              f"speed with the compiled disable {observed['compiled']}, without it (recorded, no positive "
+              f"control here) {observed['control']}")
+
+    def test_fable52_window_fresh_after_switch_and_effort_command(self) -> None:
+        observed = {}
+        for selector in self._FORMS:
+            for switched in (False, True):
+                label = f"{selector}/{'switch' if switched else 'fresh'}"
+                observed[label] = SelectorLimitsProbe._case(self, selector, switched=switched, start=_OPUS,
+                                                            extra=self._FORMS)
+        for label, row in observed.items():
+            self.assertEqual({key: row[key] for key in ("window", "max_tokens", "long_context")},
+                             {"window": 1000000, "max_tokens": 128000, "long_context": False}, label)
+        effort = self._effort_command()
+        self.assertEqual(effort, "low")
+        print(f"client check fable-5-2-window: PASS {self._identity()} {observed}; /effort low then a turn: "
+              f"wire effort {effort}")
+
+    def _effort_command(self) -> str:
+        fixture = self._fixture()
+        settings_argv = self._settings_argv(fixture, _FABLE52, (_FABLE52,))
+        prompt = "❯".encode()
+        steps = (probe.PTYInteraction(b"Choose", b"2\r"), probe.PTYInteraction(b"Press", b"\r"),
+                 probe.PTYInteraction(prompt, b"/effort low\r", before_send=lambda: time.sleep(0.5)),
+                 probe.PTYInteraction(prompt, _TURN.encode() + b"\r", before_send=lambda: time.sleep(0.5)),
+                 probe.PTYInteraction(b"PROBE-OK", b"", preserve_after_wait=True),
+                 probe.PTYInteraction(prompt, b"/exit\r"))
+        responder = _SpikeResponder()
+        provider = _BetaRecordingProvider(responder=responder)
+        with provider:
+            result = probe.run_native_pty(("--model", _FABLE52, "--effort", "high", *settings_argv), steps,
+                                          trusted=self.trusted, fixture=fixture, provider=provider,
+                                          timeout=_RUN_TIMEOUT, allow_real=True, environ=self.environ)
+        self.assertEqual(result.returncode, 0)
+        return self._first(responder.rows)["effort"]
 
 
 class NativeAgentWireProbe(_SpikeTestCase):
@@ -1387,6 +1616,9 @@ class HaikuNativeProbe(_SpikeTestCase):
 _REFUSAL_ROUTES = {
     _wire(_OPUS): {"cyber": "claude-opus-4-8", "bio": "claude-opus-5", "frontier_llm": "claude-opus-5"},
     _wire(_FABLE): {"cyber": "claude-opus-4-8", "bio": "claude-opus-5", "frontier_llm": "claude-opus-5"},
+    # Fable 5.2 has no row of its own in the client's table: the general
+    # one, which is Fable 5.1's.
+    _wire(_FABLE52): {"cyber": "claude-opus-4-8", "bio": "claude-opus-5", "frontier_llm": "claude-opus-5"},
     _wire(_SONNET): {"cyber": "claude-sonnet-5", "frontier_llm": "claude-sonnet-5"},
 }
 _REFUSAL_CATEGORIES = ("cyber", "bio", "frontier_llm", "reasoning_extraction", None, "check_unknown")
@@ -1405,6 +1637,17 @@ _ROUTING_SOURCES = {
     "or-gpt": "charmer-or-gpt-high[1m]",
     "or-grok": "charmer-or-grok-high",
 }
+
+
+def opus_default_arms(family: dict[str, str] | None) -> bool:
+    """Whether a session's Opus family default arms the client's refusal
+    switch: unset or a canonical Opus id it knows. An unknown default leaves
+    every refusal visible (the client measured: no switch at all), so such a
+    session's specified outcome is no switch; a managed compile always states
+    a known one."""
+
+    value = (family if family is not None else _FAMILY).get("ANTHROPIC_DEFAULT_OPUS_MODEL")
+    return value is None or _wire(value) in {_wire(_OPUS), _wire(_OPUS48), _wire(_OPUS5)}
 
 
 def expected_switch(source: str, category: str | None, fence: tuple[str, ...] | list[str], *,
@@ -1457,7 +1700,8 @@ sys.exit(done.returncode)
 
 
 def compiled_managed_scope(fixture: probe.ProbeFixture, seed: str, *,
-                           flag_env: dict[str, str] | None = None, without_counter: bool = False) -> dict[str, Any]:
+                           flag_env: dict[str, str] | None = None, without_counter: bool = False,
+                           anthropic_extra: tuple[str, ...] = ()) -> dict[str, Any]:
     """A fixture-only managed session of a shipped seed: the v3 record and the
     v2 scope (the managed compile, with its six lifecycle hooks, the
     permission default and the refusal-switch capability table) under the
@@ -1465,8 +1709,11 @@ def compiled_managed_scope(fixture: probe.ProbeFixture, seed: str, *,
     :data:`_HOOK_LOGGER`. The probe's own copy of the compiled flag settings
     drops only the gateway base URL (the fixture provider is the endpoint) and
     adds ``flag_env``; ``without_counter`` also drops the compiled capability
-    table (the client's own behaviour, measured). Nothing outside the fixture
-    is read or written."""
+    table (the client's own behaviour, measured). ``anthropic_extra`` adds
+    canonical Anthropic selectors to the fence as lead-set rows of the
+    ``anthropic`` provider (which the compiled table never names), the fence
+    a lineup binding them compiles. Nothing outside the fixture is read or
+    written."""
 
     # A git work tree with one commit: the writable roles are worktree-isolated.
     git_env = {"HOME": str(fixture.home), "PATH": "/usr/bin:/bin", "GIT_CONFIG_NOSYSTEM": "1",
@@ -1518,6 +1765,11 @@ def compiled_managed_scope(fixture: probe.ProbeFixture, seed: str, *,
     if settings["env"][_MODEL_CAPABILITIES] != model_capabilities_counter(
             tuple(settings["availableModels"]), tuple(anthropic)):
         raise AssertionError("the compiled capability table is not the measured counter")
+    if anthropic_extra:
+        if any(not selector.startswith("claude-") for selector in anthropic_extra):
+            raise AssertionError("only canonical Anthropic selectors join the fence unnamed by the table")
+        settings["availableModels"] = sorted({*settings["availableModels"], *anthropic_extra})
+        anthropic |= set(anthropic_extra)
     if without_counter:
         del settings["env"][_MODEL_CAPABILITIES]
     settings["env"].update(flag_env or {})
@@ -1581,13 +1833,20 @@ class _RoutingResponder:
         stream = bool(document.get("stream"))
         request_class = hints.get("x-claude-code-request-class") or "main"
         tool = "Workflow" if self.path == "workflow" else "Agent"
+        # The conversation a request carries, as counts and roles only: its
+        # messages, the last one's role and the assistant turns among them.
+        messages = [message for message in document.get("messages") or [] if isinstance(message, dict)]
+        last_role = messages[-1].get("role") if messages else None
+        conversation = (len(messages), last_role if isinstance(last_role, str) else None,
+                        sum(1 for message in messages if message.get("role") == "assistant"))
         with self._lock:
             if "fallbacks" in document:
                 self.fallbacks_fields.append(context.ordinal)
             record = context.record
             self.rows.append({"ordinal": context.ordinal, "model": record.model, "request_class": request_class,
                               "agent_type": hints.get("x-claude-code-agent-type"),
-                              "shape": (record.max_tokens, record.effort, record.thinking_type, record.tool_count)})
+                              "shape": (record.max_tokens, record.effort, record.thinking_type, record.tool_count),
+                              "conversation": conversation})
             force = (self.spawn is not None and not self._forced and request_class == "main"
                      and tool in context.record.tool_names)
             if force:
@@ -1619,18 +1878,20 @@ class RefusalRoutingMatrixProbe(_SpikeTestCase):
     """
 
     def _launch(self, fixture: probe.ProbeFixture, argv: tuple[str, ...], responder: _RoutingResponder, *,
-                compiled: bool = True, timeout: float = _RUN_TIMEOUT
+                compiled: bool = True, timeout: float = _RUN_TIMEOUT, family: dict[str, str] | None = None
                 ) -> tuple[probe.NativeRunResult, list[dict[str, Any]]]:
         """One run. A compiled session states the family defaults in its flag
         settings env (the launch clears them from the process env); a
-        hand-shaped fence gets them in the process env."""
+        hand-shaped fence gets them in the process env (``family``, default
+        the compiled ones)."""
 
         provider = _BetaRecordingProvider(responder=responder)
+        process = {**(_FAMILY if family is None else family), **_HINT_ENV}
         with provider:
             try:
                 result = probe.run_native(argv, trusted=self.trusted, fixture=fixture, provider=provider,
                                           timeout=timeout, allow_real=True, environ=self.environ,
-                                          child_env=dict(_HINT_ENV) if compiled else {**_FAMILY, **_HINT_ENV})
+                                          child_env=dict(_HINT_ENV) if compiled else process)
             except ProbeError as exc:
                 if _TRIPWIRE in str(exc):
                     self.skipTest(f"BOUNDARY: refusal-routing INCONCLUSIVE: {exc}")
@@ -1647,7 +1908,7 @@ class RefusalRoutingMatrixProbe(_SpikeTestCase):
 
     def _observe(self, label: str, source: str, path: str, expected: str | None, result: Any,
                  rows: list[dict[str, Any]], responder: _RoutingResponder, hooks: list[dict[str, Any]],
-                 *, lead: str | None = None, compiled: bool = True) -> dict[str, Any]:
+                 *, lead: str | None = None, compiled: bool = True, conversation: bool = False) -> dict[str, Any]:
         wire = _wire(source)
         on_path = [row["model"] for row in rows if row["request_class"] == path]
         switched = sorted(set(on_path) - {wire})
@@ -1656,6 +1917,18 @@ class RefusalRoutingMatrixProbe(_SpikeTestCase):
             problems.append(f"first {path} request on {on_path[:1]}, not the source {wire}")
         if switched != ([] if expected is None else [expected]):
             problems.append(f"switched to {switched or 'nothing'}")
+        carried = ""
+        if conversation and switched:
+            # The switched request continues the refused one's conversation:
+            # the same messages and last role (the client's own mid-turn
+            # system turn may end both), no refused or stopped assistant turn
+            # added.
+            refused = [row["conversation"] for row in rows if row["request_class"] == path and row["model"] == wire]
+            target = [row["conversation"] for row in rows
+                      if row["request_class"] == path and row["model"] == switched[0]]
+            carried = f" conversation={refused[:1]}->{target[:1]}"
+            if not refused or not target or target[0] != refused[0]:
+                problems.append(f"the target's conversation {target[:1]} is not the refused request's {refused[:1]}")
         if responder.fallbacks_fields:
             problems.append("a request carried a fallbacks field")
         if path == "main" and (result.returncode == 0) != (expected is not None):
@@ -1679,7 +1952,8 @@ class RefusalRoutingMatrixProbe(_SpikeTestCase):
                     "hook_failures": failed, "problems": problems}
         print(f"client check refusal-routing case: {label} expected={observed['expected']} "
               f"observed={'+'.join(switched) or 'none'} rc={result.returncode} {path}-requests={len(on_path)} "
-              f"switch-hooks={switches or 'none'} {'MISMATCH ' + '; '.join(problems) if problems else 'OK'}",
+              f"switch-hooks={switches or 'none'}{carried} "
+              f"{'MISMATCH ' + '; '.join(problems) if problems else 'OK'}",
               flush=True)
         return observed
 
@@ -1688,14 +1962,21 @@ class RefusalRoutingMatrixProbe(_SpikeTestCase):
                        user_settings: dict[str, Any] | None = None, server: str | None = None,
                        not_found: bool = False, switches: bool = True, without_counter: bool = False,
                        project_settings: dict[str, Any] | None = None,
-                       expected: str | None | bool = True) -> dict[str, Any]:
-        """One compiled case; ``expected`` True means :func:`expected_switch`."""
+                       expected: str | None | bool = True, anthropic_extra: tuple[str, ...] = (),
+                       extra_argv: tuple[str, ...] = (), conversation: bool = False,
+                       policy: dict[str, Any] | None = None, stated: bool = False) -> dict[str, Any]:
+        """One compiled case; ``expected`` True means :func:`expected_switch`
+        over the fence less the exact wires a managed ``policy``'s
+        ``deniedModels`` names (``policy``: the machine's managed settings for
+        this run). With ``stated`` a literal ``expected`` must be that
+        specified outcome (checked before the run)."""
 
         fixture = self._fixture()
         if user_settings is not None:
             state.atomic_write(fixture.claude_config_dir / "settings.json",
                                strict_json.canonical_file_bytes(user_settings))
-        managed = compiled_managed_scope(fixture, seed, flag_env=flag_env, without_counter=without_counter)
+        managed = compiled_managed_scope(fixture, seed, flag_env=flag_env, without_counter=without_counter,
+                                         anthropic_extra=anthropic_extra)
         if project_settings is not None:
             directory = state.ensure_private_dir(fixture.project_dir / ".claude")
             state.atomic_write(directory / "settings.json", strict_json.canonical_file_bytes(project_settings))
@@ -1704,26 +1985,40 @@ class RefusalRoutingMatrixProbe(_SpikeTestCase):
         model = source if path == "main" else managed["lead"]
         responder = _RoutingResponder(_wire(source), category, path=path, spawn=spawn,
                                       server_fallback=server, not_found=not_found)
-        extra = ("--dangerously-skip-permissions",) if path == "workflow" else ()
-        result, rows = self._launch(fixture, self._compiled_argv(
-            managed, model, ("--session-id", str(uuid.uuid4())), *extra), responder)
+        denied = {_wire(name) for name in (policy or {}).get("deniedModels", ())}
+        admitted = [name for name in managed["available"] if _wire(name) not in denied]
+        computed = None if not_found else expected_switch(source, category, admitted, switches=switches)
+        if stated and expected is not True and expected != computed:
+            raise AssertionError(f"{label}: stated {expected}, the policy specifies {computed}")
         if expected is True:
-            expected = None if not_found else expected_switch(source, category, managed["available"],
-                                                              switches=switches)
+            expected = computed
+        extra = (*(("--dangerously-skip-permissions",) if path == "workflow" else ()), *extra_argv)
+        argv = self._compiled_argv(managed, model, ("--session-id", str(uuid.uuid4())), *extra)
+        if policy is None:
+            result, rows = self._launch(fixture, argv, responder)
+        else:
+            with managed_settings(fixture, policy):
+                result, rows = self._launch(fixture, argv, responder)
         return self._observe(label, source, path, expected or None, result, rows, responder,
-                             hook_rows(managed["log"]), lead=managed["lead"])
+                             hook_rows(managed["log"]), lead=managed["lead"], conversation=conversation)
 
-    def _shaped_case(self, label: str, source: str, category: str | None, fence: tuple[str, ...]
-                     ) -> dict[str, Any]:
-        """A hand-shaped fence (the compiled family defaults in the env, the
-        managed permission default), for shapes no shipped seed compiles."""
+    def _shaped_case(self, label: str, source: str, category: str | None, fence: tuple[str, ...], *,
+                     family: dict[str, str] | None = None, expected: str | None | bool = True,
+                     conversation: bool = False) -> dict[str, Any]:
+        """A hand-shaped fence (the family defaults in the process env —
+        ``family``, default the compiled ones — and the managed permission
+        default), for shapes no shipped seed compiles; ``expected`` True means
+        :func:`expected_switch` over the fence, and a stated target must be it."""
 
+        computed = expected_switch(source, category, (source, *fence), switches=opus_default_arms(family))
+        if expected is not True and expected != computed:
+            raise AssertionError(f"{label}: stated {expected}, the policy specifies {computed}")
         fixture = self._fixture()
         responder = _RoutingResponder(_wire(source), category)
         argv = ("-p", _TURN, "--model", source, *self._settings_argv(fixture, source, fence))
-        result, rows = self._launch(fixture, argv, responder, compiled=False)
-        return self._observe(label, source, "main", expected_switch(source, category, (source, *fence)),
-                             result, rows, responder, [], compiled=False)
+        result, rows = self._launch(fixture, argv, responder, compiled=False, family=family)
+        return self._observe(label, source, "main", computed, result, rows, responder, [], compiled=False,
+                             conversation=conversation)
 
     def _verdict(self, part: str, cases: list[dict[str, Any]]) -> None:
         self.assertIn(f"client check refusal-routing-{part}: PASS ", REFUSAL_ROUTING_RECORDS)
@@ -1925,3 +2220,127 @@ class RefusalRoutingMatrixProbe(_SpikeTestCase):
             without_counter=True, user_settings={"env": {"CLAUDE_CODE_REFUSAL_FALLBACK_CATCH_ALL": "1"}},
             expected=_wire(_OPUS)))
         self._verdict("uncountered", cases)
+
+    def test_fable_lines(self) -> None:
+        """Fable 5.2 by its canonical selector, with and without ``[1m]``, as a
+        lead-set row of the compiled balanced fence (the row an operator line on
+        the Anthropic pool and a catalog line naming it both compile), every
+        refusal category, and in a lead-only fence. The specified outcome is the
+        client's general route table, Fable 5.1's (Fable 5.1 keeps its rows in
+        the lead part); the switched request carries the refused request's
+        conversation."""
+
+        extra = (_FABLE52, _wire(_FABLE52))
+        routes = {"cyber": "claude-opus-4-8", "bio": "claude-opus-5", "frontier_llm": "claude-opus-5"}
+        cases = [self._compiled_case(f"lead-fable52-{category or 'uncategorized'}-balanced", "balanced", _FABLE52,
+                                     category, anthropic_extra=extra, expected=routes.get(category), stated=True,
+                                     conversation=True)
+                 for category in _REFUSAL_CATEGORIES]
+        cases += [self._compiled_case(f"lead-fable52-suffixless-{category}-balanced", "balanced", _wire(_FABLE52),
+                                      category, anthropic_extra=extra, expected=routes[category], stated=True,
+                                      conversation=True)
+                  for category in ("cyber", "bio", "frontier_llm")]
+        cases += [self._shaped_case(f"leadonly-fable52-{category}", _FABLE52, category, (), expected=None)
+                  for category in ("cyber", "bio", "frontier_llm")]
+        self._verdict("fable", cases)
+
+    def test_fence_resolution(self) -> None:
+        """The fallback resolution Claude Code changed after 2.1.312, each case
+        with charmer's specified outcome stated before it runs: a managed
+        ``deniedModels`` that removes a route-table target, a fence holding only
+        the older Opus target, fences without any target, the Opus family
+        default against the user layer and in the process environment, "Ask
+        each time" (``switchModelsOnFlag: false``) on the agent and workflow
+        paths, and a server-named target under auto mode. A switched request
+        carries the refused request's conversation."""
+
+        opus, fable, sonnet, astra = (_ROUTING_SOURCES[kind] for kind in ("opus", "fable", "sonnet", "astra"))
+        production = tuple(sorted({wire + "[1m]" for wire in catalog.REFUSAL_FALLBACK_WIRES}))
+        extra = (_FABLE52,)
+        cases = []
+        # A managed deny of one route-table target: never that target, and no
+        # other model instead. "claude-opus-5" also blocks later minor versions
+        # (the client's rule), so its sources are Fable lines and Sonnet.
+        deny48 = {"deniedModels": ["claude-opus-4-8"]}
+        deny5 = {"deniedModels": ["claude-opus-5"]}
+        for label, policy, source, category, expected in (
+                ("denied-opus48-opus-cyber", deny48, opus, "cyber", None),
+                ("denied-opus48-fable-cyber", deny48, fable, "cyber", None),
+                ("denied-opus48-fable52-cyber", deny48, _FABLE52, "cyber", None),
+                ("denied-opus48-opus-bio", deny48, opus, "bio", "claude-opus-5"),
+                ("denied-opus48-sonnet-cyber", deny48, sonnet, "cyber", "claude-sonnet-5"),
+                ("denied-opus48-astra-cyber", deny48, astra, "cyber", None),
+                ("denied-opus5-fable-bio", deny5, fable, "bio", None),
+                ("denied-opus5-fable-frontier_llm", deny5, fable, "frontier_llm", None),
+                ("denied-opus5-fable52-bio", deny5, _FABLE52, "bio", None),
+                ("denied-opus5-fable-cyber", deny5, fable, "cyber", "claude-opus-4-8"),
+                ("denied-opus5-sonnet-cyber", deny5, sonnet, "cyber", "claude-sonnet-5")):
+            cases.append(self._compiled_case(label, "balanced", source, category, policy=policy,
+                                             anthropic_extra=extra, expected=expected, stated=True,
+                                             conversation=True))
+        # Only the older Opus target in the fence, and no target at all.
+        for label, source, category, fence, expected in (
+                ("olderonly-opus-bio", opus, "bio", (_OPUS48,), None),
+                ("olderonly-opus-frontier_llm", opus, "frontier_llm", (_OPUS48,), None),
+                ("olderonly-opus-cyber", opus, "cyber", (_OPUS48,), "claude-opus-4-8"),
+                ("olderonly-fable-bio", fable, "bio", (_OPUS48,), None),
+                ("olderonly-fable52-frontier_llm", _FABLE52, "frontier_llm", (_OPUS48,), None),
+                ("missing-fable-bio", fable, "bio", (opus,), None),
+                ("missing-fable52-cyber", _FABLE52, "cyber", (opus,), None),
+                ("missing-opus-cyber", opus, "cyber", (sonnet,), None),
+                ("missing-sonnet-cyber", sonnet, "cyber", (opus,), None)):
+            cases.append(self._shaped_case(label, source, category, fence, expected=expected, conversation=True))
+        # The Opus family default: unset, older and unknown in the process
+        # environment of a hand-shaped production fence. Unset or older, the
+        # route depends on the source alone; an unknown default disarms the
+        # switch, so those three are no switch (and turn red if a later
+        # client starts switching there) ...
+        unset = {name: value for name, value in _FAMILY.items() if name != "ANTHROPIC_DEFAULT_OPUS_MODEL"}
+        for variant, family in (("unset", unset),
+                                ("older", {**_FAMILY, "ANTHROPIC_DEFAULT_OPUS_MODEL": _OPUS48}),
+                                ("unknown", {**_FAMILY, "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-check-unknown-opus"})):
+            for kind, source, category, routed in (("opus", opus, "bio", "claude-opus-5"),
+                                                   ("fable", fable, "cyber", "claude-opus-4-8"),
+                                                   ("fable", fable, "frontier_llm", "claude-opus-5")):
+                expected = None if variant == "unknown" else routed
+                cases.append(self._shaped_case(f"opus-default-{variant}-{kind}-{category}", source, category,
+                                               production, family=family, expected=expected, conversation=True))
+        # ... and older or unknown in the user's settings env of the compiled
+        # session (the compiled flag settings state it; theirs wins).
+        older = {"env": {"ANTHROPIC_DEFAULT_OPUS_MODEL": _OPUS48}}
+        unknown = {"env": {"ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-check-unknown-opus",
+                           "CLAUDE_CODE_REFUSAL_FALLBACK_CATCH_ALL": "1"}}
+        for label, settings_layer, source, category, expected in (
+                ("user-opus-default-older-opus-bio", older, opus, "bio", "claude-opus-5"),
+                ("user-opus-default-older-fable-frontier_llm", older, fable, "frontier_llm", "claude-opus-5"),
+                ("user-opus-default-unknown-opus-cyber", unknown, opus, "cyber", "claude-opus-4-8"),
+                ("user-opus-default-unknown-astra-uncategorized", unknown, astra, None, None)):
+            cases.append(self._compiled_case(label, "balanced", source, category, user_settings=settings_layer,
+                                             expected=expected, stated=True, conversation=True))
+        # "Ask each time": a refused agent stops, on the subagent and workflow
+        # paths (the agents part is the positive control: the same agents
+        # switch with the setting on).
+        ask = {"switchModelsOnFlag": False}
+        for label, seed, agent, source, category, path in (
+                ("ask-subagent-balanced-cm-analyst-strong-cyber", "balanced", "cm-analyst-strong", opus, "cyber",
+                 "subagent"),
+                ("ask-subagent-balanced-cm-analyst-strong-bio", "balanced", "cm-analyst-strong", opus, "bio",
+                 "subagent"),
+                ("ask-subagent-claude-cm-reviewer-strong-cyber", "claude", "cm-reviewer-strong", fable, "cyber",
+                 "subagent"),
+                ("ask-subagent-claude-cm-explorer-frontier_llm", "claude", "cm-explorer", sonnet, "frontier_llm",
+                 "subagent"),
+                ("ask-workflow-balanced-cm-analyst-strong-cyber", "balanced", "cm-analyst-strong", opus, "cyber",
+                 "workflow")):
+            cases.append(self._compiled_case(label, seed, source, category, path=path, spawn=agent,
+                                             user_settings=ask, switches=False, expected=None, stated=True))
+        # A server-named target under auto mode: the client's own route (or no
+        # switch), never the server's name.
+        auto = ("--permission-mode", "auto")
+        for label, source, server, expected in (
+                ("auto-server-in-set-opus-cyber", opus, _wire(_SONNET5), "claude-opus-4-8"),
+                ("auto-server-haiku-opus-cyber", opus, _HAIKU, "claude-opus-4-8"),
+                ("auto-server-in-set-astra-cyber", astra, _wire(_SONNET5), None)):
+            cases.append(self._compiled_case(label, "balanced", source, "cyber", server=server, extra_argv=auto,
+                                             expected=expected, stated=True, conversation=True))
+        self._verdict("fences", cases)

@@ -252,6 +252,104 @@ class AutoModeModelProbe(client_probe._ProbeCase, unittest.TestCase):
             probe.write_evidence(self._fixture(), self.probe_id, self.evidence)
 
 
+# The server-side check's rollout as the client reads it from its cached
+# feature flags (the fixture's network namespace blocks the live ones): the
+# check's gate and its rollout default. With them on, the client asks the
+# server to judge the call instead of its local classifier.
+SERVER_CHECK_FLAGS = {"tengu_wise_origami": True, "tengu_smooth_chipmunk": True}
+SERVER_LINE_PREFIX = "client check auto-mode-server:"
+_SERVER_TEXT = "runs on the server"
+
+
+_DENIAL_TEXTS = ("Permission for this", "has been denied", "was denied", "safety check")
+
+
+def judged_by(text: str, candidates: dict[str, tuple[str, ...]]) -> str:
+    """Who judged the forced call: ``server`` (the client's server-check
+    refusal), the local classifier's named candidate (``lead`` or
+    ``override``), ``neither``, ``denied`` (another refusal) or ``unjudged``
+    (no refusal at all: the call ran without a check)."""
+
+    if _SERVER_TEXT in text:
+        return "server"
+    found = named(text, candidates)
+    if found != "no-refusal":
+        return found
+    return "denied" if any(phrase in text for phrase in _DENIAL_TEXTS) else "unjudged"
+
+
+class _ServerCheckForcedBash(_ForcedBash):
+    def message(self, document, record, hints):
+        for result in client_probe._results(document):
+            if result.get("tool_use_id") == self.tool_id:
+                self.named = judged_by(json.dumps(result.get("content", "")), self.candidates)
+        if not self.forced and "Bash" in record.tool_names:
+            self.forced = True
+            return client_probe._reply(document, [{"type": "tool_use", "id": self.tool_id, "name": "Bash",
+                                                   "input": dict(_TOOL_INPUT)}], stop="tool_use")
+        return client_probe._reply(document)
+
+
+class AutoModeServerCheckProbe(client_probe._ProbeCase, unittest.TestCase):
+    """What a managed session gets in auto mode once the server-side check
+    is rolled out to it: the production compile's flag settings, one forced
+    Bash call, with the check's flags on and (the control) off. Measured, not
+    a gate: charmer compiles no auto-mode server switch."""
+
+    probe_id = "auto-mode-server"
+    test_observation = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls.verdict = ("INCONCLUSIVE", "unavailable", "probe did not complete")
+        cls.gate = real_binary_gate(client_probe._CONTRACT, what="the auto-mode server check")
+        if cls.gate.boundary:
+            cls.verdict = ("BOUNDARY", "unavailable", cls.gate.boundary)
+
+    @classmethod
+    def tearDownClass(cls):
+        status, observed, detail = cls.verdict
+        print(f"{SERVER_LINE_PREFIX} {status} class={observed} {detail}".rstrip(), flush=True)
+
+    def test_the_session_with_the_server_check_rolled_out(self):
+        compiled = production_compile()
+        plan, lead = compiled["plan"], compiled["lead"].selector
+        candidates = {"override": (compiled["agent"].selector, wire(compiled["agent"].selector)),
+                      "lead": (lead, wire(lead))}
+        observed = {}
+        try:
+            for name, flags in (("flags-off", {}), ("flags-on", SERVER_CHECK_FLAGS)):
+                fixture = self._fixture()
+                if flags:
+                    client_probe._seed_feature_cache(fixture, flags)
+                settings_path = self._settings(fixture, copy.deepcopy(plan.settings))
+                responder = _ServerCheckForcedBash(candidates)
+                with probe.FakeAnthropicProvider(responder=responder) as provider:
+                    result = probe.run_native(
+                        ("-p", "client check", "--settings", str(settings_path), "--model", lead,
+                         "--permission-mode", "auto"),
+                        trusted=self.trusted, fixture=fixture, provider=provider, timeout=150, allow_real=True,
+                        environ=self.environ)
+                observed[name] = {"judged": responder.named or "no-result", "rc": result.returncode,
+                                  "requests": len(result.requests)}
+        except probe.ProbeError as exc:
+            if "live daemon domain touched" in str(exc):
+                self.__class__.verdict = ("BOUNDARY", "unavailable", "live daemon-domain tripwire hit")
+                self.skipTest("BOUNDARY: live daemon-domain tripwire hit")
+            self.__class__.verdict = ("INCONCLUSIVE", "unavailable", "probe execution unavailable")
+            raise
+        if observed["flags-off"]["judged"] != "lead":
+            self.__class__.verdict = ("INCONCLUSIVE", "unavailable", f"the control was not judged locally: {observed}")
+            self.fail(f"control: {observed}")
+        on = observed["flags-on"]["judged"]
+        observed_class = {"server": "AMS-server-check", "lead": "AMS-local-kept", "override": "AMS-override-wins",
+                          "denied": "AMS-denied", "unjudged": "AMS-unchecked"}.get(on, "AMS-unknown")
+        self.__class__.verdict = ("MEASURED", observed_class, f"{observed} client={self.gate.version}")
+        # A call auto mode ran with no check at all, or on a model the lineup
+        # never chose, is never a measurement to accept.
+        self.assertNotIn(observed_class, ("AMS-unchecked", "AMS-override-wins"), observed)
+
+
 class EssentialRecordTests(unittest.TestCase):
     def test_the_pass_line_is_the_gate_record(self) -> None:
         from charmer import upgrade
