@@ -38,6 +38,27 @@ from the overlay vendors' published pages, read on 2026-11-11:
   ``100.100.100.100`` and ``fd7a:115c:a1e0::53``. A Headscale node can
   therefore hold an address in another excluded range; such an address is
   refused here, and the refusal names the rule that matched.
+
+**Cloud metadata services on unique local IPv6 addresses** are inside
+``fc00::/7`` and would otherwise classify ``lan``; they are ``never``. Read
+on 2026-11-12:
+
+* https://docs.cloud.google.com/compute/docs/metadata/querying-metadata:
+  Google Cloud's metadata server is ``fd20:ce::254`` on IPv6-only instances.
+* cloud-init ``cloudinit/sources/DataSourceOracle.py`` (main branch),
+  ``IPV6_METADATA_ROOT``: Oracle Cloud's instance metadata at
+  ``fd00:c1::a9fe:a9fe``.
+* https://techdocs.akamai.com/cloud-computing/docs/access-the-metadata-service-api
+  (updated 2026-03-01): Linode's Metadata service on ``169.254.169.254`` and
+  ``fd00:a9fe:a9fe::1``.
+* cloud-init ``cloudinit/sources/DataSourceScaleway.py`` (main branch),
+  ``DS_BASE_URLS``: Scaleway's metadata at ``169.254.42.42`` and
+  ``fd00:42::42``.
+* https://docs.aws.amazon.com/eks/latest/userguide/pod-id-agent-setup.html:
+  the EKS Pod Identity Agent listens on ``169.254.170.23`` and
+  ``fd00:ec2::23``.
+
+Their IPv4 addresses are link-local, already ``never``.
 """
 
 from __future__ import annotations
@@ -90,6 +111,15 @@ METADATA = (
     _rule("100.100.100.200/32", NEVER, "a cloud metadata address"),
     _rule("fd00:ec2::254/128", NEVER, "a cloud metadata address"),
 )
+# Cloud metadata services on unique local IPv6 addresses, inside fc00::/7
+# (see the module text). The endpoint policy's literal list is ``METADATA``.
+METADATA_ULA = (
+    _rule("fd20:ce::254/128", NEVER, "a cloud metadata address"),
+    _rule("fd00:c1::a9fe:a9fe/128", NEVER, "a cloud metadata address"),
+    _rule("fd00:a9fe:a9fe::1/128", NEVER, "a cloud metadata address"),
+    _rule("fd00:42::42/128", NEVER, "a cloud metadata address"),
+    _rule("fd00:ec2::23/128", NEVER, "a cloud metadata address"),
+)
 # The overlay's own service and reserved addresses (see the module text).
 OVERLAY_RESERVED = (
     _rule("100.100.0.0/24", NEVER, "reserved by the overlay for its own services"),
@@ -102,11 +132,12 @@ OVERLAY_RESERVED = (
           "the overlay's 4via6 range: a subnet router delivers it to a LAN host"),
 )
 # The first matching rule wins: specific exclusions come before the ranges
-# that contain them (metadata before link-local, the overlay's reserved
-# addresses before the tailnet ranges, the tailnet ULA prefix before fc00::/7,
-# ::1 before the IPv4-compatible ::/96).
+# that contain them (metadata before link-local and fc00::/7, the overlay's
+# reserved addresses before the tailnet ranges, the tailnet ULA prefix before
+# fc00::/7, ::1 before the IPv4-compatible ::/96).
 RULES: tuple[Rule, ...] = (
     *METADATA,
+    *METADATA_ULA,
     _rule("127.0.0.0/8", LOOPBACK, "loopback"),
     _rule("::1/128", LOOPBACK, "loopback"),
     _rule("0.0.0.0/8", NEVER, "this-network and unspecified addresses"),

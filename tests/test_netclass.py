@@ -88,6 +88,19 @@ class TableTests(unittest.TestCase):
                 self.assertTrue(any(rule.prefix.version == net.version and rule.prefix.subnet_of(net)
                                     for net in tailnet))
 
+    def test_cloud_metadata_on_unique_local_addresses_is_never(self) -> None:
+        self.assertEqual([rule.prefix.with_prefixlen for rule in netclass.METADATA_ULA], [
+            "fd20:ce::254/128", "fd00:c1::a9fe:a9fe/128", "fd00:a9fe:a9fe::1/128", "fd00:42::42/128",
+            "fd00:ec2::23/128",
+        ])
+        unique_local = ipaddress.ip_network("fc00::/7")
+        for rule in netclass.METADATA_ULA:
+            with self.subTest(rule=rule.text()):
+                self.assertTrue(rule.prefix.subnet_of(unique_local))
+                address = rule.prefix.network_address
+                self.assertEqual(netclass.classify(address), netclass.NEVER)
+                self.assertEqual(netclass.allowed(address, "lan", port=80).reason, netclass.NEVER_REASON)
+
     def test_metadata_addresses_match_the_endpoint_policy(self) -> None:
         from charmer import operator
 

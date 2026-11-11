@@ -197,7 +197,7 @@
     },
     {
       "basename": "cli-proxy-api-private-network-dial.patch",
-      "sha256": "29e4ff52e8919a0c631c057aebf8515f422d7b5492b45af620a70ce8052e8b25",
+      "sha256": "8367b3683d3be20beb3ddf875d48f69ce872765cc9445394d60ed82ed9aaf5d9",
       "admitted": true
     }
   ],
@@ -1095,7 +1095,7 @@
         "./internal/watcher/synthesizer",
         "./sdk/cliproxy"
       ],
-      "run": "^(TestClassifyCorpus|TestCheckPrecedence|TestCheckLocal|TestDialerMixedAnswersResolveOnceAndDialOnlyTheClass|TestDialerLiteralAddressIsNotResolved|TestDialerRefusesWithTheStrongestReasonAndDialsNothing|TestDialerFixedGatewayPortsNeverDialed|TestDialerTailnetLocalAddressRule|TestDialControlRechecksTheSocketAddress|TestDialerConnectsOnLoopback|TestRefusedErrorIsFixedAndCanonical|TestTransportShapeAndCacheIdentity|TestTransportUsesNoEnvironmentProxyAndHTTP11|TestClientFollowsNoRedirect|TestOpenAICompatPrivateNetworkNormalization|TestPrivateNetworkEverySiteServesItsClass|TestPrivateNetworkEverySiteRefusesOutsideItsClass|TestPrivateNetworkRefusesTheGatewaysOwnPort|TestPrivateNetworkUsesNoProxy|TestPrivateNetworkKeylessFollowsNoRedirect|TestDiffOpenAICompatPrivateNetworkPrintsClassAndURLOnly|TestSynthesizeOpenAICompatPrivateNetworkClass|TestPrivateNetworkDialPolicyFollowsTheCurrentConfig|TestPrivateNetworkReloadIsNeverDialledUnderThePreviousDeclaration)$",
+      "run": "^(TestClassifyCorpus|TestCheckPrecedence|TestCheckLocal|TestDialerNeverDialsCloudMetadataOnUniqueLocalAddresses|TestDialerMixedAnswersResolveOnceAndDialOnlyTheClass|TestDialerLiteralAddressIsNotResolved|TestDialerRefusesWithTheStrongestReasonAndDialsNothing|TestDialerFixedGatewayPortsNeverDialed|TestDialerTailnetLocalAddressRule|TestDialControlRechecksTheSocketAddress|TestDialerConnectsOnLoopback|TestRefusedErrorIsFixedAndCanonical|TestTransportShapeAndCacheIdentity|TestTransportUsesNoEnvironmentProxyAndHTTP11|TestClientFollowsNoRedirect|TestOpenAICompatPrivateNetworkNormalization|TestPrivateNetworkEverySiteServesItsClass|TestPrivateNetworkEverySiteRefusesOutsideItsClass|TestPrivateNetworkRefusesTheGatewaysOwnPort|TestPrivateNetworkUsesNoProxy|TestPrivateNetworkKeylessFollowsNoRedirect|TestDiffOpenAICompatPrivateNetworkPrintsClassAndURLOnly|TestSynthesizeOpenAICompatPrivateNetworkClass|TestPrivateNetworkDialPolicyFollowsTheCurrentConfig|TestPrivateNetworkReloadIsNeverDialledUnderThePreviousDeclaration)$",
       "platforms": "portable",
       "race": false,
       "count": null,
@@ -1103,6 +1103,7 @@
         "TestClassifyCorpus",
         "TestCheckPrecedence",
         "TestCheckLocal",
+        "TestDialerNeverDialsCloudMetadataOnUniqueLocalAddresses",
         "TestDialerMixedAnswersResolveOnceAndDialOnlyTheClass",
         "TestDialerLiteralAddressIsNotResolved",
         "TestDialerRefusesWithTheStrongestReasonAndDialsNothing",
