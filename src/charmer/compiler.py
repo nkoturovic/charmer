@@ -48,6 +48,7 @@ _LONG_BLOCKED_BASE = frozenset(
         "--session-id",
         "--resume",
         "--fork-session",
+        "--session-began-as-copy",
         "--name",
         "--settings",
         "--disallowedTools",
@@ -73,6 +74,9 @@ _FLAG_OWNERS = {
     "--session-id": "launcher session identity",
     "--resume": "launcher session identity",
     "--fork-session": "launcher session identity",
+    # Claude Code marks a session as a copy with it, which changes what a
+    # print-mode resume continues: a copy is the launcher's to make.
+    "--session-began-as-copy": "launcher session identity",
     "--name": "launcher display metadata",
     "--settings": "trusted settings asset",
     "--disallowedTools": "compiled native-agent policy",

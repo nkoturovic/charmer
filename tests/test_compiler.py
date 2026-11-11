@@ -54,6 +54,13 @@ class PassthroughFlagTests(unittest.TestCase):
                 with self.assertRaisesRegex(compiler.CompilerError, "session compaction window"):
                     compiler.validate_passthrough(args)
 
+    def test_the_copied_session_mark_is_blocked(self) -> None:
+        for args in (["--session-began-as-copy", "1"], ["--session-began-as-copy=1"], ["--session-began-as-copy"]):
+            with self.subTest(args=args):
+                with self.assertRaisesRegex(compiler.CompilerError, "launcher session identity"):
+                    compiler.validate_passthrough(args)
+        self.assertEqual(compiler.validate_passthrough(["--verbose"]), ["--verbose"])
+
 
 class EnvironmentTests(unittest.TestCase):
 
