@@ -23,7 +23,10 @@ compiled settings and routes until their next launch or resume.
   (`charmer providers add --network loopback|lan|tailnet …`). Its key is
   sent over plain HTTP only to addresses in that network, checked at
   declaration, at approval and at every connection; the gateway receives
-  the base URL and the network class, never a plain base URL.
+  the base URL and the network class, never a plain base URL. In the
+  launcher, Providers **N** and Get started **A** offer a server on your
+  network with an API key, the OpenAI-compatible forms choose the network,
+  and **E** changes it (approved again).
 - Models: **A** adds a model from the screen. Every screen has complete key
   help, and a census checks that each key a screen handles is listed.
 
@@ -41,6 +44,9 @@ compiled settings and routes until their next launch or resume.
   doctor reports what a private-network host resolves to and when a
   restart is needed. The served plan names a private-network provider's
   class; a class change is a route change.
+- `charmer doctor --help` says what plain doctor writes: no repairs and no
+  release metadata; launcher initialization may refresh shared helpers;
+  `doctor --json` writes no local state.
 - Key bars put row actions first and end with `? N more`; Providers
   refreshes from one observation.
 - The gateway's key-value store is turned off in the shipped
