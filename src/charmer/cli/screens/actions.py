@@ -240,11 +240,15 @@ ACTIONS: dict[str, tuple[Action, ...]] = {
         ("get-started", "W", "open Get started", "charmer setup", "get started"),
         _HELP, _BACK,
     ),
-    "propagation": _rows(
-        "propagation",
-        ("apply", "A", "apply the saved profile to running followers (then /reload-plugins there)", None, "apply to running", 1),
-        ("later", "L", "show what happens at the next resume without applying live", None, "later (next resume)"),
-        _HELP, ("back", "Esc", "keep sessions as they are", None, "keep sessions as they are"),
+    "propagation": (
+        Action("propagation.apply", "Enter", "apply the saved change to running followers now", label="apply to running", rank=1,
+               help="Enter (or A) — apply the saved change to the running followers now, then /reload-plugins in each"),
+        Action("propagation.apply-letter", "A", "apply the saved change to running followers now", silent=True),
+        *_rows("propagation",
+               ("later", "L", "show what happens at the next resume without applying live", None, "later (next resume)"),
+               _HELP,
+               ("back", "Esc", "leave the saved change for later", None, "later", 2,
+                "Esc — later: the saved change is kept; running sessions are told at their next prompt")),
     ),
     "get-started": _rows(
         "get-started",

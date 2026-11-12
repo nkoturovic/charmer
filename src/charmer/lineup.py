@@ -1194,6 +1194,17 @@ def _agents_only_target(record: Mapping[str, Any], target: Target,
     return candidate
 
 
+def split_candidate(record: Mapping[str, Any], target: Target, lineup: profile.ResolvedLineup,
+                    lcat: Any, eff: settings_mod.Effective, bindings: Mapping[str, Any],
+                    live_dir: Path, classification: Classification) -> profile.ResolvedLineup | None:
+    """The same partial-application decision for backend, drift explanations and TUI preview."""
+
+    if (target.kind == "profile" and classification.session_only
+            and _change_rows(lcat, record["applied"]["agents"], lineup.applied_bindings()["agents"])):
+        return _agents_only_target(record, target, lcat, eff, bindings, live_dir)
+    return None
+
+
 # --------------------------------------------------------- phase A (§7.6)
 
 
@@ -1618,10 +1629,8 @@ def decide_locked(
             effort_only = classification.effort_only
 
     split = False
-    if (reasons and classification is not None and classification.session_only
-            and request.verb in ("profile", "follow") and not (forced or exec_ok or pending_only)
-            and _change_rows(lcat, applied["agents"], lineup.applied_bindings()["agents"])):
-        partial = _agents_only_target(record, target, lcat, eff, bindings, live_dir)
+    if classification is not None and not (forced or exec_ok or pending_only):
+        partial = split_candidate(record, target, lineup, lcat, eff, bindings, live_dir, classification)
         if partial is not None:
             lineup_live = partial
             split = True
@@ -2374,6 +2383,8 @@ def profile_status_lines(runtime: Any, record: Mapping[str, Any]) -> list[str]:
     name = record.get("profile")
     mid = record["managed_id"]
     lines: list[str] = []
+    if record["applied"].get("no_subagents") and record["applied"]["agents"]:
+        lines.append("! delegation is denied in this session (--no-subagents): its agents cannot run")
     pending = record.get("pending")
     if pending:
         if pending.get("kind") == "profile":
@@ -2423,8 +2434,7 @@ def profile_status_lines(runtime: Any, record: Mapping[str, Any]) -> list[str]:
             classification = classify(record, resolved, live_dir, forced=_forced_profile_pending(record, name), lcat=lcat)
         agents_changed = bool(_change_rows(lcat, record["applied"]["agents"], resolved.applied_bindings()["agents"]))
         if classification.reasons:
-            partial = (classification.session_only and agents_changed
-                       and _agents_only_target(record, target, lcat, eff, bindings, live_dir) is not None)
+            partial = split_candidate(record, target, resolved, lcat, eff, bindings, live_dir, classification) is not None
             now = "agents now" if partial else "nothing now"
             later = "; ".join(classification.reasons) + " at the next resume"
         else:
@@ -2460,8 +2470,6 @@ def show_text(runtime: Any, record: Mapping[str, Any]) -> str:
         ]
         return "\n".join(lines) + "\n"
     block = [*profile_status_lines(runtime, record), *profiles_block(runtime, lcat, current=record["profile"])]
-    if record["applied"].get("no_subagents") and record["applied"]["agents"]:
-        block.insert(0, "! delegation is denied in this session (--no-subagents): its agents cannot run")
     if record["profile"] is None:
         header = "profile (ad-hoc direct)"
     else:
@@ -3001,6 +3009,11 @@ class Follower:
     pending_follow: bool = False
     pending_forced: bool = False
     follow: bool = True
+
+    @property
+    def eligible(self) -> bool:
+        """Pure view data, evaluated by the same rule as the save and its question."""
+        return propagation_eligible(self)
 
 
 def propagation_eligible(session: Follower) -> bool:

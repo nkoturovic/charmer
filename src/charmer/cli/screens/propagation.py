@@ -201,6 +201,7 @@ def run_propagation_screen(
     *,
     binding: str | None = None,
     preface: list[str] | None = None,
+    apply_live: bool | None = None,
 ) -> str | None:
     """The §4.6 prompt for ``names``; ``"none"`` when no session follows them (no screen).
 
@@ -216,4 +217,6 @@ def run_propagation_screen(
             title = f"propagation — {binding or ', '.join(names)}"
             screens_common._TextReportScreen(title, list(preface), palette).run(win)
         return "none"
+    if apply_live is not None:
+        return screen._apply(win, apply_live)
     return screen.run(win)

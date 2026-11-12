@@ -577,10 +577,13 @@ class EffectiveContextTests(_RuntimeCase):
 # ------------------------------------------------------------------ propagation rows
 
 
-def _follower(mid: str, *, generation: int = 1, pending: bool = False, cwd: str = "/w/project"):
+def _follower(mid: str, *, generation: int = 1, pending: bool = False, cwd: str = "/w/project",
+              live: bool = True, forced: bool = True):
     return lineup.Follower(
-        managed_id=mid, runtime_id=mid, profile="p", live=False, cwd=cwd,
+        managed_id=mid, runtime_id=mid, profile="p", live=live, cwd=cwd,
         last_seen_at=fx.iso(fx.FIXED_NOW), generation=generation, has_pending=pending,
+        pending_kind="profile" if pending else None, pending_profile="p" if pending else None,
+        pending_follow=pending, pending_forced=pending and forced,
     )
 
 
@@ -589,9 +592,9 @@ class PropagationRowsTests(unittest.TestCase):
         followers = [
             _follower(fx.FIXED_ID),
             _follower(fx.OTHER_ID),
-            _follower(fx.THIRD_ID),
+            _follower(fx.THIRD_ID, live=False),
             _follower(fx.FOURTH_ID, pending=True),
-            _follower(fx.FIFTH_ID, generation=0),
+            _follower(fx.FIFTH_ID, generation=0, live=False),
         ]
         states = {
             fx.FIXED_ID: "live", fx.OTHER_ID: "unknown", fx.THIRD_ID: "ended",
@@ -605,10 +608,18 @@ class PropagationRowsTests(unittest.TestCase):
                 '  ● running   project        "api design"   apply now (then /reload-plugins there)',
                 "  ◐ unknown   project        —   apply now (then /reload-plugins there)",
                 "  ○ ended     project        —   applies at next resume",
-                "  ↻ running   project        —   has a pending relaunch change; not applied",
+                "  ↻ running   project        —   forced relaunch; not applied",
                 "  ○ ended     project        —   no lineup-enabled scope yet; applies at next resume",
             ),
         )
+
+    def test_own_profile_pending_can_apply_but_forced_pending_cannot(self) -> None:
+        for forced, expected in ((False, "apply now; the rest waits for resume"),
+                                 (True, "forced relaunch; not applied")):
+            with self.subTest(forced=forced):
+                row = views.propagation_rows([_follower(fx.FIXED_ID, pending=True, forced=forced)],
+                                             {fx.FIXED_ID: "live"}, {}, width=100)[0]
+                self.assertIn(expected, row)
 
     def test_a_t_row_is_never_wider_than_width_minus_3(self) -> None:
         rows = views.propagation_rows(

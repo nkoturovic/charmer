@@ -881,9 +881,13 @@ class SessionsLineupTests(_SessionsCase):
         self.assertEqual(apply.call_args.kwargs, {"interactive": True, "relaunch_exec": None})
 
     def test_relaunch_request_is_recorded_pending_via_lineup_apply(self) -> None:
-        # The TUI never execs a relaunch.
+        # A session-policy-only change is pending; the TUI never execs it.
         record = self.record()
-        name = self.relaunch_seed()
+        document = self.runtime.profiles.load(catalog.DEFAULT_SEED)
+        document.pop("seed", None)
+        name = document["name"] = "policy-only"
+        document["native_agents"]["plan"] = "off" if document["native_agents"]["plan"] == "native" else "native"
+        self.runtime.profiles.save(document)
         dialog = self.dialog()
         self.to(dialog, name)
         self.assertEqual(dialog.mode, "RELAUNCH")
@@ -898,6 +902,22 @@ class SessionsLineupTests(_SessionsCase):
         self.assertIn("pending", after)
         self.assertEqual(after["pending"]["profile"], name)
         self.assertEqual(after["lineup_generation"], record["lineup_generation"])
+        self.assertEqual(self.runtime.launches, [])
+
+    def test_mixed_profile_change_previews_split_and_applies(self) -> None:
+        record = self.record()
+        name = self.relaunch_seed()
+        dialog = self.dialog()
+        self.to(dialog, name)
+        self.assertEqual(dialog.mode, "SPLIT")
+        win = FakeWindow([ENTER, ENTER], height=40, width=120)
+        self.assertTrue(dialog.run(win))
+        text = _flat("\n".join(win.frames))
+        self.assertIn("LIVE for the agents now", text)
+        self.assertIn("waits for the next resume", text)
+        after = self.runtime.session_store.load(fx.FIXED_ID)
+        self.assertEqual(after["lineup_generation"], record["lineup_generation"] + 1)
+        self.assertEqual(after["pending"]["profile"], name)
         self.assertEqual(self.runtime.launches, [])
 
     def test_relaunch_reasons_for_gen0_and_no_scope(self) -> None:
@@ -1015,6 +1035,17 @@ class SessionsLineupTests(_SessionsCase):
         self.assertIsNone(result)
         dialog.assert_not_called()
         self.assertIn(cli.SESSIONS_V3_LINEUP, win.frames[-1])
+
+    def test_t_reapplies_the_followed_profiles_edits(self) -> None:
+        record = self.record()
+        agents = self.runtime.profiles.load(self.live_seed())["agents"]
+        self.runtime.profiles.update(catalog.DEFAULT_SEED, lambda doc: doc["agents"].update(agents))
+        _result, win = self.run_screen(self.screen(), ["t", ENTER, ENTER, ESC], height=40, width=120)
+        after = self.runtime.session_store.load(fx.FIXED_ID)
+        self.assertTrue(after["follow"], "T reapplies; F would pin an already-following session")
+        self.assertEqual(after["profile"], record["profile"])
+        self.assertEqual(after["lineup_generation"], record["lineup_generation"] + 1)
+        self.assertTrue(any("/reload-plugins" in frame for frame in win.frames))
 
     def test_t_from_the_screen_opens_the_dialog(self) -> None:
         self.record()

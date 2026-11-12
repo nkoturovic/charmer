@@ -714,8 +714,10 @@ class ForkStartTests(ForkCase):
         self.assertEqual(hooks.notice_key("SessionStart", "fork-own"), "other")
         self.assertEqual(hooks.notice_key("SessionStart", "startup", own_fork=True), "startup")
         text = hooks.notice_text("lineup", "4 abc", event="SessionStart", source="fork", lead=None, own_fork=True)
-        self.assertNotIn("staged — active after /reload-plugins", text)
-        self.assertIn("staged — active after /reload-plugins",
+        conditional = ("Lineup gen 4 was applied while this session was running: if /reload-plugins "
+                       "has not been run since, run it before starting agents.")
+        self.assertNotIn(conditional, text)
+        self.assertIn(conditional,
                       hooks.notice_text("lineup", "4 abc", event="SessionStart", source="fork", lead=None))
 
 

@@ -1364,9 +1364,9 @@ class PropagationTests(_EditorCase):
         self.assertIn(f"saved {catalog.DEFAULT_SEED}", frame)
         self.assertIn("5 sessions follow this profile:", frame)
         self.assertIn('◐ unknown   project        "unknown one"   apply now (then /reload-plugins there)', frame)
-        self.assertIn('● running   project        "by proc"   apply now (then /reload-plugins there)', frame)
+        self.assertIn('● running   project        "by proc"   applies at next resume', frame)
         self.assertIn("○ ended     project        —   applies at next resume", frame)
-        self.assertIn("has a pending relaunch change; not applied", frame)
+        self.assertIn("forced relaunch; not applied", frame)
         self.assertIn("no lineup-enabled scope yet; applies at next resume", frame)
         for key, label, _rank in screen.keybar():
             self.assertIn(f"{key} {label}", frame)
@@ -1407,6 +1407,14 @@ class PropagationTests(_EditorCase):
                 report = next(f for f in win.frames if f"propagation — {catalog.DEFAULT_SEED}" in f)
                 self.assertIn(f"report line apply_live={live}", report)
 
+    def test_l_records_later(self) -> None:
+        self.followers()
+        with mock.patch.object(lineup, "on_saved") as on_saved:
+            _win, result = self.run_screen(self.screen(), ["L", ESC])
+        self.assertEqual(result, "later")
+        on_saved.assert_called_once()
+        self.assertFalse(on_saved.call_args.kwargs["apply_live"])
+
     def test_esc_records_later_without_opening_a_report(self) -> None:
         self.followers()
         with mock.patch.object(lineup, "on_saved") as on_saved:
@@ -1416,7 +1424,7 @@ class PropagationTests(_EditorCase):
         self.assertFalse(on_saved.call_args.kwargs["apply_live"])
         self.assertFalse(any("propagation — " in frame for frame in win.frames))
 
-    def test_a_applies_live_through_on_saved(self) -> None:
+    def test_enter_applies_live_through_on_saved(self) -> None:
         fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=fx.FIXED_ID)
         fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=fx.OTHER_ID, ended=True)
         document = self.default()
@@ -1425,7 +1433,7 @@ class PropagationTests(_EditorCase):
         document["agents"][rid]["effort"] = self.other_effort(document["agents"][rid]["model"], document["agents"][rid]["effort"])
         self.runtime.profiles.save(document)
         before = self.runtime.session_store.load(fx.FIXED_ID)["lineup_generation"]
-        win, _ = self.run_screen(self.screen(), ["A", ESC])
+        win, _ = self.run_screen(self.screen(), [ENTER, ESC])
         report = next(f for f in win.frames if "propagation — " in f)
         self.assertIn("applied live (lineup gen", report)
         self.assertIn("applies at the next resume", report)

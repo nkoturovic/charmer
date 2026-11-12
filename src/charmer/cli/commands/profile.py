@@ -402,7 +402,7 @@ def _profile_subcommand(
         store.require_new_target(args.name)
         if not interactive:
             raise cli_errors.CLIError(
-                f"profile new {args.name} needs a terminal for the editor, or --from SRC"
+                f"profile new {args.name} needs a terminal for the editor, or --from PROFILE"
             )
         if screens_common._curses_ok(bool(getattr(args, "line", False)), input_stream, output_stream):
             # The full-screen editor on a capable terminal;
@@ -440,6 +440,7 @@ def _profile_subcommand(
             code = screens_profile_editor._run_profile_editor(
                 runtime, args.name, "edit", input_stream=input_stream,
                 output_stream=output_stream, no_color=bool(getattr(args, "no_color", False)),
+                apply_live=getattr(args, "profile_apply", None),
             )
             if code is not None:
                 return code

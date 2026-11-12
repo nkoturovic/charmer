@@ -876,6 +876,7 @@ class DispatchTests(unittest.TestCase):
         "fallback": (["fallback", "openai"], ["fallback"]),
         "review": (["review", "high-stakes"], ["review", "a", "b", "c"]),
         "quota": (["quota"], ["quota", "extra"]),
+        "fork": (["fork"], ["fork", "extra"]),
     }
 
     def test_every_cm_verb_parses_and_refuses_its_invalid_grammar(self) -> None:

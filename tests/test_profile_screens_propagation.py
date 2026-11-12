@@ -137,6 +137,22 @@ class PropagationScreenChangesTests(PropagationCase):
         saved.assert_called_once()
         self.assertFalse(saved.call_args.kwargs["apply_live"])
 
+    def test_editor_honors_explicit_apply_and_later_without_a_question(self):
+        record = self.follower()
+        for apply_live, binding in ((True, ("opus55", "xhigh")), (False, ("sol", "high"))):
+            with self.subTest(apply_live=apply_live):
+                editor = profile_editor._profile_editor_state(self.runtime, "mine", "edit")
+                editor.set_binding("cm-implementer", *binding)
+                outcome = tui.ProfileEditorOutcome("save", "mine", editor.document, expected=editor.loaded_digest)
+                callbacks = profile_editor._profile_editor_callbacks(
+                    self.runtime, tui.MONO_PALETTE, editor_state=editor, apply_live=apply_live)
+                win = FakeWindow(["\x1b"], height=40, width=120)
+                ok, text = callbacks.save(win, outcome)
+                self.assertTrue(ok, text)
+                self.assertTrue(any("propagation — mine" in frame for frame in win.frames))
+                self.assertFalse(any("Enter apply to running" in frame for frame in win.frames))
+                self.assertEqual(self.store.load(record["managed_id"])["lineup_generation"], 2)
+
     def test_editor_no_follower_message_keeps_the_pinned_count(self):
         editor = profile_editor._profile_editor_state(self.runtime, "mine", "edit")
         outcome = tui.ProfileEditorOutcome("save", "mine", editor.document, expected=editor.loaded_digest)

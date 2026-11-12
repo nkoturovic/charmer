@@ -769,7 +769,10 @@ class FirstRunJourneys(JourneyCase):
         child.expect("choose model")
         child.keys(HOME, *([DOWN] * bind_index), ENTER, CTRL_S)
         child.expect(f"saved {profile_name}")
-        child.keys(ESC)
+        child.expect("Action result")
+        child.keys(ESC)  # acknowledge the complete propagation report
+        child.expect("edit profile")
+        child.keys(ESC)  # leave the clean editor
         child.expect("Status  ")  # optional evidence is Attention, not a block
         child.keys(ENTER)
         child.expect_out(f"AUDIT_BOUND={key}")
