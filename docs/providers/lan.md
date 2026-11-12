@@ -55,12 +55,13 @@ use the Windows host's address
 - There is no key and no credential-route approval step on this route.
   Local-host, endpoint and payload checks still apply.
 - Servers that require a key are not supported on this keyless route. A
-  keyed server must be added as an
+  keyed server must be added as an `https`
   [Anthropic-compatible](anthropic-compatible.md) or keyed
   [OpenAI-compatible](openai-compatible.md) endpoint instead, with explicit
-  credential-route approval: at an `https` address, or over plain HTTP on a
-  private network you declare ([self-hosted](../guides/self-hosted.md)).
-  There is no automatic protocol fallback.
+  credential-route approval; only the OpenAI-compatible kinds can also use
+  plain HTTP on a private network you declare
+  ([self-hosted](../guides/self-hosted.md)). There is no automatic protocol
+  fallback.
 
 ## 3. Add it
 

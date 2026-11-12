@@ -15,7 +15,7 @@ network, and charmer refuses an address outside it:
 | Class | Addresses | What plain HTTP means there |
 | --- | --- | --- |
 | `loopback` | 127.0.0.0/8, ::1 | plain HTTP on this computer: any local program can listen on that port |
-| `lan` | 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7 | plain HTTP: anyone on this network can read the key and your prompts |
+| `lan` | 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7 except the tailnet prefix and the never-usable addresses below | plain HTTP: anyone on this network can read the key and your prompts |
 | `tailnet` | 100.64.0.0/10, fd7a:115c:a1e0::/48 | plain HTTP: the key is encrypted only while the connection runs through your tailnet; on a carrier-grade NAT network these addresses are not yours |
 
 Some addresses are never usable, whatever you declare: unspecified,
@@ -126,20 +126,23 @@ gateway's sandbox, and the key in a private 0600 file with one line.
 - No per-provider concurrency limit: a server with one slot queues the
   others on its own side.
 - Claude Code abandons a request that has received no byte after about six
-  minutes and sends it again. Behind charmer's gateway this holds whatever
-  `API_TIMEOUT_MS`, `CLAUDE_STREAM_FIRST_BYTE_TIMEOUT_MS` or
-  `CLAUDE_STREAM_IDLE_TIMEOUT_MS` say (measured with Claude Code 2.1.322
-  and gateway 8.0.67). An upstream that holds its first byte longer never
+  minutes and sends it again, whatever `API_TIMEOUT_MS`,
+  `CLAUDE_STREAM_FIRST_BYTE_TIMEOUT_MS` or `CLAUDE_STREAM_IDLE_TIMEOUT_MS`
+  say (measured with Claude Code 2.1.322 through the gateway's Claude
+  sign-in route, 8.0.67). An upstream that holds its first byte longer never
   answers: each attempt is cancelled, upstream too, and sent again, up to
   300 times in a managed session. Sending response headers early does not
-  help, because the gateway passes them on only with the first body byte.
-  Any bytes do: an upstream that streams SSE comment lines or ping events
-  keeps the request open until the answer arrives (one every 20 seconds
-  kept an 11-minute answer open).
+  help. On that Claude route, SSE comment lines or ping events every 20
+  seconds kept an 11-minute answer open; this is not a workaround for a
+  keyed OpenAI-compatible server, whose stream the gateway reads without
+  passing comments on, so plan for answers that start within six minutes.
 - A 524,288-token line as the lead sets the session's window to 524,288
   tokens and compacts at about 453,859; as an agent under a larger window
   it runs in the 200K class.
-- A line with no declared effort sends no reasoning level unless thinking
-  is on; with thinking it sends low, medium or high. A line that declares
-  efforts gets the requested effort mapped into the levels it declares.
+- A line declares at least one effort; `charmer models add` declares
+  `high` when you name none. On this route a request without thinking sends
+  no reasoning level, and a request with thinking disabled still sends the
+  lowest declared level; otherwise the requested effort is mapped into the
+  levels the line declares. Declare levels the server accepts and check
+  the line with `charmer models qualify <line> --smoke`.
 - An answers file for `charmer setup` cannot declare a network yet.

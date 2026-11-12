@@ -56,7 +56,7 @@ compiled settings and routes until their next launch or resume.
   and its remedy.
 - Saving a profile in a terminal applies the change to its eligible running
   sessions by default (Enter; **L** or Esc for later); without a terminal,
-  `--apply` applies now. A change that mixes agents with session-level
+  `profile set … --apply` applies now. A change that mixes agents with session-level
   changes applies the agents now and leaves the rest for the next resume,
   unless that would add a warning.
 - `--system-prompt-snapshot` is reserved for the launcher in managed
@@ -141,7 +141,8 @@ compiled settings and routes until their next launch or resume.
 
 - Deny rules cover Claude Code's tools, shell commands included, not a
   program the model runs: in bypass mode such a program can still write the
-  mod folder. In default and auto mode the client asks first.
+  mod folder. In default mode the client asks first; in auto mode Claude
+  Code's own check of each call decides (not measured offline).
 - `setup --answers` cannot declare a private network yet.
 - The gateway does not forward a provider's `x-should-retry`, and on Claude
   routes its `Retry-After` is its own: the provider's value plus 1–30 s of

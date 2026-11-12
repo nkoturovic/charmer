@@ -66,9 +66,10 @@ Before the restart, status and doctor show two restart rows, and one
 restart clears both: the running gateway's binary differs from the one this
 installation provides (different on-disk SHA-256 hashes), and
 `gateway restart pending: the running gateway was started by charmer 2.4.0 and this release changes its start arguments or environment filter, which apply only at a restart`.
-Until the restart, `charmer update --verify` reports
-`running-gateway: different-running-build`; after it, on Linux,
-`running-gateway: current-match`. The restart checks ownership and the
+On Linux, `charmer update --verify` reports
+`running-gateway: different-running-build` until the restart and
+`running-gateway: current-match` after it; on macOS running-byte
+verification reports `unavailable`. The restart checks ownership and the
 persistence hold before stopping. If it is held, keep the gateway running
 and follow [the persistence hold](guides/gateway.md#the-persistence-hold);
 never bypass a held stop with a service-manager stop or a signal.
@@ -133,8 +134,9 @@ finds before it asks; the default is then No. Prepare first, between turns:
 
 After the rollback the running gateway is still 2.5.0's. Run the guarded
 `charmer gateway restart` between turns, then `charmer update --verify`:
-2.4.0 reports `running-gateway: different-running-build` until the restart
-and `running-gateway: current-match` after it.
+on Linux, 2.4.0 reports `running-gateway: different-running-build` until
+the restart and `running-gateway: current-match` after it (on macOS,
+`unavailable`).
 
 2.4.0's doctor then reports BLOCKED for each session 2.5.0 launched or
 resumed, because 2.5.0 compiles settings 2.4.0 does not:

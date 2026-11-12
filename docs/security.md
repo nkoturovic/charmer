@@ -142,8 +142,9 @@ plugin-authoring skill nor write into the session's mod folder
 (`~/.claude/dev-mods`), where a mod would load at the next start without
 a question. Deny rules cover Claude Code's tools, shell commands
 included, not a program the model runs: in bypass mode such a program can
-still write the folder, as it can read a file a deny names; in default
-and auto mode the client asks you first. To write a mod, use plain
+still write the folder, as it can read a file a deny names. In default
+mode the client asks you first; in auto mode Claude Code's own check of
+each call decides, which was not measured offline. To write a mod, use plain
 `claude`, or write it yourself and load it with `--plugin-dir`.
 
 Managed sessions turn off Claude Code's background service

@@ -172,12 +172,14 @@ restriction. An update never reseeds by itself.
 
 A session started from a profile **follows** it. Saving the profile lists
 its running, stopped and pinned sessions and any pending changes. In a
-terminal, Apply is the default: Enter (or **A**) applies the change to the
-eligible running followers, LIVE where it can and otherwise recorded for
-their next resume. **L** or Esc keeps the saved profile but leaves their
-running lineups unchanged and tells them at their next prompt. Without a
-terminal, `--apply` applies now (`charmer profile edit <name> --apply`);
-otherwise the save is left for later. A change that mixes agents with
+terminal, Apply is the default: in the propagation screen Enter (or **A**)
+applies the change to the eligible running followers, LIVE where it can and
+otherwise recorded for their next resume, and **L** or Esc leaves their
+running lineups unchanged and tells them at their next prompt; the
+line-mode question is `[Y/n]` (Enter or `y` applies). Without a terminal,
+`charmer profile set <name> <assignment>… --apply` applies now; without
+`--apply` the save is left for later. `charmer profile edit` needs a
+terminal. A change that mixes agents with
 session-level changes applies the agents now and leaves the rest pending
 for the next resume, unless the partial change would add a warning the
 complete one does not have. A session that is **pinned** keeps its own
