@@ -252,6 +252,14 @@ contexts or signed reasoning history.
   replaying the old tool turn. This does not verify every operator session
   or background-supervisor rollback.
 - Bare `best` asks Opus 5.5 on 2.1.322.
+- Behind the gateway Claude Code 2.1.322 does not use its conversation
+  Threads (a custom `ANTHROPIC_BASE_URL` keeps them off) unless
+  `CLAUDE_CODE_TETHER_LIVE` is set in the environment a session inherits.
+  With it set, in isolated testing the gateway passed the client's beta list
+  unchanged across a Thread's turns, tool, compaction and agent turns
+  included; CLIProxyAPI issue
+  [#7470](https://github.com/router-for-me/CLIProxyAPI/issues/7470) reports
+  turns rejected for a changed beta list on other clients.
 - A typed `/cm` puts the skill's description on the client's tool-less
   auxiliary requests, never on a turn that offers tools.
 - Behind the gateway the feedback-drafts preference has no effect: the
