@@ -72,7 +72,7 @@ Use `charmer doctor` for per-model 429/402/403 counts and `/cm fallback <provide
 to move affected roles. The readings and counts are observations, not a remaining balance. `quota --json` keeps its structured condition and
 exit status; the availability hint is text-only ([tasks](reference/tasks.md)).
 
-`/cm` grammar: `/cm show · /cm profiles · /cm profile <name> · /cm set <agent>=<model>[:<effort>] · /cm unset <agent> · /cm direct [<model>[:<effort>]] · /cm pin · /cm follow · /cm fallback <provider> [--preview] · /cm review [high-stakes] [<range>] · /cm quota`
+`/cm` grammar: `/cm show · /cm profiles · /cm profile <name> · /cm set <agent>=<model>[:<effort>] · /cm unset <agent> · /cm direct [<model>[:<effort>]] · /cm pin · /cm follow · /cm fallback <provider> [--preview] · /cm review [high-stakes] [<range>] · /cm quota · /cm fork`
 
 ### Keys
 
