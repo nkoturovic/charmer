@@ -2911,8 +2911,8 @@ def fork_text(record: Mapping[str, Any]) -> str:
             "conversation as saved when it launches, with the lineup this session would get at its "
             f"next resume ({label}). This session is not changed and keeps running. "
             "On the sessions screen (charmer -r): select this session, then N.\n"
-            "Claude Code's own /fork does not work in charmer sessions (they start with a launch flag "
-            "it cannot copy); use the command above.\n")
+            "Claude Code's own /fork does not copy a charmer session: here it runs a one-off "
+            "subagent on the lead's model (not a lineup agent); use the command above.\n")
 
 
 def apply(

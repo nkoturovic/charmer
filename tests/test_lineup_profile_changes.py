@@ -53,7 +53,8 @@ class ForkGuidanceTests(LineupCase):
         self.assertIn(f"charmer -r {self.mid} --fork", text)
         self.assertIn("This session is not changed and keeps running.", text)
         self.assertIn("select this session, then N", text)
-        self.assertIn("Claude Code's own /fork does not work", text)
+        self.assertIn("Claude Code's own /fork does not copy a charmer session: here it runs a one-off "
+                      "subagent on the lead's model (not a lineup agent); use the command above.", text)
         self.assertEqual((self.record_bytes(self.mid), self.scope_files()), before)
         self.assertFalse(lineup.parse_cli(["--session", self.rid, "fork"], {}).writes)
 
