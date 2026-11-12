@@ -43,6 +43,105 @@ A running gateway keeps the version it started from until you restart it
 between turns (`charmer gateway restart`); while its persistence hold
 is active, a switch that changes the gateway waits.
 
+### Updating from 2.4.0
+
+charmer 2.5.0 moves the gateway to CLIProxyAPI 8.0.67 with 30 local patches,
+built with Go 1.27.4, and Claude Code from 2.1.312 to 2.1.322. Catalog 44
+ships with this release; the bundled CPython stays 3.15.2, rebuilt from
+python-build-standalone 20261110. The gateway's bytes change, so this
+update needs a gateway restart. Updating switches the installation, not the
+running gateway. Between turns, in a plain terminal outside Claude Code, run
+each step after assessing the previous result:
+
+```bash
+charmer update
+charmer --version
+charmer gateway status
+charmer gateway restart
+charmer update --verify
+charmer doctor
+```
+
+Before the restart, status and doctor show two restart rows, and one
+restart clears both: the running gateway's binary differs from the one this
+installation provides (different on-disk SHA-256 hashes), and
+`gateway restart pending: the running gateway was started by charmer 2.4.0 and this release changes its start arguments or environment filter, which apply only at a restart`.
+Until the restart, `charmer update --verify` reports
+`running-gateway: different-running-build`; after it, on Linux,
+`running-gateway: current-match`. The restart checks ownership and the
+persistence hold before stopping. If it is held, keep the gateway running
+and follow [the persistence hold](guides/gateway.md#the-persistence-hold);
+never bypass a held stop with a service-manager stop or a signal.
+
+The update installs charmer's verified **Claude Code 2.1.322** copy before
+switching the release: it copies a matching local file or downloads and
+verifies the pin when none is available. Your own Claude Code installation
+is untouched. A session already running keeps its client and its compiled
+settings until its next launch or resume (`/exit`, then `charmer -r <id>`);
+until then doctor says
+`fence/picker differ from the installed catalog (catalog changed since launch); applies at the next resume`
+for it. State and record formats remain 4; no record migration is needed.
+
+After the gateway restart, a session still running Claude Code 2.1.312
+keeps working, but CLIProxyAPI 8.0.67 treats a Claude Code older than
+2.1.321 as a client it imitates rather than passes through: requests on a
+Claude sign-in go out in the gateway's emulated client form. charmer's lead
+prompt is kept (moved into a system message) and tool names are mapped back
+to the real ones, so the session runs its tools as before; requests with an
+API key are not changed. Resuming the session (`charmer -r <id>`) moves it to
+Claude Code 2.1.322, which the gateway passes through unchanged.
+
+Managed sessions launched before the update pick up three changes at their
+next resume: Claude Code's background service is off (`/background`,
+`--bg` and its choice to move a session to the background), the model may not use Claude Code's
+plugin-authoring skill or write into `~/.claude/dev-mods`, and Claude Code's
+newer host switches are cleared at launch
+([security](security.md)). They do not change your own settings or plain
+`claude`.
+
+The `fable` line now selects Fable 5.2. Profiles and bindings that name
+`fable` follow it without reseeding or effort changes; a running Fable 5.1
+session keeps its route until it is resumed. If you declared Fable 5.2
+yourself (for example as `custom-fable-5-2`), the shipped line now serves
+it and yours yields, with one Attention row and its remedy. When the
+live-record check allows it, `charmer models rm custom-fable-5-2 --successor fable`
+removes your line, and sessions recorded on it resume on `fable` directly
+([models guide](guides/models.md)).
+
+#### Before going back to 2.4.0
+
+If 2.4.0 is the retained previous release, `charmer update --rollback`
+returns to it. The rollback first checks what 2.4.0 can read of your state
+([what the preflight checks](#what-the-preflight-checks)) and lists what it
+finds before it asks; the default is then No. Prepare first, between turns:
+
+- Remove a provider you declared on a private network: 2.4.0 has no
+  private-network routes, so the check lists the declaration, the profiles
+  that use its lines and the sessions running on its selectors.
+  `charmer providers rm <id>` names the lines still in use.
+- Exit sessions running on Fable 5.2: the check lists each as
+  `session <id8> uses claude-fable-5-2, which 2.4.0 does not serve`. After
+  the rollback, `charmer -r <id>` resumes it on 2.4.0's `fable` line,
+  Fable 5.1.
+- 2.4.0 ignores the successor of a line you removed with `--successor`: a
+  session recorded on that line needs a model choice there.
+
+After the rollback the running gateway is still 2.5.0's. Run the guarded
+`charmer gateway restart` between turns, then `charmer update --verify`:
+2.4.0 reports `running-gateway: different-running-build` until the restart
+and `running-gateway: current-match` after it.
+
+2.4.0's doctor then reports BLOCKED for each session 2.5.0 launched or
+resumed, because 2.5.0 compiles settings 2.4.0 does not:
+`session <id8>: scope differs from the record-authoritative compile (settings.json content differs)`
+and `1 scope(s) diverged from record authority`. Run
+`charmer doctor --repair-all` (or `charmer doctor --repair <id>` for each);
+the session's
+`fence/picker differ from the installed catalog (catalog changed since launch); applies at the next resume`
+row stays until its next resume. A fork that 2.5.0 created, resumed under
+2.4.0, sends its parent's recorded system prompt until its first
+compaction.
+
 ### Updating from 2.3.0
 
 charmer 2.4.0 changes the launcher and the pinned Claude Code, from 2.1.311
