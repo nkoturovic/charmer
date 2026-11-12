@@ -221,6 +221,7 @@ restart.
 | doctor: “Advisories (optional evidence; does not change the verdict)” | nothing is required; optional: `charmer models qualify <line> --agents` or M → Q |
 | doctor: “scope differs from the record-authoritative compile”, “scope unreadable” or “scope(s) diverged from record authority” | `charmer doctor --repair <id>`; all stopped sessions: `charmer doctor --repair-all` |
 | doctor: “compiled hook target” | `charmer doctor --repair <id>` |
+| doctor: “scope differs from its recorded launch resolution … repair is deferred for the catalog move” | the session's model line moved in the catalog and its scope does not match its launch: `charmer -r <id>` rebuilds it at resume |
 | after rolling back to 2.4.0: BLOCKED, `scope differs from the record-authoritative compile` (`settings.json`, the `/cm` skill) | `charmer doctor --repair-all` |
 | copy a session to try something else | `charmer -r <id> --fork`, or S → N; Claude Code's `/fork` runs a one-off subagent instead |
 | doctor: “session record <id> is unreadable” | `charmer sessions show <id>` names the error; never edit the record |
