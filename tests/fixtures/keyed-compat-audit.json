@@ -1,6 +1,6 @@
 {
   "client": {
-    "native_contract_file_sha256": "9fb6c56ea034fda7e187057883ab5796f38477dac2f72d5e6c6a1f8c2210325e",
+    "native_contract_file_sha256": "b11d0f10c2e0aa5db41d765fc5f3b6c2eab536f56ecf7f45378ea97581cd0e9a",
     "sha256": "bfb3703ad5380242328459bc62ada4bde8ae7ba57c6e1eeadb9c00e08874c478",
     "version": "2.1.322"
   },
@@ -12,7 +12,7 @@
           "client_sha256": "bfb3703ad5380242328459bc62ada4bde8ae7ba57c6e1eeadb9c00e08874c478",
           "errors": 0,
           "failures": 0,
-          "head": "b429d13d6fbbf61bd26456fcad04668d8d7046d9",
+          "head": "f7d2d7184d5a2f04c14df4ab5fa3ca2f5eb96947",
           "inventory": {
             "J1": {
               "count": 9,
@@ -79,10 +79,10 @@
           },
           "journey_tests": 9,
           "keyed_client_budget_seconds": 900,
-          "keyed_client_seconds": 17.152,
+          "keyed_client_seconds": 15.828,
           "keyed_client_tests": 10,
           "keyed_identity": {
-            "client_contract_sha256": "9fb6c56ea034fda7e187057883ab5796f38477dac2f72d5e6c6a1f8c2210325e",
+            "client_contract_sha256": "b11d0f10c2e0aa5db41d765fc5f3b6c2eab536f56ecf7f45378ea97581cd0e9a",
             "gateway": "/nix/store/m2y9h2jawwkgriyb7ri4jhn1069id5kv-cli-proxy-api-linux-amd64-8.0.67/bin/cli-proxy-api",
             "gateway_patch_names": [
               "cli-proxy-api-loopback-oauth.patch",
@@ -223,7 +223,7 @@
           "skipped": 0,
           "status": "passed"
         },
-        "sha256": "617950ba52468333bb228e09b6aa90e7e596eea432af8de5e1b6d928b9d5bfd3"
+        "sha256": "54b23af62dcf6263104514ffa120f69f2822cc6463a67f4fde1f27e55ccfc340"
       },
       "tests.keyed_journeys.json": {
         "document": {
@@ -240,54 +240,54 @@
           "tables": {
             "J1": [
               {
-                "head": "b429d13d6fbbf61bd26456fcad04668d8d7046d9",
+                "head": "f7d2d7184d5a2f04c14df4ab5fa3ca2f5eb96947",
                 "row": "tests.test_onboarding_isolation.KeyedJourneyTests.test_keyed_cli_changes_and_failed_qualification_remain_selectable_with_warnings",
                 "status": "passed"
               },
               {
-                "head": "b429d13d6fbbf61bd26456fcad04668d8d7046d9",
+                "head": "f7d2d7184d5a2f04c14df4ab5fa3ca2f5eb96947",
                 "row": "tests.test_onboarding_isolation.KeyedJourneyTests.test_keyed_cli_declare_approve_apply_admit_qualify_bind",
                 "status": "passed"
               },
               {
-                "head": "b429d13d6fbbf61bd26456fcad04668d8d7046d9",
+                "head": "f7d2d7184d5a2f04c14df4ab5fa3ca2f5eb96947",
                 "row": "tests.test_packaging.PackageSourceTests.test_package_payload_excludes_operator_credentials_and_grants",
                 "status": "passed"
               },
               {
-                "head": "b429d13d6fbbf61bd26456fcad04668d8d7046d9",
+                "head": "f7d2d7184d5a2f04c14df4ab5fa3ca2f5eb96947",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_closed_target_refuses_audit",
                 "status": "passed"
               },
               {
-                "head": "b429d13d6fbbf61bd26456fcad04668d8d7046d9",
+                "head": "f7d2d7184d5a2f04c14df4ab5fa3ca2f5eb96947",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_open_target_requires_local_route_and_key_not_admission",
                 "status": "passed"
               },
               {
-                "head": "b429d13d6fbbf61bd26456fcad04668d8d7046d9",
+                "head": "f7d2d7184d5a2f04c14df4ab5fa3ca2f5eb96947",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_rechecks_headers_origins_collisions",
                 "status": "passed"
               },
               {
-                "head": "b429d13d6fbbf61bd26456fcad04668d8d7046d9",
+                "head": "f7d2d7184d5a2f04c14df4ab5fa3ca2f5eb96947",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_uses_existing_single_commit_barrier",
                 "status": "passed"
               },
               {
-                "head": "b429d13d6fbbf61bd26456fcad04668d8d7046d9",
+                "head": "f7d2d7184d5a2f04c14df4ab5fa3ca2f5eb96947",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_json_export_has_logical_refs_and_no_store_reads",
                 "status": "passed"
               },
               {
-                "head": "b429d13d6fbbf61bd26456fcad04668d8d7046d9",
+                "head": "f7d2d7184d5a2f04c14df4ab5fa3ca2f5eb96947",
                 "row": "tests.test_tui_pty.KeyedJourneyPTYTests.test_keyed_tui_optional_admission_qualification_and_binding",
                 "status": "passed"
               }
             ]
           }
         },
-        "sha256": "43751765f63487fec806ab8a0e3128cbf4b43e014350adbd9853e33e3ce4c1ac"
+        "sha256": "d7da09a535292ee5c46712894b78146e0f27ced1582c5fd6311ca0fe9c8be2a2"
       },
       "tests.test_gateway_keyed_compat.json": {
         "document": {
@@ -296,7 +296,7 @@
             "version": "8.0.67"
           },
           "keyed_identity": {
-            "client_contract_sha256": "9fb6c56ea034fda7e187057883ab5796f38477dac2f72d5e6c6a1f8c2210325e",
+            "client_contract_sha256": "b11d0f10c2e0aa5db41d765fc5f3b6c2eab536f56ecf7f45378ea97581cd0e9a",
             "gateway": "/nix/store/m2y9h2jawwkgriyb7ri4jhn1069id5kv-cli-proxy-api-linux-amd64-8.0.67/bin/cli-proxy-api",
             "gateway_patch_names": [
               "cli-proxy-api-loopback-oauth.patch",
@@ -504,7 +504,7 @@
             ]
           }
         },
-        "sha256": "be16296185e011cea3de1fbdea317bcc0f9b3b367c0eb10f93d6fc91c24ca095"
+        "sha256": "a9b46687c33cf3c0e448ffecb790a5a1f9aca398c599404f2bd26aef8dc54b98"
       },
       "tests.test_keyed_compat_client.json": {
         "document": {
@@ -513,7 +513,7 @@
             "version": "8.0.67"
           },
           "keyed_identity": {
-            "client_contract_sha256": "9fb6c56ea034fda7e187057883ab5796f38477dac2f72d5e6c6a1f8c2210325e",
+            "client_contract_sha256": "b11d0f10c2e0aa5db41d765fc5f3b6c2eab536f56ecf7f45378ea97581cd0e9a",
             "gateway": "/nix/store/m2y9h2jawwkgriyb7ri4jhn1069id5kv-cli-proxy-api-linux-amd64-8.0.67/bin/cli-proxy-api",
             "gateway_patch_names": [
               "cli-proxy-api-loopback-oauth.patch",
@@ -670,7 +670,7 @@
             ]
           }
         },
-        "sha256": "f8c2be8b43e2231e135d21069a6c33ceb7e1f57fdcb11c8c627b7cae226a1d9c"
+        "sha256": "4c0cc639eff90c4e75ca19c76dd628af48049145f3f4c0e7e846891cbe857b36"
       }
     },
     "validated_exit": 0
@@ -928,7 +928,7 @@
   "source_report": {
     "document": {
       "evidence_dir": "tests/fixtures",
-      "head": "b429d13d6fbbf61bd26456fcad04668d8d7046d9",
+      "head": "f7d2d7184d5a2f04c14df4ab5fa3ca2f5eb96947",
       "relevant_sources": [
         {
           "path": "src/charmer/catalog.py",
@@ -1008,7 +1008,7 @@
         }
       ]
     },
-    "sha256": "afe219654f101fecf4e12383da98a324f5a0d4153a8fafcb597f5da019b1abae"
+    "sha256": "c1882082d3cebe5461e00f29c0b143932baeb4376783d4a6e4b026a0830eed46"
   },
   "version": 1
 }
