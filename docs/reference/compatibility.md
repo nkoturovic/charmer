@@ -53,8 +53,8 @@ own updater, so the managed copy never changes by itself, while your own
 
 ### Refusal fallback
 
-Claude Code 2.1.312 can switch a refused turn of a model it does not
-recognise to Opus 4.8 (cyber) or Opus 5 (bio, frontier-LLM) when the session
+Claude Code (2.1.312 and the pinned 2.1.322) can switch a refused turn of a
+model it does not recognise to Opus 4.8 (cyber) or Opus 5 (bio, frontier-LLM) when the session
 allows them, which every shipped lineup with an Anthropic line does. Managed
 sessions turn that switch off for each such model in their compiled settings
 (`CLAUDE_CODE_MODEL_CAPABILITIES`, one `-refusal_fallback` entry per fenced
@@ -62,7 +62,9 @@ non-Anthropic selector, compiled for every launch and resume). Those settings
 outrank your user settings, and project and local settings cannot set the
 variable. A refused GPT, Kimi or OpenRouter turn — lead, agent, workflow agent
 or resumed — ends on its own model with the refusal. Canonical Opus 5.5,
-Fable 5.1 and Sonnet 5.5 keep the client's switch. `switchModelsOnFlag:
+Fable 5.2 and Sonnet 5.5 keep the client's switch (Fable 5.2: cyber to
+Opus 4.8, bio and frontier-LLM to Opus 5; a lead-only fence switches
+nothing). `switchModelsOnFlag:
 false` and `CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK=1` stop every switch,
 canonical ones too. No refusal switch runs the PreModelSwitch hook. The
 setting never enters your own settings or plain `claude`. 2.3.0 held this
@@ -75,10 +77,10 @@ re-pin, as required re-pin evidence.
 
 The pin retains the fixes for interrupted HTTP MCP calls. When the
 connection to an HTTP MCP server closes before a tool call is answered,
-Claude Code 2.1.312 does not send the call again automatically unless the
-server marks the tool read-only or idempotent. A tool marked neither is
-called once; a tool that changes something but is marked idempotent can
-still be called twice. An interrupted call still reports an error, and the
+the pinned Claude Code does not send the call again automatically unless
+the server marks the tool read-only or idempotent. A tool marked neither is
+called once (measured on 2.1.322); a tool that changes something but is
+marked idempotent can still be called twice (measured on 2.1.312). An interrupted call still reports an error, and the
 tool may have run: check the external system before asking for it again.
 
 The pin also carries the upstream fixes from Claude Code 2.1.304–2.1.309 for
@@ -93,8 +95,11 @@ Code's sandbox or worktree protections.
 
 ### Client skew
 
-Claude Code's background supervisor can keep a backgrounded managed
-session running on your own, newer `claude`. Its hooks then tell you on
+Managed sessions turn Claude Code's background service off
+([security](../security.md#model-and-permission-fences)), so they cannot
+be moved to the background from inside. A managed session backgrounded
+earlier, under 2.4.0, can still be kept running by Claude Code's
+background supervisor on your own, newer `claude`. Its hooks then tell you on
 every prompt to `/exit` and resume it with `charmer -r <id>`. One
 limit: when a session already carries its lineup marker, the per-prompt
 check can stay quiet after an upgrade (or while detection is unsure)
@@ -117,7 +122,7 @@ contexts or signed reasoning history.
   values reach the wire; `ultracode` in frontmatter is silently ignored by
   the client, so charmer rejects it there. A lead's `ultracode` sends
   `xhigh` on the wire.
-- Canonical Anthropic models (Opus 5.5, Fable 5.1, Sonnet 5.5, Haiku 5.5)
+- Canonical Anthropic models (Opus 5.5, Fable 5.2, Sonnet 5.5, Haiku 5.5)
   book a 1M client window with or without `[1m]`; from Claude Code 2.1.311
   neither form sends the long-context beta. A gateway model name needs
   `[1m]` for the 1M window and its beta. Canonical Opus 5.5 sends a 128K
@@ -128,7 +133,7 @@ contexts or signed reasoning history.
 - Managed sessions re-enable compaction against `DISABLE_AUTO_COMPACT` in
   your user settings. Doctor reports that override as Info: managed
   sessions compact, while plain `claude` does not. `DISABLE_COMPACT` in
-  your user settings env still stops managed compaction on 2.1.312;
+  your user settings env still stops managed compaction on 2.1.322;
   doctor reports Attention with the remedy to remove it, then resume.
 - Hook lineup notices survive startup, resume, compaction and prompts,
   including markup-looking text. The client escapes embedded
@@ -136,10 +141,11 @@ contexts or signed reasoning history.
   Bash-queue delay reported in
   [upstream #105012](https://github.com/anthropics/claude-code/issues/105012)
   was not reproduced with charmer's real compiled lifecycle hooks in
-  isolated testing on 2.1.312; this is not a general latency guarantee.
-- Claude Code 2.1.312 limits prompt and agent hooks (not command hooks) to
-  24 concurrent evaluations per session; in isolated testing at most 12 ran
-  at once on 2.1.311 and 2.1.312. charmer's own hooks are command hooks.
+  isolated testing on 2.1.322; this is not a general latency guarantee.
+- Since 2.1.312 Claude Code limits prompt and agent hooks (not command
+  hooks) to 24 concurrent evaluations per session; in isolated testing at
+  most 12 ran at once on 2.1.311, 2.1.312 and 2.1.322. charmer's own hooks
+  are command hooks.
 - From 2.1.312 an agent definition's own `autoCompactWindow` can lower that
   agent's window, never raise it and not below 100K; `cm-*` agents carry
   none.
@@ -149,7 +155,7 @@ contexts or signed reasoning history.
   worktree; continuing it with SendMessage then runs it in the main
   checkout without isolation
   ([upstream #104928](https://github.com/anthropics/claude-code/issues/104928),
-  reported on clients since 2.1.292, including 2.1.312). The lead continues
+  reported on clients since 2.1.292; reproduced on 2.1.322). The lead continues
   an isolated agent only while its worktree exists; otherwise it dispatches
   a fresh agent with the partial results.
 - Worktree isolation refuses commands that name shell words such as `hash`,
@@ -165,7 +171,7 @@ contexts or signed reasoning history.
   together, Claude Code can hand more than one of them the same saved result
   file, so a call can see another call's answer
   ([upstream #105138](https://github.com/anthropics/claude-code/issues/105138);
-  reproduced on 2.1.312).
+  reproduced on 2.1.322).
 - Claude Code can run every workflow agent on one model
   (`CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL`), replacing the models of `cm-*`
   agents too. Managed sessions set it to `inherit` in their own settings,
@@ -180,12 +186,12 @@ contexts or signed reasoning history.
   and keeps the model it started with, even if a mod redirected that fresh
   spawn. A managed `allowManagedHooksOnly` policy keeps mods out, but also
   disables charmer's hooks; charmer reports it as a managed lock, not a
-  protection its session scope can supply. On 2.1.312, the client checks
+  protection its session scope can supply. On 2.1.322, the client checks
   retain both the passing fence check (`spawn-mod: PASS class=SM-fenced`)
   and the known binding failure (`spawn-mod-binding: FAIL class=SB-rebound`).
 - From Claude Code 2.1.304 a mod's `settings.read` hook can rewrite the
   session's merged settings, charmer's own included. In isolated testing on
-  2.1.310 (not repeated on 2.1.311 or 2.1.312), a user-installed mod that added a model
+  2.1.310 (not repeated on later clients), a user-installed mod that added a model
   to `availableModels` let an agent whose definition names that model run
   on it, outside the lineup; on 2.1.302 the same mod changed nothing. A
   permission deny rule still applied. Against a mod that rewrites settings, fence membership is not
@@ -195,8 +201,12 @@ contexts or signed reasoning history.
   are not lineup agents: managed sessions deny them (`Agent(fork)`) and
   set `CLAUDE_CODE_FORK_SUBAGENT=0` in their settings, while clearing any
   inherited value at launch. This turns the fork gate off even against
-  user, project or local settings that enable it. In a terminal, ordinary
-  subagents may run in the foreground; the background remains the default.
+  user, project or local settings that enable it. This closes the model's
+  own fork call; a person typing `/fork` with a directive still starts one
+  in the same process on the lead's model
+  ([security](../security.md#model-and-permission-fences)). In a terminal,
+  ordinary subagents may run in the foreground; the background remains the
+  default.
 - An MCP permission rule `mcp__<server>__*` grants only that named server,
   not neighboring names that overlap after normalization or contain `__`.
   For a plugin server, a managed `deniedMcpServers` rule uses
@@ -216,28 +226,50 @@ contexts or signed reasoning history.
   Anthropic. See
   [privacy.md](../privacy.md#data-flows).
 - Behind charmer's gateway the client sends the session's effort level
-  with every request, and the gateway accepts it. Claude Code 2.1.312 would
+  with every request, and the gateway accepts it. Claude Code 2.1.322 would
   send a request again (first without its thinking-token-count beta), then
   try without the effort level, `context_management`, tool search or its
   in-conversation system turns if a gateway refused them; in isolated
-  testing charmer's gateway accepted each on every route checked.
+  testing charmer's gateway accepted each on every route checked. A
+  gateway refusal of tool search keeps it off for the session's next turn.
 - Behind the gateway the client offers tool search: some built-in tools
   (for example SendMessage, WebFetch, WebSearch and the worktree and cron
   tools) and MCP tools are listed by name, and the model fetches one with
-  ToolSearch when it needs it. The gateway passes fetched tools on.
-- On Claude Code 2.1.311 (not re-measured on 2.1.312), `--tools` on a resumed turn no longer narrows the
+  ToolSearch when it needs it. The gateway passes fetched tools on (to
+  the ChatGPT account's Codex route as an `additional_tools` item).
+- On Claude Code 2.1.311 (not re-measured on later clients), `--tools` on a resumed turn no longer narrows the
   tools offered to the model: the request keeps the session's full tool
   list, though a call to a tool outside `--tools` is still refused and does
   not run. `--disallowedTools` still removes a tool from the list on resume.
   charmer never passes `--tools` itself; only a `--tools` you pass through to
   Claude Code when resuming is affected.
-- When a provider refuses a request with an error the client does not
-  recognise, Claude Code 2.1.312 sends it up to five more times, the first
-  without its thinking-token-count beta, before it shows the error.
-- A synthetic session made by 2.1.312, including a tool turn and manual
-  compaction, resumes on the previous pin, 2.1.311, from its summary without
+- When a provider refuses a request with an HTTP 400 the client does not
+  recognise, Claude Code 2.1.322 sends it up to five more times on the same
+  model before it shows the error (2.1.312's first resend also dropped its
+  thinking-token-count beta).
+- A synthetic session made by 2.1.322, including a tool turn and manual
+  compaction, resumes on the previous pin, 2.1.312, from its summary without
   replaying the old tool turn. This does not verify every operator session
   or background-supervisor rollback.
+- Bare `best` asks Opus 5.5 on 2.1.322.
+- A typed `/cm` puts the skill's description on the client's tool-less
+  auxiliary requests, never on a turn that offers tools.
+- Behind the gateway the feedback-drafts preference has no effect: the
+  client offers SendFeedback neither to the lead nor to agents (upstream
+  changed this in 2.1.319; 2.1.312 offered it under notify).
+- In auto mode with its server check on, the client denied the checked
+  call in isolated testing.
+- Fable 5.2 asks for up to 128,000 output tokens; the client's own default
+  effort for it is `medium`, while charmer's catalog default stays `high`.
+  It sends adaptive thinking even under `alwaysThinkingEnabled: false`,
+  `MAX_THINKING_TOKENS=0` and `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1`. No
+  fast-mode claim is made for it.
+- `CLAUDE_CODE_SUBAGENT_EFFORT` reaches only agents that name no effort,
+  never a `cm-*` agent, whose definitions name theirs.
+- A request that has received no byte after about six minutes is abandoned
+  and sent again, whatever the timeout variables say; after a first byte,
+  300 seconds of silence trigger a resend
+  ([self-hosted limits](../guides/self-hosted.md#known-limits)).
 - Qualification evidence recorded against an older client remains stored
   with that identity and becomes stale; a re-pin does not rerun paid
   qualification automatically.
