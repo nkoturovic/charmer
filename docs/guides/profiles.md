@@ -112,7 +112,7 @@ charmer profile set <name> <assignment>… --preview   # several bindings at onc
 charmer profile set <name> <assignment>…
 ```
 
-`charmer profile set` edits lead and agent bindings together, for example
+`charmer profile set <name> <assignment>…` edits lead and agent bindings together, for example
 `charmer profile set balanced lead=opus:high`; an assignment without an
 effort uses the model's default. Editing a shipped profile creates a copy
 of yours, and a concurrent edit refuses rather than overwriting it.
@@ -178,7 +178,7 @@ otherwise recorded for their next resume, and **L** or Esc leaves their
 running lineups unchanged and tells them at their next prompt; the
 line-mode question is `[Y/n]` (Enter or `y` applies). Without a terminal,
 `charmer profile set <name> <assignment>… --apply` applies now; without
-`--apply` the save is left for later. `charmer profile edit` needs a
+`--apply` the save is left for later. `charmer profile edit <name>` needs a
 terminal. A change that mixes agents with
 session-level changes applies the agents now and leaves the rest pending
 for the next resume, unless the partial change would add a warning the

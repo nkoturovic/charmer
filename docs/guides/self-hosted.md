@@ -139,8 +139,9 @@ gateway's sandbox, and the key in a private 0600 file with one line.
 - A 524,288-token line as the lead sets the session's window to 524,288
   tokens and compacts at about 453,859; as an agent under a larger window
   it runs in the 200K class.
-- A line declares at least one effort; `charmer models add` declares
-  `high` when you name none. On this route a request without thinking sends
+- A line declares at least one effort;
+  `charmer models add <provider> <wire> --context <n> --source operator`
+  declares `high` when you name none. On this route a request without thinking sends
   no reasoning level, and a request with thinking disabled still sends the
   lowest declared level; otherwise the requested effort is mapped into the
   levels the line declares. Declare levels the server accepts and check
