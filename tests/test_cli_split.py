@@ -189,6 +189,7 @@ class DoctorSplitTests(unittest.TestCase):
         "Line", "tagged", "in_area",  # tagged doctor lines (area, action, group)
         "rollback_remedy",  # the way back after a gateway-changing update
         "_earlier_shim", "_compiled_by_earlier_release",  # scopes the earlier release compiled
+        "_recorded_resolution_plan", "_released_policy_drift",  # earlier-release scopes after a catalog move
     })
 
     def test_every_moved_definition_resolves_once_in_its_owner(self):
