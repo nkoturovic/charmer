@@ -265,7 +265,7 @@ class WorkflowTests(unittest.TestCase):
                          {"setuptools": "84.2.1", "zizmor": "1.32.0", "govulncheck": "v1.9.0"})
         actions = {row[0]: row[1] for row in tables["Actions (pinned by commit)"]}
         for action, tag in {"actions/upload-artifact": "v7.0.2", "actions/download-artifact": "v8.0.2",
-                            "actions/setup-python": "v7.1.0", "cachix/install-nix-action": "v31.11.4"}.items():
+                            "actions/setup-python": "v7.1.0", "cachix/install-nix-action": "v31.11.5"}.items():
             self.assertEqual(actions[action], tag)
         script = (SCRIPTS / "ci_tools.sh").read_text()
         for row in tables["Tool artifacts (pinned by sha256)"]:

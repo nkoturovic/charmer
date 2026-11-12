@@ -32,7 +32,7 @@ wrapper around `actions/attest` (same inputs).
 | actions/upload-artifact | v7.0.2 | cf430e030ddbb5b0abf93d22962f4752f3646cd9 | node24 | 2026-11-11 |
 | actions/download-artifact | v8.0.2 | 9000827ccba6bdab643e8b6fd33ac0654aef8333 | node24 | 2026-11-11 |
 | actions/attest-build-provenance | v4.2.2 | 4d101475d8b20a2381f78447822ac1eab6504dd8 | composite | 2026-11-11 |
-| cachix/install-nix-action | v31.11.4 | 91f6a0f59e94dfb2cfed0f4000f36a68ead1d20c | composite | 2026-11-11 |
+| cachix/install-nix-action | v31.11.5 | 3dc140bfc76c49fbd4dd958429132e3746bcb086 | composite | 2026-11-12 |
 
 Each tag is a lightweight tag: the commit is the tag's own object
 (`gh api repos/<owner>/<repo>/git/refs/tags/<tag>` names a commit), and
@@ -102,8 +102,8 @@ command).
 
 | Image | Index digest | Verified |
 | --- | --- | --- |
-| ubuntu:22.04 | sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11 | 2026-11-11 |
-| ubuntu:24.04 | sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852 | 2026-11-11 |
+| ubuntu:22.04 | sha256:74b12b11ffa550fba1929ad4d8d16533c34f6612728469671afba1b03b66881c | 2026-11-12 |
+| ubuntu:24.04 | sha256:2198e4c65076e9cb0b3d695219df667c0e3b0072da64ca3c2648aca17dcecaf5 | 2026-11-12 |
 | debian:12 | sha256:268fb24c39bca92d326dd83ea3abebe4a3f7751c804ffef23bb6d857dd343ff8 | 2026-11-11 |
 | fedora:44 | sha256:15da97ed9aa94dd3d92c3925eb89520f6c80e07ea7ee24cba848d1f8b6912b3e | 2026-11-11 |
 
@@ -319,6 +319,16 @@ non-draft, non-prerelease, at the same commits. GitHub advisory queries for
 each selected action/version returned no match; this is not a transitive
 npm dependency scan.
 
+At the 2.5.0 freeze (2026-11-12T04:56Z) `cachix/install-nix-action`
+**v31.11.5** (2026-11-11T16:52Z, commit `3dc140bf`) was adopted: its only
+change from v31.11.4 is one line of `install-nix.sh`, Nix 2.35.5 to 2.35.6;
+`action.yml` is unchanged. The `ubuntu:22.04` and `ubuntu:24.04` tags had
+moved to new multi-platform indexes (built 2026-11-10); both journey images
+take the new index digests. `debian:12` and `fedora:44` are unchanged, and
+the nixos-unstable lock stays at `f4a03c008967` (2026-11-07): moving it at
+the freeze would reopen the Nix-equals-native and keyed gateway evidence,
+and the release bundles do not build from nixpkgs.
+
 setuptools 84.2.1 is still PyPI's newest, not yanked, Python >=3.10. Its
 wheel hash agrees in the version JSON and simple index. zizmor moves to
 1.32.0, Python >=3.11; the same two metadata sources agree on the sha256
@@ -424,7 +434,7 @@ are qualified together, separately from the runtime and workflow refresh.
 | python-build-standalone | 20261110 | 20261110 | GitHub latest release, asset digests and SHA256SUMS | moved from 20261026; eight downloaded archives verified | 2026-11-11 |
 | setuptools | 84.2.1 | 84.2.1 | PyPI JSON and simple index, wheel hash as pinned, not yanked | already newest | 2026-11-11 |
 | actions/checkout, setup-python, upload-artifact, download-artifact, attest-build-provenance | the action table | the same tags and commits | each repository's latest release and tag ref | already newest | 2026-11-11 |
-| cachix/install-nix-action | v31.11.4 | v31.11.4 | GitHub latest release and tag ref; exact-commit action and script | moved from 31.11.3; composite inputs unchanged | 2026-11-11 |
+| cachix/install-nix-action | v31.11.5 | v31.11.5 | GitHub latest release and tag ref; exact-commit action and script | moved from 31.11.3 via v31.11.4; composite inputs unchanged | 2026-11-12 |
 | zizmor | 1.32.0 | 1.32.0 | PyPI JSON and simple index; GitHub release | moved from 1.31.1; offline lint re-verified, no workflow lockfile | 2026-11-11 |
 | actionlint, govulncheck, Pester, ShellCheck, bubblewrap | the tool tables | the same versions and digests | latest releases, Go module proxy, PowerShell Gallery, release asset digests | already newest | 2026-11-11 |
 | ubuntu:22.04, ubuntu:24.04 | the image table | indexes pushed 2026-10-29 | registry header, index-byte hash and Docker Hub tag API agree | moved | 2026-11-11 |
