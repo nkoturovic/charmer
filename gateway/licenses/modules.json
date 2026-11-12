@@ -1,7 +1,7 @@
 {
   "format": 1,
   "inputs": {
-    "post_apply_tree_sha256": "7b5cb6604dac2c1499935224d4e52c52aff3a1cbc6b7e7094c963984b6cb07d6",
+    "post_apply_tree_sha256": "5d49f29ba33a1ee258503b3131cadfcb9e25c6dd0ce1dfdfbb009e15f93b9673",
     "series": [
       "cli-proxy-api-loopback-oauth.patch@244e68528cbc72a636d112d4350c9e2e9aeb0c4b55c9097e08ee42a201fa22f4",
       "cli-proxy-api-kimi-claude-compat.patch@2d4f9b1fedc2b191ed2f7fb42437537f1ea592b170f4fe1f0f82b7fbee440bc1",
@@ -32,7 +32,7 @@
       "cli-proxy-api-terminal-rejection-reload.patch@d3a318e6c96b8e7f285f3ac228b599777a6b276848e704b3eca4dd16e0ba9f06",
       "cli-proxy-api-codex-refresh-without-journal.patch@0a112a12b1ef5f7116aca2aee337efa19902faa608da2346e96e4bd72026a3fd",
       "cli-proxy-api-native-advisor-beta-order.patch@d4e9fc3ea76787cde7553c25a753e6888402bbac4d865788160a37303757f3fa",
-      "cli-proxy-api-private-network-dial.patch@8367b3683d3be20beb3ddf875d48f69ce872765cc9445394d60ed82ed9aaf5d9"
+      "cli-proxy-api-private-network-dial.patch@c7d77904982ec28597e7cd92e7bedbb20aebb53c0bcd96355f2f5453e1199f5b"
     ],
     "source_tree_sha256": "b5d5b0841753df5a71fb0bd860d00a396d5c107d028d0107059f3e6e67c8dbda",
     "vendor_tree_sha256": "6330e01116c088c4d72e3a51557bc6c1a77e8b6f536532c7161f6cb03f362773"
@@ -2020,7 +2020,7 @@
     "license": "MIT",
     "modifications": {
       "path": "CLIProxyAPI/MODIFICATIONS.txt",
-      "sha256": "673eb042e85eda4542dbfbad493444f2c3f9c0ca75962f1703a766100d299783"
+      "sha256": "25687984090f3cbd939f8f43b654c26bb066d1922c489c3c23e6ea74c895709c"
     },
     "name": "CLIProxyAPI",
     "repository": "https://github.com/router-for-me/CLIProxyAPI",

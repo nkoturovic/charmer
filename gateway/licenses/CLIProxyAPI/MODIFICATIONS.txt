@@ -364,7 +364,7 @@ Before the modules are vendored, this patch updates the module requirements:
       added     internal/runtime/executor/claude_native_advisor_beta_test.go
 
 30. cli-proxy-api-private-network-dial.patch
-    sha256 8367b3683d3be20beb3ddf875d48f69ce872765cc9445394d60ed82ed9aaf5d9
+    sha256 c7d77904982ec28597e7cd92e7bedbb20aebb53c0bcd96355f2f5453e1199f5b
       modified  internal/config/config_normalization.go
       modified  internal/config/config_types.go
       added     internal/config/openai_compat_private_network_test.go
