@@ -376,6 +376,13 @@ jobs:
           curl --proto '=https' --tlsv1.2 -fsSL --retry 3 -o "$RUNNER_TEMP/claude" "$url"
           chmod 755 "$RUNNER_TEMP/claude"
           cat "$RUNNER_TEMP/pin.json"
+      - name: The previous release's pinned Claude Code (the FD and downgrade controls; outside the workspace, accepted only at its recorded sha256)
+        run: |
+          umask 077
+          url=$(python3 -c 'import sys; sys.path[:0] = ["src", "tests"]; import _client_roles; from charmer import acquire, pin; print(acquire.download_url(_client_roles.PREVIOUS[0], pin.host_platform()))')
+          curl --proto '=https' --tlsv1.2 -fsSL --retry 3 -o "$RUNNER_TEMP/claude-previous" "$url"
+          chmod 755 "$RUNNER_TEMP/claude-previous"
+          echo "CHARMER_TEST_PREVIOUS_CLAUDE=$RUNNER_TEMP/claude-previous" >>"$GITHUB_ENV"
       # Every module that prints an essential completion line (a test in
       # tests/test_release_ci.py derives this from charmer.upgrade).
       # The real-client tests must run; the two retained-client diagnostics
@@ -425,7 +432,7 @@ jobs:
         if: always()
         run: |
           umask 077
-          rm -f "$RUNNER_TEMP/claude"
+          rm -f "$RUNNER_TEMP/claude" "$RUNNER_TEMP/claude-previous"
           python3 tools/_build/no_bundle_guard.py .
       # The evidence (the log and its manifest) is kept after a failed
       # battery too, but never when the guard itself failed or did not run.
