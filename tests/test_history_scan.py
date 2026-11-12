@@ -945,6 +945,41 @@ class HistoryScanGitTests(unittest.TestCase):
         self.assertEqual(json.loads((out / "summary.json").read_text())["uninspected_blobs"], 1)
         self.assertIn("1 uninspected (binary, compressed or archived)", text)
 
+    def test_a_reviewed_candidate_clears_its_exact_blob_line_and_shape_only(self) -> None:
+        key = _real_looking_key()
+        self.commit({"conf/a.env": f"token: {key}\n", "conf/b.env": f"\ntoken: {key}\n"}, "add")
+        first, second = self.git("rev-parse", "HEAD:conf/a.env"), self.git("rev-parse", "HEAD:conf/b.env")
+        # The same value elsewhere and a near miss on the line stay candidates.
+        reviewed = {(first, 1, "sk-key"): "a fixture's finding", (second, 1, "sk-key"): "the wrong line"}
+        with mock.patch.dict(history_scan.REVIEWED_CANDIDATES, reviewed, clear=True):
+            code, text, out = self.run_scan()
+        self.assertEqual(code, 1, text)
+        hits = {hit["path"]: hit for hit in json.loads((out / "credentials.json").read_text())}
+        self.assertEqual((hits["conf/a.env"]["verdict"], hits["conf/a.env"]["reason"]), ("reviewed", "a fixture's finding"))
+        self.assertEqual((hits["conf/b.env"]["verdict"], hits["conf/b.env"]["line"]), ("candidate", 2))
+        self.assertIn(f"REVIEWED sk-key blob object {first[:12]} commit", text)
+        self.assertIn("path conf/a.env line 1: a fixture's finding", text)
+        self.assertIn("1 candidates, 1 reviewed", text)
+        self.assertNotIn(key, text)
+        summary = json.loads((out / "summary.json").read_text())
+        self.assertEqual((summary["credentials"]["candidate"], summary["credentials"]["reviewed"]), (1, 1))
+        self.assertEqual(summary["credentials"]["by_shape"]["sk-key"], {"synthetic": 0, "candidate": 1, "reviewed": 1})
+        # Once every candidate is reviewed, the scan passes.
+        reviewed[(second, 2, "sk-key")] = "the second finding"
+        with mock.patch.dict(history_scan.REVIEWED_CANDIDATES, reviewed, clear=True):
+            code, text, out = self.run_scan()
+        self.assertEqual(code, 0, text)
+        self.assertEqual(json.loads((out / "summary.json").read_text())["credentials"]["reviewed"], 2)
+
+    def test_reviewed_entries_name_a_full_blob_id_a_line_a_known_shape_and_a_finding(self) -> None:
+        shapes = {shape.name for shape in history_scan.SHAPES}
+        for (blob, line, shape), finding in history_scan.REVIEWED_CANDIDATES.items():
+            with self.subTest(blob=blob, line=line):
+                self.assertRegex(blob, r"\A[0-9a-f]{40}\Z")
+                self.assertGreater(line, 0)
+                self.assertIn(shape, shapes)
+                self.assertTrue(finding.strip())
+
     def test_a_pull_request_range_scans_what_it_adds_and_fails_on_a_candidate(self) -> None:
         # The base branch carries an old candidate; the pull request adds a new
         # one on its own branch. The range scan sees exactly the new one.

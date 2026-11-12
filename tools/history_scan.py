@@ -17,7 +17,9 @@ Each hit is classified as a synthetic sentinel (a placeholder marker such as
 characters, a repeating pattern, a value made of words, or an entropy well
 below a random value of its own alphabet and length, judged on the value's
 letters and digits) or as a candidate. Candidates need a human look; the
-exit status is 1 while any remain.
+exit status is 1 while any remain. A candidate found to be no credential is
+recorded in :data:`REVIEWED_CANDIDATES` by its exact blob, line and shape
+and reported as reviewed.
 
 Personal identifiers: :data:`GENERIC_IDENTIFIERS` (the home directory of a
 real account), plus the exact list of a private input when one is given
@@ -984,6 +986,20 @@ def _note_identifiers(result: ScanResult, data: bytes, path: str, commit: str | 
     result.private_ipv4 += len(_PRIVATE_IPV4_RE.findall(data))
 
 
+# Candidates a person has looked at and found to be no credential: the exact
+# blob, line and shape, with the finding. A blob id names its content, so an
+# entry clears that one hit and nothing else. A reviewed hit is reported with
+# its location and never fails the scan.
+REVIEWED_CANDIDATES: Mapping[tuple[str, int, str], str] = {
+    ("494a6070e060310f82f1c4d36f0d8f7e266839c4", 84, "secret-assignment"):
+        "a test's marker string (words and a six-digit hex suffix) in tests/test_client_mod_policy.py; "
+        "a later commit renamed it to a fixture mark",
+    ("494a6070e060310f82f1c4d36f0d8f7e266839c4", 85, "secret-assignment"):
+        "a test's marker string (words and a six-digit hex suffix) in tests/test_client_mod_policy.py; "
+        "a later commit renamed it to a fixture mark",
+}
+
+
 def scan(repo: Path, revision_range: str | None = None, private: PrivateInput | None = None) -> ScanResult:
     result = ScanResult()
     revisions = resolve_range(repo, revision_range) if revision_range is not None else None
@@ -1026,6 +1042,8 @@ def scan(repo: Path, revision_range: str | None = None, private: PrivateInput | 
             and all(alias.endswith(".patch") and "�" not in alias for alias in blob_paths))
         for shape, line, length, bits, verdict, reason in credential_hits(
                 data, patch_source_eligible=patch_source_eligible):
+            if verdict == "candidate" and (object_id, line, shape) in REVIEWED_CANDIDATES:
+                verdict, reason = "reviewed", REVIEWED_CANDIDATES[object_id, line, shape]
             result.credentials.append(CredentialHit(shape, verdict, reason, object_id, line, length, bits,
                                                      "blob", commit, path, introductions))
         _note_identifiers(result, data, path or f"<unattributed blob {object_id[:12]}>", commit, private)
@@ -1050,7 +1068,7 @@ def summary(result: ScanResult) -> dict:
     by_shape: dict[str, dict[str, int]] = {}
     for hit in result.credentials:
         row = by_shape.setdefault(hit.shape, {"synthetic": 0, "candidate": 0})
-        row[hit.verdict] += 1
+        row[hit.verdict] = row.get(hit.verdict, 0) + 1
     identifiers = {
         name: {"occurrences": sum(row[0] for row in paths.values()),
                "blobs": sum(row[1] for row in paths.values()), "paths": len(paths)}
@@ -1064,7 +1082,9 @@ def summary(result: ScanResult) -> dict:
         "uninspected_blobs": result.uninspected_blobs,
         "credentials": {"total": len(result.credentials),
                         "synthetic": sum(1 for hit in result.credentials if hit.verdict == "synthetic"),
-                        "candidate": len(result.candidates()), "by_shape": dict(sorted(by_shape.items()))},
+                        "candidate": len(result.candidates()),
+                        "reviewed": sum(1 for hit in result.credentials if hit.verdict == "reviewed"),
+                        "by_shape": dict(sorted(by_shape.items()))},
         "identifiers": identifiers,
         "identity_headers": dict(sorted(result.identity_headers.items())),
         "message_identifiers": dict(sorted(result.message_identifiers.items())),
@@ -1089,14 +1109,19 @@ def render_text(result: ScanResult, *, max_locations: int) -> str:
         f"{doc['blobs']} blobs ({doc['blob_bytes']} bytes), {doc['unattributed_blobs']} unattributed, "
         f"{doc['uninspected_blobs']} uninspected (binary, compressed or archived)",
         f"credential shapes: {doc['credentials']['total']} hits, {doc['credentials']['synthetic']} synthetic "
-        f"sentinels, {doc['credentials']['candidate']} candidates",
+        f"sentinels, {doc['credentials']['candidate']} candidates"
+        + (f", {doc['credentials']['reviewed']} reviewed" if doc["credentials"]["reviewed"] else ""),
     ]
     for shape, row in doc["credentials"]["by_shape"].items():
-        out.append(f"  {shape}: synthetic {row['synthetic']}, candidate {row['candidate']}")
+        out.append(f"  {shape}: synthetic {row['synthetic']}, candidate {row['candidate']}"
+                   + (f", reviewed {row['reviewed']}" if row.get("reviewed") else ""))
     for hit in result.candidates()[:max_locations]:
         out.append(f"  CANDIDATE {hit.shape} {hit.kind} object {hit.blob[:12]} commit "
                    f"{(hit.commit or '-')[:12]} path {hit.path or '-'} line {hit.line} "
                    f"length {hit.length} entropy {hit.entropy}")
+    for hit in [hit for hit in result.credentials if hit.verdict == "reviewed"][:max_locations]:
+        out.append(f"  REVIEWED {hit.shape} {hit.kind} object {hit.blob[:12]} commit "
+                   f"{(hit.commit or '-')[:12]} path {hit.path or '-'} line {hit.line}: {hit.reason}")
     out.append("personal identifiers:")
     for name, row in doc["identifiers"].items():
         out.append(f"  {name}: {row['occurrences']} occurrences in {row['blobs']} blobs, {row['paths']} paths")
