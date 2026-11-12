@@ -2871,14 +2871,13 @@ def _check_scope_integrity(
                         return [], attention, []
                 except (OSError, state.StateError):
                     drifted = ["scope unreadable"]
-            text = (f"session {m8}: scope differs from its recorded launch resolution "
-                    f"({'; '.join(drifted)}); repair is deferred for the catalog move — "
-                    f"resume to rebuild it: charmer -r {mid}")
-            problem = gateway_facts.Finding(
-                text, code="scope-repair", public="scope changes are unproven; catalog-move repair is deferred; resume to rebuild",
-                remedy=f"charmer -r {mid}")
-            return [gateway_facts.tagged(problem, area="Sessions", subjects=(m8,),
-                                        group=("session", "catalog-scope-resume"))], attention, []
+            return [gateway_facts.tagged(gateway_facts.Finding(
+                f"session {m8}: scope differs from its recorded launch resolution "
+                f"({'; '.join(drifted)}); repair is deferred for the catalog move — "
+                f"resume to rebuild it: charmer -r {mid}",
+                code="scope-repair", public="scope changes are unproven; catalog-move repair is deferred; resume to rebuild",
+                remedy=f"charmer -r {mid}"), area="Sessions", subjects=(m8,),
+                group=("session", "catalog-scope-resume"))], attention, []
         return [], attention, []
     if recorded_ep is not None and recorded_ep.plan is not None and recorded_ep.launch_files_kept:
         try:
