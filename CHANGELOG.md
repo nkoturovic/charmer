@@ -6,7 +6,7 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [2.5.0] — 2026-11-11
+## [2.5.0] — 2026-11-12
 
 ### Upgrade notes
 
@@ -109,6 +109,12 @@ compiled settings and routes until their next launch or resume.
 - The advice to fork with plain `claude --resume … --fork-session` and adopt
   the copy is gone: it ran a managed conversation unmanaged.
 - Account rows offer **Add models** and signed-in rows offer **Sign out**.
+- Doctor no longer reports BLOCKED for a session compiled by an earlier
+  release whose model line a later catalog renamed or moved (for example an
+  operator `custom-fable-5-2` line that now yields to the shipped `fable`):
+  the launch-time scope is recognised exactly and the change applies at the
+  next resume, while unrecognised edits still block. A Fable session whose
+  line moved generation no longer passes the scope check unread.
 - Long results keep their remedies, repeated identical ones included.
 - Settings navigation and arrow keys, form help and choice controls, empty
   states, picker overflow and the stable minimum size; lineup targets and a
