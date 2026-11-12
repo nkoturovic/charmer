@@ -2114,7 +2114,7 @@ index 00000000..5bdda60b
 +}
 diff --git a/sdk/cliproxy/private_network_reload_test.go b/sdk/cliproxy/private_network_reload_test.go
 new file mode 100644
-index 00000000..3ea7ad08
+index 00000000..105d0785
 --- /dev/null
 +++ b/sdk/cliproxy/private_network_reload_test.go
 @@ -0,0 +1,204 @@
@@ -2179,7 +2179,7 @@ index 00000000..3ea7ad08
 +// reload sentinel, whose alias names the render.
 +func privateNetworkReloadConfig(t *testing.T, authDir, proxy, block, sentinel string) *internalconfig.Config {
 +	t.Helper()
-+	text := fmt.Sprintf("auth-dir: %q\nproxy-url: %q\nrequest-retry: 0\ndisable-cooling: true\nopenai-compatibility:\n", authDir, proxy)
++	text := fmt.Sprintf("auth-dir: %q\nproxy-url: %q\nrequest-retry: 0\nopenai-compatibility:\n", authDir, proxy)
 +	if block != "" {
 +		text += "  - name: \"pnbox\"\n" + block +
 +			"    api-key-entries:\n      - api-key: \"pn-reload-key\"\n" +
