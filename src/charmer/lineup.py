@@ -1224,6 +1224,7 @@ class Decision:
     # What a preview decided on beyond the record identity (the resolved
     # target and its consequences, :func:`_target_fingerprint`).
     fingerprint: str | None = None
+    notification_note: str | None = None
 
 
 def _checkpoint(step: str, detail: str | None = None) -> None:
@@ -1388,11 +1389,23 @@ def _save_record_only(
     return updated, dropped
 
 
-def _post_notice(runtime: Any, record: Mapping[str, Any], message: str) -> None:
-    """An outside change, under the record's lifecycle lock, reaches its running user."""
+def _post_notice(runtime: Any, record: Mapping[str, Any], message: str) -> str | None:
+    """Best-effort notice under the lifecycle lock; never abort an already committed change."""
 
-    if _is_live(runtime, record) and not inside_session(runtime.environ, record["managed_id"]):
-        hooks.post_message(runtime.session_store.root, record["runtime_session_id"], message)
+    try:
+        if _is_live(runtime, record) and not inside_session(runtime.environ, record["managed_id"]):
+            hooks.post_message(runtime.session_store.root, record["runtime_session_id"], message)
+    except (hooks.HookInputError, state.StateError, OSError) as exc:
+        return (f"note: session {_m8(record['managed_id'])}: prompt notice could not be queued; "
+                f"the saved change is kept ({hooks.visible(exc)})")
+    return None
+
+
+def _notice_result(decision: Decision, note: str | None) -> Decision:
+    if note:
+        decision.notification_note = note
+        decision.text += "\n" + note
+    return decision
 
 
 def _notice_reasons(reasons: Sequence[str]) -> str:
@@ -1449,8 +1462,7 @@ def _notify_decision(runtime: Any, before: Mapping[str, Any], decision: Decision
             message += "; the earlier pending change was dropped"
         else:
             message += "; its lineup already matches"
-    _post_notice(runtime, after, message)
-    return decision
+    return _notice_result(decision, _post_notice(runtime, after, message))
 
 
 def _forced_profile_pending(record: Mapping[str, Any], name: str | None) -> bool:
@@ -3167,8 +3179,7 @@ def _on_saved_in_phase(
             rid = record["runtime_session_id"]
 
             def reported(text: str, message: str) -> Decision:
-                _post_notice(runtime, record, message)
-                return Decision("line", text=text)
+                return _notice_result(Decision("line", text=text), _post_notice(runtime, record, message))
 
             if not follower.follow:
                 return Decision("line", text=f"{dot} {where}: pinned (follow off) — not changed; "
@@ -3216,9 +3227,12 @@ def _on_saved_in_phase(
                 return reported(f"● {where}: not applied ({_one_line(str(exc))})",
                                 f"charmer: profile {record['profile']} changed but cannot apply here ({detail}) "
                                 f"— inspect it with charmer lineup --session {rid} show")
+            def written(text: str) -> Decision:
+                return _notice_result(Decision("written", text=text), decision.notification_note)
+
             if decision.kind == "live":
                 if decision.reasons:
-                    return Decision("written", text=f"● {where}: agents applied live (lineup gen "
+                    return written(f"● {where}: agents applied live (lineup gen "
                                     f"{decision.generation}); the rest waits for its next resume "
                                     f"({'; '.join(decision.reasons)}) — run /reload-plugins in that session")
                 line = (
@@ -3231,20 +3245,12 @@ def _on_saved_in_phase(
                         f"; then switch the lead with /model → "
                         f"{decision.lead_switch.get('display') or target.get('key')}"
                     )
-                return Decision("written", text=line)
+                return written(line)
             if decision.kind == "pending":
-                return Decision(
-                    "written",
-                    text=(
-                        f"● {where}: relaunch needed ({'; '.join(decision.reasons)}); recorded as "
-                        f"pending — exit it, then charmer -r {mid}"
-                    ),
-                )
+                return written(f"● {where}: relaunch needed ({'; '.join(decision.reasons)}); recorded as "
+                               f"pending — exit it, then charmer -r {mid}")
             if decision.kind == "record":
-                return Decision(
-                    "written",
-                    text=f"● {where}: already matches (lineup gen {decision.generation})",
-                )
+                return written(f"● {where}: already matches (lineup gen {decision.generation})")
             return Decision("line", text=f"● {where}: already matches (lineup gen {generation})")
 
         try:
@@ -3367,8 +3373,8 @@ def _on_removed_in_phase(
             else:
                 message = (f"charmer: the pending change was dropped because profile {name!r} was removed "
                            "— /cm show shows the lineup this session keeps")
-            _post_notice(runtime, updated, message)
-            return Decision("written", text="\n".join(lines))
+            return _notice_result(Decision("written", text="\n".join(lines)),
+                                  _post_notice(runtime, updated, message))
 
         try:
             decision = locked_decision(runtime, mid, body, barrier=barrier)

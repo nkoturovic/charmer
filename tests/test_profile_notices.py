@@ -164,3 +164,35 @@ class ExternalChangeNoticeTests(PropagationCase):
         self.assertIn(path, [item[0] for item in candidates])
         self.assertEqual(doctor_actions._doctor_prune(self.runtime, io.StringIO()), 0)
         self.assertFalse(path.exists())
+
+
+class NoticeFailureTests(PropagationCase):
+    def test_unsafe_first_marker_does_not_abort_later_followers(self):
+        records = sorted((self.follower(), self.follower()), key=lambda record: record["managed_id"])
+        first = records[0]
+        path = hooks.seen_path(self.store.root, first["runtime_session_id"])
+        state.ensure_private_dir(path.parent)
+        state.atomic_write(path, b"-\n")
+        path.chmod(0o644)
+        self.edit("mine", lambda document: document["agents"].update(
+            {"cm-implementer": {"model": "opus55", "effort": "xhigh"}}))
+        output = io.StringIO()
+        self.assertEqual(lineup.on_saved(self.runtime, ["mine"], apply_live=True, out=output), 2)
+        for record in records:
+            self.assertEqual(self.store.load(record["managed_id"])["lineup_generation"], 2)
+        self.assertIn("prompt notice could not be queued", output.getvalue())
+        self.assertIn("change is kept", output.getvalue())
+        self.assertTrue(hooks.read_marker(self.store.root, records[1]["runtime_session_id"])[0].message)
+
+    def test_notice_errors_are_reported_after_record_only_changes(self):
+        record = self.follower()
+        self.mid, self.rid = record["managed_id"], record["runtime_session_id"]
+        for problem in (hooks.HookInputError("fixture unsafe marker"),
+                        state.StateError("fixture private directory"), OSError("fixture write failure")):
+            with self.subTest(problem=type(problem).__name__):
+                self.store.save(record)
+                with mock.patch.object(hooks, "post_message", side_effect=problem):
+                    code, text, error = self.request("pin")
+                self.assertEqual((code, error), (0, ""))
+                self.assertFalse(self.store.load(record["managed_id"])["follow"])
+                self.assertIn("prompt notice could not be queued", text)

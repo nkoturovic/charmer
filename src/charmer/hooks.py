@@ -373,14 +373,20 @@ def _marker_lock(state_root: Path | str, managed_id: str) -> state.FileLock:
 
 
 def acknowledge_seen(state_root: Path | str, managed_id: str, runtime_id: str, gen_line: str,
-                     expected: bytes | None, *, keep_message: bool = False) -> bool:
+                     expected: bytes | None, *, keep_message: bool = False,
+                     repair_unreadable: bool = False) -> bool:
     """Compare and acknowledge under the writer's lock; contention means redelivery, never waiting."""
 
     lock = _marker_lock(state_root, managed_id)
     if not lock.acquire(blocking=False):
         return False
     try:
-        marker, raw = read_marker(state_root, runtime_id)
+        try:
+            marker, raw = read_marker(state_root, runtime_id)
+        except (HookInputError, OSError):
+            if not repair_unreadable:
+                raise
+            marker, raw = NoticeMarker(), None
         if raw != expected:
             return False
         _write_marker(state_root, runtime_id,
@@ -906,7 +912,11 @@ def _prompt(hook: _Hook) -> _Result:
     gen = read_gen(hook.scope_dir)
     if gen is None:
         raise HookInputError("scope has no valid lineup.gen (not a lineup-enabled scope?)")
-    marker, raw = read_marker(hook.state_root, runtime_id)
+    unreadable = False
+    try:
+        marker, raw = read_marker(hook.state_root, runtime_id)
+    except (HookInputError, OSError):
+        marker, raw, unreadable = NoticeMarker(), None, True
     if marker.seen == gen and not marker.message:
         return None, None
     text = None
@@ -928,7 +938,8 @@ def _prompt(hook: _Hook) -> _Result:
     after = None
     if gen_line is not None and mismatch is None:
         def after() -> None:
-            acknowledge_seen(hook.state_root, hook.managed_id, runtime_id, gen_line, raw)
+            acknowledge_seen(hook.state_root, hook.managed_id, runtime_id, gen_line, raw,
+                             repair_unreadable=unreadable)
     elif gen_line is None:
         hook.note("lineup.md and lineup.gen disagree; notice sent, marker not written")
     return output, after

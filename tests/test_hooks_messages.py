@@ -135,6 +135,36 @@ class NoticeMessageTests(_SeamCase):
         self.assertIn("first change", second.get("systemMessage", ""))
         self.assertEqual(path.read_text().splitlines()[1], "start " + gen)
 
+    def test_unsafe_unreadable_and_oversize_markers_are_repaired_after_notice(self):
+        gen = self.gen()
+        for mode, raw in ((0o644, (gen + "\n").encode()), (0o000, b"unreadable\n"),
+                          (0o600, b"x" * 701)):
+            with self.subTest(mode=mode, size=len(raw)):
+                path = self.marker()
+                state.atomic_write(path, raw)
+                path.chmod(mode)
+                document = self.prompt()
+                self.assertIn("hookSpecificOutput", document)
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+                self.assertEqual(path.read_text(), gen + "\n")
+                self.assertEqual(self.prompt(), {})
+
+    def test_repair_does_not_overwrite_a_concurrent_valid_message(self):
+        gen = self.gen()
+        path = self.marker(gen)
+        path.chmod(0o644)
+        test = self
+
+        class Repaired(io.StringIO):
+            def write(self, text):
+                with test.store.lifecycle_lock(test.mid):
+                    state.atomic_write(path, (gen + "\n").encode())
+                    hooks.post_message(test.store.root, test.rid, "charmer: newer valid notice")
+                return super().write(text)
+
+        self.assertIn("hookSpecificOutput", self.prompt(Repaired()))
+        self.assertIn("newer valid notice", self.prompt().get("systemMessage", ""))
+
     def test_busy_lock_does_not_acknowledge(self):
         gen = self.gen()
         path = self.marker(gen, start=gen, message="charmer: retry this notice")
