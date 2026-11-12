@@ -2382,9 +2382,9 @@ class SessionsLineupPTYTests(_SessionsChildCase):
         child.send(b"\x1b")
         code, output, after = child.finish()
         self.assertEqual(code, 0, output)
-        self.assertIn("RELAUNCH — exit the session; resume applies it".encode(), output)
+        self.assertIn(b"relaunch needed", output)
         self.assertEqual(_line_of(output, b"PENDING="), "True")
-        self.assertEqual(int(_line_of(output, b"GEN=")), int(_line_of(output, b"GEN0=")))
+        self.assertEqual(_line_of(output, b"GEN="), _line_of(output, b"GEN0="))
         self.assertNotIn(b"FAKE_LAUNCH", output)
         _restored(self, child, after)
 
@@ -2587,7 +2587,11 @@ finally:
         child.read_until(b"choose model", FIXTURE_TIMEOUT)
         child.send(b"\x1bOH" + DOWN_KEY * index + b"\n\x13")
         child.read_until(b"saved fixture-onboarding", FIXTURE_TIMEOUT)
-        child.send(b"\x1b")
+        child.read_until(b"Action result", FIXTURE_TIMEOUT)
+        offset = len(child.output)
+        child.send(b"\x1b")  # acknowledge the complete count-bearing result
+        _read_after(child, offset, b"\x1b[", FIXTURE_TIMEOUT)
+        child.send(b"\x1b")  # leave the now-clean editor
         child.read_until(b"JOURNEY_LAUNCHED=1", FIXTURE_TIMEOUT)
         code, output, attrs = child.finish()
         self.assertEqual(code, 0, output)

@@ -26,6 +26,7 @@ from . import assets, paths
 import contextlib
 import copy
 import json
+import logging
 import os
 import re
 import shlex
@@ -2301,6 +2302,7 @@ class SessionStore:
         launch_epoch: int | None = None,
         now: str | None = None,
         normalize: Callable[[dict[str, Any], str | None, str | None], Evidence] | None = None,
+        on_runtime_change: Callable[[str, str], None] | None = None,
     ) -> dict[str, Any]:
         """Atomically apply one metadata-only lifecycle observation.
 
@@ -2312,6 +2314,8 @@ class SessionStore:
         record converted between the hook's lock-free read and the lock is
         judged on its locked version. The raw document keeps its version;
         a v3 ordinary re-pin reaches disk (``ordinary_model``, sc[1]).
+        ``on_runtime_change`` runs after an accepted id change is saved,
+        under both locks. A callback failure is logged, never a failed reconcile.
         """
         self._require_writable()
 
@@ -2386,6 +2390,13 @@ class SessionStore:
             )
             extra = ("ordinary_model",) if _is_v3_ordinary(raw) else ()
             self._save_lifecycle(_patch_lifecycle(raw, updated, extra))
+            old_id, new_id = current["runtime_session_id"], updated["runtime_session_id"]
+            if on_runtime_change is not None and old_id != new_id:
+                try:
+                    on_runtime_change(old_id, new_id)
+                except Exception as exc:
+                    logging.getLogger(__name__).warning(
+                        "session %s: runtime changed but its notice could not be carried: %s", stable_id, exc)
             return updated
         finally:
             lock.release()

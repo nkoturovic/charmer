@@ -711,17 +711,18 @@ class EditorSaveTests(_EditorCase):
 
     def test_plain_save_writes_the_profile(self) -> None:
         state = self.edited()
-        win, result = self.run_screen(self.editor(state, callbacks=self.callbacks()), [CTRL_S, ESC])
+        win, result = self.run_screen(self.editor(state, callbacks=self.callbacks()), [CTRL_S, ESC, ESC])
         self.assertEqual((result.action, result.name), ("save", catalog.DEFAULT_SEED))
         saved = self.runtime.profiles.load(catalog.DEFAULT_SEED)
         self.assertEqual(saved, state.document)
         self.assertIn("seed", saved, "a plain save of a seed keeps its marker")
-        self.assertIn(cli.PROPAGATION_NO_FOLLOWERS.format(name=catalog.DEFAULT_SEED), win.frames[-1])
+        self.assertTrue(any("no session follows it" in frame for frame in win.frames))
+        self.assertTrue(any("0 pinned session(s)" in frame for frame in win.frames))
 
     def test_save_as_new_drops_seed(self) -> None:
         # Save as new never carries the seed marker into the user profile.
         state = self.edited()
-        keys = [*self.rename_to(state, "mine"), CTRL_S, ENTER, ESC]
+        keys = [*self.rename_to(state, "mine"), CTRL_S, ENTER, ESC, ESC]
         win, result = self.run_screen(self.editor(state, callbacks=self.callbacks()), keys)
         self.assertTrue(any(tui.PROFILE_FORM_NEW_NAME_TITLE in f for f in win.frames))
         self.assertEqual((result.action, result.name, result.old_name), ("new", "mine", catalog.DEFAULT_SEED))
@@ -734,7 +735,7 @@ class EditorSaveTests(_EditorCase):
     def test_rename_moves_a_user_profile(self) -> None:
         self.runtime.profiles.duplicate(catalog.DEFAULT_SEED, "mine")
         state = self.edited(name="mine")
-        keys = [*self.rename_to(state, "yours"), CTRL_S, RIGHT, ENTER, ESC]
+        keys = [*self.rename_to(state, "yours"), CTRL_S, RIGHT, ENTER, ESC, ESC]
         _win, result = self.run_screen(self.editor(state, callbacks=self.callbacks()), keys)
         self.assertEqual((result.action, result.name, result.old_name), ("rename", "yours", "mine"))
         self.assertFalse(self.runtime.profiles.contains("mine"))
@@ -775,7 +776,7 @@ class EditorSaveTests(_EditorCase):
         document.pop("seed")
         document["name"] = "fresh"
         state = self.state(document, name="fresh", is_seed=False, new=True)
-        _win, result = self.run_screen(self.editor(state, callbacks=self.callbacks()), [CTRL_S, ESC])
+        _win, result = self.run_screen(self.editor(state, callbacks=self.callbacks()), [CTRL_S, ESC, ESC])
         self.assertEqual(result.action, "new")
         self.assertEqual(self.runtime.profiles.load("fresh"), state.document)
 
@@ -810,7 +811,7 @@ class EditorSaveFailureTests(_EditorCase):
         taken = next(n for n in self.runtime.profiles.names() if n != catalog.DEFAULT_SEED)
         keys = [ENTER, *([BACKSPACE] * 64), *taken, CTRL_S, CTRL_S, ENTER,      # P1 refused
                 ENTER, *([BACKSPACE] * 64), *"retry", CTRL_S, CTRL_S, ENTER,  # retried
-                ESC]
+                ESC, ESC]  # acknowledge the complete save result, then leave
         _win, result = self.run_screen(self.editor(state, callbacks=self.callbacks()), keys)
         self.assertEqual((result.action, result.name), ("new", "retry"))
         self.assertEqual(self.runtime.profiles.load("retry"), state.document)
@@ -825,7 +826,7 @@ class EditorSaveFailureTests(_EditorCase):
         win, _ = self.run_screen(screen, [CTRL_S, ESC, ENTER])
         self.assertFalse(self.runtime.profiles.has_user(catalog.DEFAULT_SEED))
         state.set_binding(catalog.LEAD_ROLE, good_lead["model"], good_lead["effort"])
-        _win, result = self.run_screen(screen, [CTRL_S, ESC])
+        _win, result = self.run_screen(screen, [CTRL_S, ESC, ESC])
         self.assertEqual(result.action, "save")
         self.assertEqual(self.runtime.profiles.load(catalog.DEFAULT_SEED)["lead"], good_lead)
 
@@ -1363,11 +1364,12 @@ class PropagationTests(_EditorCase):
         self.assertIn(f"saved {catalog.DEFAULT_SEED}", frame)
         self.assertIn("5 sessions follow this profile:", frame)
         self.assertIn('◐ unknown   project        "unknown one"   apply now (then /reload-plugins there)', frame)
-        self.assertIn('● running   project        "by proc"   apply now (then /reload-plugins there)', frame)
+        self.assertIn('● running   project        "by proc"   applies at next resume', frame)
         self.assertIn("○ ended     project        —   applies at next resume", frame)
-        self.assertIn("has a pending relaunch change; not applied", frame)
+        self.assertIn("forced relaunch; not applied", frame)
         self.assertIn("no lineup-enabled scope yet; applies at next resume", frame)
-        self.assertIn("A apply to running · L later (next resume) · ? help · Esc keep sessions as they are", frame)
+        for key, label, _rank in screen.keybar():
+            self.assertIn(f"{key} {label}", frame)
         narrow = self.frame(screen, width=70)
         self.assertNotIn("project", narrow)
         self.assertIn("apply now (then /reload-plugins there)", narrow)
@@ -1381,9 +1383,11 @@ class PropagationTests(_EditorCase):
         self.assertFalse(screen.offers_apply)
         frame = self.frame(screen)
         self.assertNotIn("A apply to running", frame)
+        self.assertNotIn("Enter apply to running", frame)
         with mock.patch.object(lineup, "on_saved") as on_saved:
             self.run_screen(screen, ["A", ESC])
-        on_saved.assert_not_called()
+        on_saved.assert_called_once()
+        self.assertFalse(on_saved.call_args.kwargs["apply_live"], "A did nothing; Esc records Later")
 
     def test_a_and_l_call_on_saved_and_show_its_lines(self) -> None:
         self.followers()
@@ -1403,14 +1407,24 @@ class PropagationTests(_EditorCase):
                 report = next(f for f in win.frames if f"propagation — {catalog.DEFAULT_SEED}" in f)
                 self.assertIn(f"report line apply_live={live}", report)
 
-    def test_esc_calls_nothing(self) -> None:
+    def test_l_records_later(self) -> None:
         self.followers()
         with mock.patch.object(lineup, "on_saved") as on_saved:
-            _win, result = self.run_screen(self.screen(), [ESC])
-        self.assertIsNone(result)
-        on_saved.assert_not_called()
+            _win, result = self.run_screen(self.screen(), ["L", ESC])
+        self.assertEqual(result, "later")
+        on_saved.assert_called_once()
+        self.assertFalse(on_saved.call_args.kwargs["apply_live"])
 
-    def test_a_applies_live_through_on_saved(self) -> None:
+    def test_esc_records_later_without_opening_a_report(self) -> None:
+        self.followers()
+        with mock.patch.object(lineup, "on_saved") as on_saved:
+            win, result = self.run_screen(self.screen(), [ESC])
+        self.assertEqual(result, "later")
+        on_saved.assert_called_once()
+        self.assertFalse(on_saved.call_args.kwargs["apply_live"])
+        self.assertFalse(any("propagation — " in frame for frame in win.frames))
+
+    def test_enter_applies_live_through_on_saved(self) -> None:
         fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=fx.FIXED_ID)
         fx.v4_record(self.runtime, catalog.DEFAULT_SEED, managed_id=fx.OTHER_ID, ended=True)
         document = self.default()
@@ -1419,7 +1433,7 @@ class PropagationTests(_EditorCase):
         document["agents"][rid]["effort"] = self.other_effort(document["agents"][rid]["model"], document["agents"][rid]["effort"])
         self.runtime.profiles.save(document)
         before = self.runtime.session_store.load(fx.FIXED_ID)["lineup_generation"]
-        win, _ = self.run_screen(self.screen(), ["A", ESC])
+        win, _ = self.run_screen(self.screen(), [ENTER, ESC])
         report = next(f for f in win.frames if "propagation — " in f)
         self.assertIn("applied live (lineup gen", report)
         self.assertIn("applies at the next resume", report)
@@ -1431,9 +1445,9 @@ class PropagationTests(_EditorCase):
         frame = self.frame(self.screen())
         self.assertIn("? 1 session record(s) unreadable; skipped", frame)
         other = next(n for n in self.runtime.profiles.names() if n != catalog.DEFAULT_SEED)
-        win = FakeWindow([], height=24, width=80)
-        self.assertEqual(cli.run_propagation_screen(self.runtime, win, M, [other]), "none")
-        self.assertEqual(win.frames, [])
+        win = FakeWindow([ESC], height=24, width=80)
+        self.assertEqual(cli.run_propagation_screen(self.runtime, win, M, [other]), "later")
+        self.assertTrue(any("record unreadable; skipped" in frame for frame in win.frames))
 
     def test_several_profiles_and_the_help(self) -> None:
         self.followers()
@@ -1664,7 +1678,7 @@ class EditorConflictTests(_EditorCase):
     def test_overwrite_saves_the_edits(self) -> None:
         state, screen = self.editing()
         self.elsewhere()
-        win, result = self.run_screen(screen, [CTRL_S, RIGHT, RIGHT, ENTER, ESC])
+        win, result = self.run_screen(screen, [CTRL_S, RIGHT, RIGHT, ENTER, ESC, ESC])
         self.assertEqual(result.name, "mine")
         self.assertEqual(self.runtime.profiles.load("mine")["description"], "edited here")
         self.assertEqual(state.loaded_digest, self.runtime.profiles.digest("mine"))
@@ -1720,14 +1734,14 @@ class EditorConflictTests(_EditorCase):
 
     def test_the_digest_after_a_save_is_the_digest_of_what_it_wrote(self) -> None:
         state, screen = self.editing()
-        self.run_screen(screen, [CTRL_S, ESC])
+        self.run_screen(screen, [CTRL_S, ESC, ESC])
         self.assertEqual(state.loaded_digest, self.runtime.profiles.digest("mine"))
         self.assertEqual(state.loaded_digest, "sha256:" + strict_json.sha256_hex(
             (self.runtime.profiles.root / "mine.json").read_bytes()))
 
     def test_an_unchanged_profile_saves_without_a_dialog(self) -> None:
         state, screen = self.editing()
-        win, result = self.run_screen(screen, [CTRL_S, ESC])
+        win, result = self.run_screen(screen, [CTRL_S, ESC, ESC])
         self.assertEqual(result.action, "save")
         self.assertFalse(any(tui.PROFILE_FORM_CHANGED_TITLE.format(name="mine") in f for f in win.frames))
         self.assertEqual(self.runtime.profiles.load("mine")["description"], "edited here")

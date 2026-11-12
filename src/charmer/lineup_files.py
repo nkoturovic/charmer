@@ -108,6 +108,7 @@ CM_VERBS: tuple[CmVerb, ...] = (
     CmVerb("fallback", "<provider> [--preview]", True, "move the roles bound to a provider to a fallback lineup"),
     CmVerb("review", "[high-stakes] [<range>]", False, "ask for a review from another model family"),
     CmVerb("quota", "", False, "the quota of this session's accounts"),
+    CmVerb("fork", "", False, "print the command that forks this session into a new one"),
 )
 CM_VERB_NAMES = tuple(verb.name for verb in CM_VERBS)
 CM_READ_VERBS = frozenset(verb.name for verb in CM_VERBS if not verb.writes)

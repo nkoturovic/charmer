@@ -819,6 +819,7 @@ def card_model(
     load_path: str | None = None,
     workflow_default: tuple[str, profile.RoleWindow] | None = None,
     resume_way: str = RESUME_WAY_DIRECT,
+    session_status: Sequence[str] = (),
 ) -> CardModel:
     """The card's rows in canonical order (§4.1.1) and its keybar (§4.1.2).
 
@@ -866,6 +867,19 @@ def card_model(
     if description:
         rows.append(CardRow("description", "", description, "dim", 9, col=10))
     rows.append(CardRow("rule", "", "", "dim", 0, col=2))
+    for line in session_status:
+        if line.startswith("pinned:"):
+            summary = "pinned (profile edits do not reach it)"
+        elif line.startswith("pending change:"):
+            summary = "pending change (next resume)"
+        elif "changed since this session applied it:" in line:
+            summary = "profile changed"
+        else:
+            summary = "profile needs attention"
+        _head, separator, remedy = line.rpartition(" — ")
+        shorter = (f"Before resume: {summary} — {remedy}",) if separator else ()
+        rows.append(CardRow("session-status", "", f"Before this resume: {line}", "normal", 1, col=2,
+                            short_forms=(*shorter, f"Before this resume: {summary} — V details")))
     if lineup is not None:
         binding = lineup.lead.binding
         windows = dict(profile.lineup_windows(lineup))
@@ -1747,11 +1761,21 @@ def propagation_rows(
         state = states.get(mid, "unknown")
         word = _STATE_WORDS.get(state, state)
         if follower.has_pending:
-            mark, action = f"↻ {word}", "has a pending relaunch change; not applied"
+            mark = f"↻ {word}"
+            if getattr(follower, "eligible", False):
+                action = "apply now; the rest waits for resume"
+            elif getattr(follower, "pending_forced", False):
+                action = "forced relaunch; not applied"
+            elif getattr(follower, "pending_kind", None) and not follower.pending_follow:
+                action = "pending change pins at resume; /cm follow replaces it"
+            elif state == "ended":
+                action = "pending change applies at next resume"
+            else:
+                action = "has a pending relaunch change; not applied"
         elif follower.generation == 0:
             mark, action = f"○ {word}", "no lineup-enabled scope yet; applies at next resume"
-        elif state in ("live", "unknown"):
-            mark, action = _STATE_MARKS[state], "apply now (then /reload-plugins there)"
+        elif getattr(follower, "eligible", state in ("live", "unknown")):
+            mark, action = _STATE_MARKS.get(state, f"○ {word}"), "apply now (then /reload-plugins there)"
         else:
             mark, action = _STATE_MARKS.get(state, f"○ {word}"), "applies at next resume"
         cwd = PurePath(follower.cwd).name or follower.cwd
@@ -1967,6 +1991,7 @@ def session_details(
     pending_target: str | None = None,
     explain: Sequence[str] | None = None,
     usage: Sequence[str] | None = None,
+    profile_status: Sequence[str] = (),
 ) -> tuple[str, ...]:
     """Sessions V: identity, directory, runtime id, the applied lineup, the
     pending change and why it waits, follow, drift, the routing explanation
@@ -1987,6 +2012,7 @@ def session_details(
     else:
         follow = ("follows profile " + summary.profile_label) if summary.follow else "pinned (follow off)"
         lines.append(f"profile: {summary.profile_label} · {follow}")
+        lines.extend(profile_status)
         lines.append(f"lineup: gen {summary.lineup_generation} · lead {lead}")
         lines += [f"  {line}" for line in agents] or ["  no agents"]
         pending = record.get("pending")
@@ -2092,6 +2118,13 @@ def lineup_dialog_model(
             lines.append(
                 ("lead", f"switch with /model → {lead_switch} (press s: this session only)", "normal")
             )
+    elif mode == "SPLIT":
+        lines.append(("mode", "LIVE for the agents now; the rest is pending for the next resume", "ok"))
+        for reason in reasons:
+            lines.append(("later", reason, "normal"))
+        next_step = ("resume the session to use the whole change" if state == "ended"
+                     else "run /reload-plugins for the agents; the rest applies at the next resume")
+        lines.append(("next", next_step, "normal"))
     elif mode == "RELAUNCH":
         lines.append(("mode", "RELAUNCH — exit the session; resume applies it", "warn"))
         for reason in reasons:

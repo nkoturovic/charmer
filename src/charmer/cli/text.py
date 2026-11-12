@@ -107,7 +107,7 @@ CARD_CM_TITLE = "In a charmer session"
 CARD_CM_GUIDANCE = (
     "  /cm show — this session's lineup; /cm profiles and /cm profile <name> switch profiles.",
     "  /cm set <agent>=<model>[:<effort>] and /cm unset <agent> bind or unbind one agent.",
-    "  /cm direct, /cm pin, /cm follow, /cm fallback <provider>, /cm review, /cm quota.",
+    "  /cm direct, /cm pin, /cm follow, /cm fallback <provider>, /cm review, /cm quota, /cm fork.",
     "  If output says next: type /reload-plugins, type it yourself, then start fresh agents.",
     "  Running agents keep their model; do not SendMessage-continue an old agent to use the change.",
     "  If it says relaunch needed or pending ... nothing in the running session changed:",
@@ -747,25 +747,26 @@ SETTINGS_TOKEN_BODY = (
 # store access.
 
 PROPAGATION_KEYBAR = (
-    ("A", "apply to running"),
+    ("Enter", "apply to running"),
     ("L", "later (next resume)"),
     ("?", "help"),
-    ("Esc", "keep sessions as they are"),
+    ("Esc", "later"),
 )
 PROPAGATION_KEYBAR_LATER = (
     ("L", "later (next resume)"),
     ("?", "help"),
-    ("Esc", "keep sessions as they are"),
+    ("Esc", "later"),
 )
 PROPAGATION_REPORT_KEYBAR = (("?", "help"), ("Esc", "back"))
 PROPAGATION_HELP = (
-    "The saved profile is followed by the sessions listed. A applies it now to every "
-    "running follower: each change is applied live (then run /reload-plugins in that "
-    "session) or, when it needs a relaunch, recorded for the session's next resume. "
-    "L lists what happens without applying anything live. Esc keeps the sessions as "
-    "they are.\n\n"
-    "Ended followers take the profile at their next resume in every case. A session "
-    "whose state is unknown (◐) is offered like a running one."
+    "The profile is already saved. Applying now reaches eligible running followers: "
+    "agents may change live (run /reload-plugins there), while session-level changes "
+    "wait for the next resume. A pending follow of this same profile can take later "
+    "agent edits; forced relaunches and other pending choices keep their requirement. "
+    "Leaving it for later keeps running lineups and tells those sessions at their next prompt.\n\n"
+    "Stopped followers take the profile at their next resume unless another pending "
+    "choice takes precedence. Pinned sessions keep their own lineup; the report gives "
+    "each session its way back. Unknown liveness is treated as running."
 )
 PROPAGATION_REPORT_HELP = (
     "What the save did to each following session, as the propagation reported it. "

@@ -203,15 +203,17 @@ class ScopeCompatibilityTests(unittest.TestCase):
                 self.assertIsNotNone(result.plan, result.reason)
                 self.assertTrue(result.launch_files_kept)
                 self.assertEqual(result.diagnostics_kept, scenario == "unknown-family")
-                # Only the fork deny moves: everything else is the baseline's.
+                # Released settings and skill policies are lazy; all other bytes stay proven.
                 drift = scope.live_drift(self.live, result.plan)
-                self.assertEqual(drift, [f"{scope.SETTINGS_RELPATH} content differs"])
+                self.assertEqual(drift, [f"{scope.SETTINGS_RELPATH} content differs",
+                                         f"{scope.SKILL_RELPATH} content differs"])
                 self.assertTrue(scope.fork_policy_drift(self.live, result.plan, drift))
                 self.assertIn(compiler.FORK_AGENT_DENY, result.plan.settings["permissions"]["deny"])
                 self.assertNotIn(compiler.FORK_AGENT_DENY, self.old_plan.settings["permissions"]["deny"])
                 self.assertEqual(without_fork_deny(result.plan.settings), self.old_plan.settings)
-                self.assertEqual(scope.plan_hash(dataclasses.replace(result.plan, settings=self.old_plan.settings)),
-                                 scope.plan_hash(self.old_plan))
+                unchanged = dataclasses.replace(result.plan, settings=self.old_plan.settings,
+                    other_files={**result.plan.other_files, scope.SKILL_RELPATH: self.old_plan.other_files[scope.SKILL_RELPATH]})
+                self.assertEqual(scope.plan_hash(unchanged), scope.plan_hash(self.old_plan))
                 self.assertEqual(self.tree(), before)
                 self.assertEqual(self.record, record)
                 # Actual old class reporting, not fixtures emitted by the new compiler.
@@ -247,6 +249,32 @@ class ScopeCompatibilityTests(unittest.TestCase):
         with mock.patch.object(compiler, "git_work_tree", return_value=True):
             problems, _attention, _info = doctor._check_scope_integrity(reader, self.record)
         self.assertTrue(any("scope differs" in line for line in problems))
+
+    def test_combined_policy_drift_still_blocks_unknown_edits(self):
+        for kind in ("skill", "other-file", "settings", "deny"):
+            with self.subTest(kind=kind):
+                self.load()
+                if kind == "skill":
+                    state.atomic_write(self.live / scope.SKILL_RELPATH, b"unknown skill instructions\n")
+                elif kind == "other-file":
+                    path = self.live / next(iter(self.old_plan.agent_files))
+                    state.atomic_write(path, path.read_bytes() + b"\nunknown agent edit\n")
+                else:
+                    path = self.live / scope.SETTINGS_RELPATH
+                    document = strict_json.loads(path.read_bytes())
+                    if kind == "settings":
+                        document["workflowSizeGuideline"] = "large"
+                    else:
+                        document["permissions"]["deny"].append("Bash(rm:*)")
+                    state.atomic_write(path, strict_json.canonical_file_bytes(document))
+                parts = transition.RuntimeParts(
+                    docs=self.docs, prompt_bodies=self.prompts, hook_command=HOOK,
+                    token_helper_command=HELPER, environ={}, managed_root=self.root / "managed")
+                reader = SimpleNamespace(session_store=SimpleNamespace(root=self.root), converge_parts=lambda: parts,
+                    catalog=SimpleNamespace(bundle_sha256=self.record["catalog_hash"]), environ={})
+                with mock.patch.object(compiler, "git_work_tree", return_value=True):
+                    problems, _attention, _info = doctor._check_scope_integrity(reader, self.record)
+                self.assertTrue(any("scope differs" in line for line in problems), problems)
 
     def test_doctor_composes_the_fork_deny_with_a_default_mode_difference(self):
         """A baseline scope without the fork deny whose permission default
@@ -329,11 +357,13 @@ class ScopeCompatibilityTests(unittest.TestCase):
                 worktree_available=lambda _cwd: True,
             ),
         )
-        # Repair writes the fork deny the baseline predates, and only that.
+        # Repair updates the released settings policy and the admitted older skill.
         self.assertTrue(any("recompiled from the record and the installed catalog" in line for line in report),
                         report)
         after = self.tree()
-        self.assertEqual({name for name in after if after[name] != before.get(name)}, {scope.SETTINGS_RELPATH})
+        self.assertEqual({name for name in after if after[name] != before.get(name)},
+                         {scope.SETTINGS_RELPATH, scope.SKILL_RELPATH})
+        self.assertEqual(after[scope.SKILL_RELPATH], scope.SKILL_MD_BYTES)
         repaired = strict_json.loads(after[scope.SETTINGS_RELPATH])
         self.assertIn(compiler.FORK_AGENT_DENY, repaired["permissions"]["deny"])
         self.assertEqual(repaired[scope.SUBAGENT_STATUS_LINE_KEY],

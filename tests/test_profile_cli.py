@@ -190,7 +190,7 @@ class WriteCommandTests(ProfileCliCase):
         code, out, _ = self.cli("profile", "edit", "balanced", text="y\n", interactive=True)
         self.assertEqual(code, 0, out)
         self.assertIn("1 session(s) follow balanced (1 running)", out)
-        self.assertIn("apply to 1 running session(s) now? [y/N] ", out)
+        self.assertIn("apply to 1 running session(s) now? [Y/n] ", out)
         self.assertIn("applied live (lineup gen 2)", out)
         self.assertEqual(self.store.load(follower["managed_id"])["applied"]["agents"]
                          ["cm-implementer"]["key"], "opus55")

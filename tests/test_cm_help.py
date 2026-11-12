@@ -11,7 +11,8 @@ from __future__ import annotations
 import copy
 import unittest
 
-from charmer import cli, lineup, profile
+from charmer import cli, lineup, profile, scope
+from charmer.cli.commands.lineup import lineup_help
 
 from test_lineup import FIXED, LineupCase
 
@@ -20,6 +21,12 @@ HELP_BLOCK = "\n".join((lineup.HELP_LINE, *lineup.MODEL_HELP_LINES)) + "\n"
 
 
 class ModelHelpLinesTextTests(unittest.TestCase):
+    def test_fork_is_print_only_in_help_and_skill_grammar(self) -> None:
+        self.assertIn("/cm fork", lineup.HELP_LINE)
+        self.assertIn("/cm fork", scope.SKILL_MD_BYTES.decode())
+        self.assertIn("print the command that forks this session into a new one", lineup_help())
+        self.assertFalse(lineup.parse_request(["fork"]).writes)
+
     def test_two_lines_the_s_rule_then_the_lead_set_rule(self) -> None:
         first, second = lineup.MODEL_HELP_LINES
         self.assertTrue(first.startswith("/model: press s to switch for this session only"))
@@ -54,6 +61,7 @@ class ModelHelpOnEveryRecordKindTests(LineupCase):
         code, out, err = self.request("")
         self.assertEqual((code, err), (0, ""))
         self.assertTrue(out.endswith(HELP_BLOCK), out)
+        self.assertIn("/cm fork", out)
 
     def test_show_on_an_evaluation_failure_ends_with_the_help_block(self) -> None:
         record = self.store.load(self.mid)
@@ -64,6 +72,7 @@ class ModelHelpOnEveryRecordKindTests(LineupCase):
         self.assertEqual(code, 0)
         self.assertIn("needs a lead choice:", out)
         self.assertTrue(out.endswith(HELP_BLOCK), out)
+        self.assertIn("/cm fork", out)
 
 
 class ModelHelpOnA2xRecordTests(LineupCase):
@@ -83,6 +92,7 @@ class ModelHelpOnA2xRecordTests(LineupCase):
         self.assertIn(lineup.SHOW_2X_LINE.format(mid=FIXED) + "\n" + lineup.PROFILES_HEAD + "\n", out)
         self.assertIn(lineup.PROFILES_SWITCH + "\n" + HELP_BLOCK, out)
         self.assertTrue(out.endswith(HELP_BLOCK), out)
+        self.assertIn("/cm fork", out)
 
 
 if __name__ == "__main__":

@@ -312,7 +312,7 @@ class NewTests(ProfilesCase):
         seeds = [name for name in readiness_order(self.runtime)]
         keys = [ "n", ENTER, *([DOWN] * seeds.index(seed)), ENTER,  # the shipped profile
                 *self.name_keys("newone"), ENTER,  # name, then the fallback question: No (default)
-                CTRL_S, ESC, ESC]
+                CTRL_S, ESC, ESC, ESC]  # acknowledge the count-bearing save result, then leave both screens
         screen = self.screen()
         _result, win = self.run_screen(screen, keys)
         saved = self.runtime.profiles.load("newone")
@@ -339,7 +339,7 @@ class NewTests(ProfilesCase):
 
     def test_from_the_card_profile_and_its_absence(self) -> None:
         self.yours("cardone")
-        keys = ["n", DOWN, ENTER, *self.name_keys("fromcard"), CTRL_S, ESC, ESC]
+        keys = ["n", DOWN, ENTER, *self.name_keys("fromcard"), CTRL_S, ESC, ESC, ESC]
         self.run_screen(self.screen(card_profile="cardone"), keys)
         self.assertEqual(self.runtime.profiles.load("fromcard")["lead"], self.runtime.profiles.load("cardone")["lead"])
         _result, win = self.run_screen(self.screen(card_profile=None), ["n", ESC, ESC])
@@ -712,7 +712,7 @@ class EditTests(ProfilesCase):
         with mock.patch.object(tui, "suspended_curses", contextlib.nullcontext):
             _result, win = self.run_screen(self.screen(selected="broken"), ["e", ESC])
         self.assertEqual(self.runtime.profiles.load("broken")["lead"], document["lead"])
-        self.assertIn("Saved profile 'broken'.", win.frames[-1])
+        self.assertIn("saved broken · no session follows it · 0 pinned", win.frames[-1])
 
     def test_raw_edit_keeps_an_invalid_edit_and_shows_why(self) -> None:
         path = self.broken()

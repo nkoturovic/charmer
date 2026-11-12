@@ -1478,6 +1478,54 @@ def evaluate(
     return Evaluation((), _build(doc, lcat, lead, agent_slots, role_specs, ad_hoc, policy))
 
 
+def assign(document: Mapping[str, Any], assignments: Sequence[str], cat: "LineupCatalog | catalog.Catalog",
+           *, bindings: Mapping[str, Mapping[str, Any]] | None = None,
+           effective: "settings.Effective | None" = None) -> tuple[dict[str, Any], ResolvedLineup]:
+    """Apply explicit slot assignments to a copy, then run the editor's whole-document evaluation."""
+
+    lcat = LineupCatalog.from_catalog(cat)
+    candidate = copy.deepcopy(dict(document))
+    seen: set[str] = set()
+    errors: list[str] = []
+    if not assignments:
+        errors.append("profile set needs at least one assignment: lead=MODEL[:EFFORT] or ROLE=MODEL[:EFFORT]")
+    for assignment in assignments:
+        match = re.fullmatch(r"([a-z][a-z0-9-]*)=([a-z0-9][a-z0-9@._-]{0,63})(?::([a-z]+))?", assignment)
+        if match is None:
+            errors.append(f"assignment {assignment!r}: use lead=MODEL[:EFFORT] or ROLE=MODEL[:EFFORT]")
+            continue
+        slot, key, effort = match.groups()
+        if slot == "lead":
+            slot = LEAD_ROLE
+        elif slot not in AGENT_ROLE_IDS:
+            errors.append(f"agents.{slot}: role {slot!r} is not in the catalog roles")
+            continue
+        if slot in seen:
+            errors.append(f"{slot}: assigned more than once")
+            continue
+        seen.add(slot)
+        if effort is None:
+            entry = lcat.lines.get(key)
+            if entry is None:
+                try:
+                    entry = lcat.lines.get(lcat.resolve_key(key).key)
+                except catalog.CatalogError:
+                    pass
+            effort = entry.get("default_effort", "high") if entry else "high"
+        binding = {"model": key, "effort": effort}
+        if slot == LEAD_ROLE:
+            candidate["lead"] = binding
+        else:
+            candidate.setdefault("agents", {})[slot] = binding
+    if errors:
+        raise ProfileValidationError(errors)
+    evaluation = evaluate(candidate, lcat, bindings=bindings, effective=effective, ad_hoc=False)
+    if evaluation.errors:
+        raise ProfileValidationError(evaluation.errors)
+    assert evaluation.lineup is not None
+    return candidate, evaluation.lineup
+
+
 def _document_percent(doc: Mapping[str, Any], effective: "settings.Effective | None") -> int:
     """The compaction percent of a parsed document: its override, else
     Settings (an invalid override reads as Settings; evaluation reports it)."""

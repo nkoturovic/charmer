@@ -4,8 +4,10 @@ A compiled lineup-enabled (v2) scope runs every hook through
 ``<state>/bin/charmer-hook-3 session-event <event> --managed-id <id>
 --launch-epoch <n> --hook-protocol 3``. ``cli.main`` hands the four
 scope-only events (``prompt``, ``premodel``, ``postmodel``, ``subagent``) to
-:func:`dispatch` **before** it constructs ``Runtime``: no catalog load, no shim
-write, no store directory, no record lock. They read only scope files
+:func:`dispatch` **before** it constructs ``Runtime``: no catalog load or shim
+write. Prompt acknowledgement takes the record's lifecycle lock non-blocking
+and compares the exact marker bytes; contention leaves the message for retry.
+They read only scope files
 (``lineup.gen``, ``lineup.md``, ``lead-set.json``, agent frontmatter), the
 notice markers under ``<state>/notice/`` and, for ``postmodel``, the ``model``
 key of the user's Claude settings (never written). ``postmodel`` makes one
@@ -252,34 +254,205 @@ def seen_path(state_root: Path | str, runtime_id: str) -> Path:
     return Path(state_root) / NOTICE_DIR / f"{runtime_id}{SEEN_SUFFIX}"
 
 
-def read_seen(state_root: Path | str, runtime_id: str) -> str | None:
-    """The generation line this runtime session last saw, or None."""
+_MARKER_READ_MAX = 700
+
+
+@dataclass(frozen=True)
+class NoticeMarker:
+    seen: str | None = None
+    start: str | None = None
+    message: str = ""
+
+    def encode(self) -> bytes:
+        first = self.seen or "-"
+        if self.message:
+            first = "!message " + first
+        lines = [first]
+        if self.start is not None or self.message:
+            lines.append("start " + self.start if self.start else "")
+        if self.message:
+            lines.append(self.message)
+        return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def read_marker(state_root: Path | str, runtime_id: str) -> tuple[NoticeMarker, bytes | None]:
+    """Bounded marker snapshot; the exact bytes are the acknowledgement's CAS input."""
 
     try:
-        raw = _read_bounded_private(seen_path(state_root, runtime_id), _GEN_READ_MAX)
-    except (FileNotFoundError, HookInputError):
+        raw = _read_bounded_private(seen_path(state_root, runtime_id), _MARKER_READ_MAX)
+    except FileNotFoundError:
+        return NoticeMarker(), None
+    try:
+        lines = raw.decode("utf-8").splitlines()
+        first = lines.pop(0)
+        pending = first.startswith("!message ")
+        seen = first.removeprefix("!message ") if pending else first
+        if seen != "-" and not GEN_LINE.fullmatch(seen):
+            raise ValueError("invalid seen generation")
+        start = None
+        if lines and lines[0].startswith("start "):
+            start = lines.pop(0).removeprefix("start ")
+            if not GEN_LINE.fullmatch(start):
+                raise ValueError("invalid start generation")
+        elif lines and not lines[0]:
+            lines.pop(0)
+        message = "\n".join(lines) if pending else ""
+        if (not pending and lines) or (pending and not message) or len(message.encode()) > _MESSAGE_MAX:
+            raise ValueError("invalid marker body")
+        if any(not char.isprintable() and char != "\n" for char in message):
+            raise ValueError("non-printable marker message")
+        return NoticeMarker(None if seen == "-" else seen, start, message), raw
+    except (UnicodeDecodeError, ValueError, IndexError):
+        return NoticeMarker(), raw  # damaged marker: ordinary notice, never guessed provenance
+
+
+def _write_marker(state_root: Path | str, runtime_id: str, marker: NoticeMarker) -> bytes:
+    path = seen_path(state_root, runtime_id)
+    state.ensure_private_dir(path.parent)
+    raw = marker.encode()
+    state.atomic_write(path, raw)
+    return raw
+
+
+def read_seen(state_root: Path | str, runtime_id: str) -> str | None:
+    """The seen generation, unless a message still needs delivery."""
+
+    try:
+        marker, _raw = read_marker(state_root, runtime_id)
+    except HookInputError:
         return None
-    return _gen_from_bytes(raw)
+    return None if marker.message else marker.seen
 
 
 def write_seen(state_root: Path | str, runtime_id: str, gen_line: str) -> None:
-    """Record that ``runtime_id`` saw ``gen_line`` (0600 in a 0700 ``notice/``)."""
+    """Ordinary seen-write, under the caller's lifecycle lock; preserve provenance and queued text."""
 
     line = gen_line.rstrip("\n")
     if not GEN_LINE.fullmatch(line):
         raise HookInputError(f"not a lineup generation line: {line!r}")
-    path = seen_path(state_root, runtime_id)
-    state.ensure_private_dir(path.parent)
-    state.atomic_write(path, (line + "\n").encode("ascii"))
+    marker, _raw = read_marker(state_root, runtime_id)
+    _write_marker(state_root, runtime_id, NoticeMarker(line, marker.start, marker.message))
+
+
+def _clip_message(text: str, budget: int) -> str:
+    raw = text.encode("utf-8")
+    return text if len(raw) <= budget else raw[:max(0, budget - 3)].decode("utf-8", "ignore") + "…"
+
+
+def _message_parts(text: str) -> tuple[list[str], int]:
+    lines = text.splitlines()
+    dropped = 0
+    if lines and re.fullmatch(r"\+[0-9]{1,9} more", lines[-1]):
+        dropped = int(lines.pop().split()[0][1:])
+    return lines, dropped
+
+
+def _merge_messages(message: str, previous: str, *, queued: bool = False) -> str:
+    lines, dropped = _message_parts(previous)
+    if queued:
+        incoming, already_dropped = _message_parts(message)
+        lines = incoming + lines
+        dropped += already_dropped
+    else:
+        lines.insert(0, _clip_message("".join(ch if ch.isprintable() else " " for ch in message), _MESSAGE_MAX))
+    while True:
+        suffix = [f"+{min(dropped, 999999999)} more"] if dropped else []
+        joined = "\n".join([*lines, *suffix])
+        if len(joined.encode("utf-8")) <= _MESSAGE_MAX:
+            return joined
+        if len(lines) > 1:
+            lines.pop()
+            dropped += 1
+        else:
+            budget = _MESSAGE_MAX - len(("\n" + suffix[0]).encode()) if suffix else _MESSAGE_MAX
+            lines[0] = _clip_message(lines[0], budget)
+
+
+def post_message(state_root: Path | str, runtime_id: str, message: str) -> None:
+    """Post under the writer's record lifecycle lock; retain start and any undelivered messages."""
+
+    marker, _raw = read_marker(state_root, runtime_id)
+    _write_marker(state_root, runtime_id,
+                  NoticeMarker(marker.seen, marker.start, _merge_messages(message, marker.message)))
+
+
+def carry_runtime_notice(state_root: Path | str, previous_id: str, runtime_id: str) -> None:
+    """Carry queued text under the same lifecycle lock that accepts the new authority."""
+
+    previous, _raw = read_marker(state_root, previous_id)
+    marker, _raw = read_marker(state_root, runtime_id)
+    if previous.message:
+        _write_marker(state_root, runtime_id, NoticeMarker(
+            marker.seen, marker.start or previous.start,
+            _merge_messages(previous.message, marker.message, queued=True)))
+
+
+def _marker_lock(state_root: Path | str, managed_id: str) -> state.FileLock:
+    _check_uuid(managed_id, "managed id")
+    locks = state.ensure_private_dir(Path(state_root) / "locks")
+    return state.FileLock(locks / f"{managed_id}.lifecycle")
+
+
+def acknowledge_seen(state_root: Path | str, managed_id: str, runtime_id: str, gen_line: str,
+                     expected: bytes | None, *, keep_message: bool = False,
+                     repair_unreadable: bool = False) -> bool:
+    """Compare and acknowledge under the writer's lock; contention means redelivery, never waiting."""
+
+    lock = _marker_lock(state_root, managed_id)
+    if not lock.acquire(blocking=False):
+        return False
+    try:
+        try:
+            marker, raw = read_marker(state_root, runtime_id)
+        except (HookInputError, OSError):
+            if not repair_unreadable:
+                raise
+            marker, raw = NoticeMarker(), None
+        if raw != expected:
+            return False
+        _write_marker(state_root, runtime_id,
+                      NoticeMarker(gen_line, marker.start, marker.message if keep_message else ""))
+        return True
+    finally:
+        lock.release()
+
+
+def start_marker(state_root: Path | str, managed_id: str, runtime_id: str, *,
+                 new_process: bool, in_process: bool = False,
+                 launch_epoch: int | None = None) -> tuple[NoticeMarker, bytes | None, bool]:
+    """Reset seen; a new process replaces provenance and drops obsolete queued instructions."""
+
+    lock = _marker_lock(state_root, managed_id)
+    if not lock.acquire(blocking=False):
+        marker, raw = read_marker(state_root, runtime_id)
+        return marker, raw, False
+    try:
+        marker, raw = read_marker(state_root, runtime_id)
+        if in_process and not new_process and raw is None:
+            # An in-process clear/compact can acquire a new runtime id.
+            # Carry provenance only. Queued text moves under the later
+            # reconcile lock, so a message posted between locks is not stranded.
+            try:
+                record = sessions.SessionStore(state_root, sessions.default_schema()).load(managed_id)
+                previous = record.get("runtime_session_id")
+                if (previous and previous != runtime_id
+                        and record.get("launch_epoch", 0) == (launch_epoch or 0)):
+                    previous_marker, _previous_raw = read_marker(state_root, previous)
+                    marker = NoticeMarker(start=previous_marker.start)
+            except (sessions.SessionError, OSError):
+                pass
+        start = read_gen(scope_path(state_root, managed_id)) if new_process else marker.start
+        marker = NoticeMarker(None, start, "" if new_process else marker.message)
+        return marker, _write_marker(state_root, runtime_id, marker), True
+    finally:
+        lock.release()
 
 
 def clear_seen(state_root: Path | str, runtime_id: str) -> bool:
-    """Drop a runtime session's marker so its next prompt re-notifies.
+    """Explicitly remove a runtime session's marker (cleanup, not a SessionStart reset).
 
-    The current SessionStart clears the marker before anything
-    else, so a start hook that fails, is killed at its timeout or never
-    writes the notice still leaves the next ``UserPromptSubmit`` a miss.
-    Never creates ``notice/``; refuses (``StateError``) an unsafe marker.
+    SessionStart uses :func:`start_marker`; messages and provenance survive
+    only in-process starts. Never creates ``notice/``; refuses an unsafe marker.
     """
 
     path = seen_path(state_root, runtime_id)
@@ -374,12 +547,11 @@ _PREFACES = {
     "clear": "The conversation was cleared. The lineup below is current.",
     "other": "The lineup below is current; it supersedes every earlier lineup notice.",
 }
-# No hook observes /reload-plugins, so a notice
-# delivered inside a running process calls the generation *staged* — once
-# after the preface and once more after the lineup. A startup or resume is a
-# fresh process that loaded the agent files at start, so it says nothing; so
-# is a fork the launcher started as a session of its own.
-_STAGED = "Lineup gen {generation} staged — active after /reload-plugins in this session."
+# No hook observes /reload-plugins. Only a process's start generation tells
+# us whether its files could have changed since it loaded them; reload advice
+# after such a change is conditional, never a claim that a reload happened.
+_STAGED = ("Lineup gen {generation} was applied while this session was running: if /reload-plugins "
+           "has not been run since, run it before starting agents.")
 _PROCESS_START_KEYS = frozenset({"startup", "resume", "resume-no-lead", "fork-own"})
 _DERIVED_KEYS = ("prompt", "resume-no-lead", "other", "fork-own")
 
@@ -408,13 +580,15 @@ def notice_text(
     source: str | None,
     lead: Mapping[str, Any] | None,
     own_fork: bool = False,
+    start_gen: str | None = None,
 ) -> str:
     """The lineup notice; pure.
 
     ``lead`` is the recorded lead: the SessionStart hook passes None and
     :func:`read_notice` falls back to ``lead-set.json["lead"]``; the launcher
     passes the v4 record's ``applied.lead``. ``own_fork`` as in
-    :func:`notice_key`.
+    :func:`notice_key`. ``start_gen`` is the marker's process-start generation;
+    None means unknown, including a marker rewritten by an older reader.
     """
 
     generation = gen_line.split(" ", 1)[0].strip()
@@ -430,13 +604,10 @@ def notice_text(
     else:
         preface = _PREFACES[key]
     parts = [_NOTICE_HEAD.format(generation=generation), preface]
-    staged = None if key in _PROCESS_START_KEYS else _STAGED.format(generation=generation)
+    staged = None if key in _PROCESS_START_KEYS or start_gen == gen_line else _STAGED.format(generation=generation)
     if staged is not None:
         parts.append(staged)
-    text = "\n".join(parts) + "\n\n" + lineup_md.rstrip("\n")
-    if staged is not None:
-        text += "\n\n" + staged
-    return text
+    return "\n".join(parts) + "\n\n" + lineup_md.rstrip("\n")
 
 
 def notice_response(hook_event_name: str, text: str, system_message: str | None = None) -> str:
@@ -461,6 +632,7 @@ def read_notice(
     source: str | None,
     lead: Mapping[str, Any] | None = None,
     own_fork: bool = False,
+    start_gen: str | None = None,
 ) -> tuple[str, str | None]:
     """``(notice text, gen line or None)`` from the scope files only (``own_fork``
     as in :func:`notice_key`).
@@ -496,7 +668,7 @@ def read_notice(
             lead = None
     text = notice_text(
         md.decode("utf-8", errors="replace"), gen, event=event, source=source, lead=lead,
-        own_fork=own_fork,
+        own_fork=own_fork, start_gen=start_gen,
     )
     return text, consistent
 
@@ -762,24 +934,37 @@ def _prompt(hook: _Hook) -> _Result:
     gen = read_gen(hook.scope_dir)
     if gen is None:
         raise HookInputError("scope has no valid lineup.gen (not a lineup-enabled scope?)")
-    if read_seen(hook.state_root, runtime_id) == gen:
+    unreadable = False
+    try:
+        marker, raw = read_marker(hook.state_root, runtime_id)
+    except (HookInputError, OSError):
+        marker, raw, unreadable = NoticeMarker(), None, True
+    if marker.seen == gen and not marker.message:
         return None, None
-    text, gen_line = read_notice(
-        hook.state_root, hook.managed_id, event="UserPromptSubmit", source=None
-    )
+    text = None
+    gen_line = gen
+    if marker.seen != gen:
+        text, gen_line = read_notice(
+            hook.state_root, hook.managed_id, event="UserPromptSubmit", source=None,
+            start_gen=marker.start,
+        )
+    messages = [marker.message] if marker.message else []
     mismatch = client_check.check((runtime_id, hook.managed_id), hook.environ)
     if mismatch is not None:
-        # Off the pin: warn on every prompt (no marker, so the shim's fast
-        # path keeps handing the prompt to this check).
-        warning = client_check.message(mismatch, hook.managed_id, hook.environ)
-        return notice_response("UserPromptSubmit", text, system_message=warning), None
-    after = None
-    if gen_line is not None:
-        def after() -> None:
-            write_seen(hook.state_root, runtime_id, gen_line)
+        messages.append(client_check.message(mismatch, hook.managed_id, hook.environ))
+    system_message = "\n".join(messages) or None
+    if text is not None:
+        output = notice_response("UserPromptSubmit", text, system_message=system_message)
     else:
+        output = strict_json.canonical_file_bytes({"systemMessage": system_message}).decode("utf-8")
+    after = None
+    if gen_line is not None and mismatch is None:
+        def after() -> None:
+            acknowledge_seen(hook.state_root, hook.managed_id, runtime_id, gen_line, raw,
+                             repair_unreadable=unreadable)
+    elif gen_line is None:
         hook.note("lineup.md and lineup.gen disagree; notice sent, marker not written")
-    return notice_response("UserPromptSubmit", text), after
+    return output, after
 
 
 def _premodel(hook: _Hook) -> _Result:
@@ -801,8 +986,12 @@ def _premodel(hook: _Hook) -> _Result:
 
 
 PIN_WARNING = (
-    "charmer: session {m8} now keeps this lead and no longer follows its profile; "
-    "/cm follow re-applies the profile (its lead applies at the next resume)"
+    "charmer: this session now keeps lead {label} and no longer follows profile {p}; "
+    "later edits of the profile will not reach it. /cm follow returns to the profile."
+)
+PENDING_SWITCH_WARNING = (
+    "charmer: lead switched to {label} for this run. The change recorded for the next resume "
+    "({summary}) still applies then."
 )
 _RECORDS_DIR = "sessions"
 
@@ -876,13 +1065,23 @@ def _postmodel(hook: _Hook) -> _Result:
     # Only an in-set target is recorded, after
     # the warnings and before stdout is written.
     if target_row is not None and isinstance(target_row.get("key"), str):
-        if _record_lead_switch(hook, target_row) == "pinned":
-            warnings.append(PIN_WARNING.format(m8=hook.managed_id[:8]))
+        outcome = _record_lead_switch(hook, target_row)
+        if outcome in ("pinned", "switched"):
+            record = sessions.SessionStore(hook.state_root, sessions.default_schema()).load(hook.managed_id)
+            label = f"{target_row['display']} · {record['applied']['lead']['effort']}"
+            pending = record.get("pending")
+            if pending:
+                summary = (f"profile {pending['profile']}" if pending.get("kind") == "profile"
+                           else "the recorded session lineup")
+                warnings.append(PENDING_SWITCH_WARNING.format(label=label, summary=summary))
+            elif outcome == "pinned":
+                warnings.append(PIN_WARNING.format(label=label, p=record.get("profile") or "(ad-hoc)"))
     if not warnings:
         return None, None
     return (
         strict_json.canonical_file_bytes(
             {
+                "systemMessage": "\n".join(warnings),
                 "hookSpecificOutput": {
                     "additionalContext": "\n".join(warnings),
                     "hookEventName": "PostModelSwitch",

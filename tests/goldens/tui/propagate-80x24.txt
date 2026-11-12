@@ -20,5 +20,5 @@
 
 
 
-  A apply to running · L later (next resume) · ? help
-  Esc keep sessions as they are
+
+  Enter apply to running · L later (next resume) · ? help · Esc later

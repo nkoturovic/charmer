@@ -91,7 +91,7 @@ class SavedTests(PropagationCase):
         prepared = self.prepare_resume(ended["managed_id"])
         self.assertTrue(any("implementer" in line for line in prepared.diff), prepared.diff)
 
-    def test_relaunch_only_change_is_pending_and_pending_is_never_dropped(self) -> None:
+    def test_relaunch_only_change_is_pending_and_later_agents_apply_live(self) -> None:
         live = self.follower()
         self.edit("mine", lambda d: d["native_agents"].update({"plan": "off"}))
         text = self.saved(["mine"])
@@ -104,14 +104,14 @@ class SavedTests(PropagationCase):
         self.edit("mine", lambda d: d["agents"].update(
             {"cm-implementer": {"model": "opus55", "effort": "xhigh"}}))
         text = self.saved(["mine"])
-        self.assertIn(f"● {self.where(live)}: has a pending relaunch change; not applied", text)
-        self.assertEqual(self.store.load(live["managed_id"])["pending"], pending)
+        self.assertIn(f"● {self.where(live)}: agents applied live (lineup gen 2)", text)
+        self.assertIn("the rest waits for its next resume", text)
+        after = self.store.load(live["managed_id"])
+        self.assertEqual(after["pending"]["reasons"], pending["reasons"])
+        self.assertEqual(after["applied"]["agents"]["cm-implementer"]["key"], "opus55")
         self.mutate(live["managed_id"], last_event_source="end")
         text = self.saved(["mine"])
-        self.assertIn(
-            f"○ {self.where(live)}: has a pending relaunch change; it applies at the next resume",
-            text,
-        )
+        self.assertIn(f"○ {self.where(live)}: applies at the next resume", text)
 
     def test_a_gen_0_follower_waits_for_its_first_3_0_resume(self) -> None:
         self.write_transcript(FIXED)
@@ -179,7 +179,7 @@ class DirectProfileSymmetryTests(PropagationCase):
         self.assertIn(lineup.RELOAD_LINES[0], out)
         self.assertIn("matches", self.converge_report()[-1])
 
-    def test_different_policies_relaunch_both_ways(self) -> None:
+    def test_direct_relaunches_but_a_profile_splits_agents_from_policy(self) -> None:
         record = self.follower()
         self.mid, self.rid = record["managed_id"], record["runtime_session_id"]
         code, out, _ = self.request("direct")
@@ -187,7 +187,8 @@ class DirectProfileSymmetryTests(PropagationCase):
         direct = self.launch_fresh(self.direct_target("opus55"))
         self.mid, self.rid = direct["managed_id"], direct["runtime_session_id"]
         code, out, _ = self.request("profile mine")
-        self.assertIn("relaunch needed: native agents:", out)
+        self.assertIn("waits for the next resume: native agents:", out)
+        self.assertEqual(self.store.load(self.mid)["lineup_generation"], 2)
 
 
 class RemovedTests(PropagationCase):

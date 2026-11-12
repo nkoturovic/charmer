@@ -7395,7 +7395,10 @@ class HookProtocol3SessionEventTests(CLITestCase):
                 context = self._context(output)
                 self.assertTrue(context.startswith(self.GEN_HEAD + "\n"), context[:200])
                 self.assertIn("## Review routing", context)
-                self.assertEqual(self._seen(rid).read_bytes(), self.gen_bytes)
+                expected = self.gen_bytes
+                if source in ("startup", "resume"):
+                    expected += b"start " + self.gen_bytes
+                self.assertEqual(self._seen(rid).read_bytes(), expected)
         # The fast path then stays silent for that runtime id.
         self.assertEqual(
             charmer.hooks.read_seen(self.state_root, rid), self.gen_bytes.decode().strip()
@@ -7446,7 +7449,7 @@ class HookProtocol3SessionEventTests(CLITestCase):
         self.assertEqual(code, 0)
         self.assertTrue(self._context(output).startswith(self.GEN_HEAD))
         self.assertEqual(self._record_bytes(), before)  # stale epoch: a no-op
-        # A reconcile failure: notice + one failure line, exit 0, no marker.
+        # A reconcile failure: notice + one failure line, exit 0, an unseen marker.
         self._seen().unlink()
         with mock.patch('charmer.cli.session_events._reconcile_session_start',
             side_effect=sessions.SessionError("17 pending forks"),
@@ -7461,7 +7464,7 @@ class HookProtocol3SessionEventTests(CLITestCase):
             context,
         )
         self.assertIn("session start not recorded", error)
-        self.assertFalse(self._seen().exists())
+        self.assertEqual(self._seen().read_bytes(), b"-\n")
 
     def test_invalid_json_still_notifies_without_marker(self) -> None:
         self.save_session(mode="durable", scope_generation=1)
@@ -7480,11 +7483,11 @@ class HookProtocol3SessionEventTests(CLITestCase):
             code, _output, _error = self._event(self._payload("compact"))
         self.assertEqual(code, 0)
         # No notice was delivered, so the next prompt must miss the fast path.
-        self.assertFalse(self._seen().exists())
+        self.assertEqual(self._seen().read_bytes(), b"-\n")
 
     def test_runtime_failure_still_delivers_the_notice(self) -> None:
         # Runtime(...) raising (catalog load) on a v3
-        # compact: notice JSON, exit 0, no marker; the next prompt re-notifies.
+        # compact: notice JSON, exit 0, unseen marker; the next prompt re-notifies.
         self.save_session(mode="durable", scope_generation=1)
         output, error = io.StringIO(), io.StringIO()
         with mock.patch.dict(os.environ, self.runtime.environ, clear=True), mock.patch('charmer.cli.runtime.Runtime', side_effect=charmer.catalog.CatalogError("catalog broken")
@@ -7500,7 +7503,7 @@ class HookProtocol3SessionEventTests(CLITestCase):
             context = self._context(output.getvalue())
             self.assertTrue(context.startswith(self.GEN_HEAD))
             self.assertIn("catalog broken", context)
-            self.assertFalse(self._seen().exists())
+            self.assertEqual(self._seen().read_bytes(), b"-\n")
             prompt_out = io.StringIO()
             code = cli.main(
                 ["session-event", "prompt", "--managed-id", FIXED_ID, "--launch-epoch", "1",

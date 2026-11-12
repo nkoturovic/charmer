@@ -110,6 +110,7 @@ _STDOUT_REPORT_COMMANDS = frozenset(
         ("lineup", None),
         ("profile", "list"),
         ("profile", "show"),
+        ("profile", "set"),
         ("profile", "rm"),
         ("profile", "rename"),
         ("profile", "duplicate"),

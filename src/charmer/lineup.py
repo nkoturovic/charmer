@@ -580,6 +580,7 @@ _VERB_PARSERS: dict[str, Callable[[list[str], str], Request | None]] = {
     "fallback": _parse_fallback,
     "review": _parse_review,
     "quota": _parse_bare("quota"),
+    "fork": _parse_bare("fork"),
 }
 if tuple(_VERB_PARSERS) != lineup_files.CM_VERB_NAMES:
     raise RuntimeError("every /cm verb of lineup_files.CM_VERBS needs exactly one parser")
@@ -862,7 +863,10 @@ def _is_live(runtime: Any, record: Mapping[str, Any]) -> bool:
 
 def _truncate_reasons(reasons: Sequence[str]) -> list[str]:
     out = []
-    for reason in list(reasons)[:_PENDING_REASONS_MAX]:
+    kept = list(reasons)[:_PENDING_REASONS_MAX]
+    if REASON_FORCED in reasons and REASON_FORCED not in kept:
+        kept[-1] = REASON_FORCED
+    for reason in kept:
         text = reason if len(reason) <= _PENDING_REASON_MAX else reason[: _PENDING_REASON_MAX - 1] + "…"
         out.append(text)
     return out
@@ -1036,6 +1040,7 @@ class Classification:
     lead_switch: Mapping[str, Any] | None = None  # the lead-set row to /model onto
     effort_only: bool = False  # same lead selector, another effort
     lead_set: Mapping[str, Any] | None = None
+    session_only: bool = False  # every relaunch reason concerns launch-time session policy
 
 
 def _read_scope_launch_files(
@@ -1131,6 +1136,7 @@ def classify(
             f"compaction override {'none' if old_pct is None else old_pct} → "
             f"{'none' if new_pct is None else new_pct}"
         )
+    session_reasons = len(reasons)
     new_agents = {rid: _pair(b) for rid, b in lineup.applied_bindings()["agents"].items()}
     old_agents = {rid: _pair(b) for rid, b in applied["agents"].items()}
     agents_change = new_agents != old_agents
@@ -1162,7 +1168,43 @@ def classify(
     if forced:
         reasons.append(REASON_FORCED)
     kind = "relaunch" if reasons else "live"
-    return Classification(kind, tuple(reasons), lead_switch, effort_only, lead_set)
+    return Classification(kind, tuple(reasons), lead_switch, effort_only, lead_set,
+                          bool(session_reasons) and len(reasons) == session_reasons and not forced)
+
+
+def _agents_only_target(record: Mapping[str, Any], target: Target,
+                        lcat: Any, eff: settings_mod.Effective, bindings: Mapping[str, Any],
+                        live_dir: Path) -> profile.ResolvedLineup | None:
+    """Re-evaluate on the running session policy, then prove the actual partial target is live."""
+
+    document = copy.deepcopy(target.document or {})
+    running = sessions.applied_document(dict(record))
+    for field in ("lead", "native_agents", "workflows", "lead_providers", "settings_overrides"):
+        if field in running:
+            document[field] = copy.deepcopy(running[field])
+        else:
+            document.pop(field, None)
+    evaluation = profile.evaluate(document, lcat, bindings=bindings, effective=eff,
+                                  ad_hoc=target.profile is None)
+    if evaluation.errors:
+        return None
+    candidate = profile.keep_recorded_agent_class(evaluation.lineup, record["applied"]["agents"], lcat)
+    if classify(record, candidate, live_dir, forced=False, lcat=lcat).kind != "live":
+        return None
+    return candidate
+
+
+def split_candidate(record: Mapping[str, Any], target: Target, lineup: profile.ResolvedLineup,
+                    lcat: Any, eff: settings_mod.Effective, bindings: Mapping[str, Any],
+                    live_dir: Path, classification: Classification) -> profile.ResolvedLineup | None:
+    """The same partial-application decision for backend, drift explanations and TUI preview."""
+
+    if (target.kind == "profile" and classification.session_only
+            and _change_rows(lcat, record["applied"]["agents"], lineup.applied_bindings()["agents"])):
+        candidate = _agents_only_target(record, target, lcat, eff, bindings, live_dir)
+        if candidate is not None and all(warning in lineup.warnings for warning in candidate.warnings):
+            return candidate
+    return None
 
 
 # --------------------------------------------------------- phase A (§7.6)
@@ -1184,6 +1226,7 @@ class Decision:
     # What a preview decided on beyond the record identity (the resolved
     # target and its consequences, :func:`_target_fingerprint`).
     fingerprint: str | None = None
+    notification_note: str | None = None
 
 
 def _checkpoint(step: str, detail: str | None = None) -> None:
@@ -1348,6 +1391,97 @@ def _save_record_only(
     return updated, dropped
 
 
+def _post_notice(runtime: Any, record: Mapping[str, Any], message: str) -> str | None:
+    """Best-effort notice under the lifecycle lock; never abort an already committed change."""
+
+    try:
+        if _is_live(runtime, record) and not inside_session(runtime.environ, record["managed_id"]):
+            hooks.post_message(runtime.session_store.root, record["runtime_session_id"], message)
+    except (hooks.HookInputError, state.StateError, OSError) as exc:
+        return (f"note: session {_m8(record['managed_id'])}: prompt notice could not be queued; "
+                f"the saved change is kept ({hooks.visible(exc)})")
+    return None
+
+
+def _notice_result(decision: Decision, note: str | None) -> Decision:
+    if note:
+        decision.notification_note = note
+        decision.text += "\n" + note
+    return decision
+
+
+def _notice_reasons(reasons: Sequence[str]) -> str:
+    if not reasons:
+        return "the recorded session change"
+    first = hooks._clip_message(_one_line(reasons[0]), 100)
+    return first + (f"; +{len(reasons) - 1} more" if len(reasons) > 1 else "")
+
+
+def _notify_decision(runtime: Any, before: Mapping[str, Any], decision: Decision) -> Decision:
+    """Notify only committed, externally requested changes; preview, no-op and exec never post."""
+
+    if decision.kind not in ("live", "pending", "record"):
+        return decision
+    after = runtime.session_store.load(before["managed_id"])
+    fields = ("profile", "follow", "pending", "lead_target", "applied_hash", "lineup_generation")
+    if all(before.get(key) == after.get(key) for key in fields):
+        return decision
+    mid = before["managed_id"]
+    changes = _change_rows(runtime.lineup_catalog(), before["applied"]["agents"], after["applied"]["agents"])
+    if changes:
+        label, _old, new = changes[0]
+        first = hooks._clip_message(f"{label} → {new}", 80)
+        more = f"; +{len(changes) - 1} more" if len(changes) > 1 else ""
+        message = (f"charmer: this session's agents changed (lineup gen {after['lineup_generation']}: "
+                   f"{first}{more}) — type /reload-plugins before new agents start")
+        if after.get("pending"):
+            message += f"; {_notice_reasons(after['pending']['reasons'])} at the next resume (exit, then charmer -r {mid})"
+        if before["follow"] and not after["follow"]:
+            message += ("; now pinned (follow off); /cm follow returns to the profile" if after.get("profile")
+                        else "; now an ad-hoc lineup; /cm profile <name> follows a profile")
+        elif after["follow"] and (not before["follow"] or before["profile"] != after["profile"]):
+            message += f"; now follows profile {after['profile']}"
+    elif decision.kind == "pending":
+        pending = after["pending"]
+        subject = f"profile {pending['profile']}" if pending.get("kind") == "profile" else "the lineup change"
+        message = (f"charmer: {subject} needs a relaunch here ({_notice_reasons(pending['reasons'])}) "
+                   f"— exit, then charmer -r {mid}")
+    elif not after["follow"]:
+        if after.get("profile"):
+            message = (f"charmer: this session is now pinned (follow off); edits of profile {after['profile']} "
+                       "do not reach it — /cm follow follows it again")
+        else:
+            message = "charmer: this session now keeps an ad-hoc lineup — /cm profile <name> follows a profile"
+        if before.get("pending") and not after.get("pending"):
+            message += "; the pending change was dropped"
+        if after.get("lead_target"):
+            message += "; switch the requested lead with /model (press s), or resume it"
+    else:
+        message = f"charmer: this session now follows profile {after['profile']}"
+        if after.get("lead_target"):
+            message += "; switch the requested lead with /model (press s), or resume it"
+        elif before.get("pending"):
+            message += "; the earlier pending change was dropped"
+        else:
+            message += "; its lineup already matches"
+    return _notice_result(decision, _post_notice(runtime, after, message))
+
+
+def _forced_profile_pending(record: Mapping[str, Any], name: str | None) -> bool:
+    pending = record.get("pending") or {}
+    return (pending.get("kind") == "profile" and pending.get("profile") == name
+            and REASON_FORCED in pending.get("reasons", ()))
+
+
+def _no_subagents_refusal(record: Mapping[str, Any], lineup: profile.ResolvedLineup,
+                          profile_name: str | None) -> str | None:
+    if record["applied"].get("no_subagents") and lineup.agents:
+        return (f"session {_m8(record['managed_id'])} was started with --no-subagents: "
+                "delegation stays denied for its whole life, so it cannot take agents — nothing changed. "
+                f"For agents, start a new session: charmer --profile {profile_name or catalog_mod.DEFAULT_SEED}")
+    return None
+
+
 def decide_locked(
     runtime: Any,
     record: dict[str, Any],
@@ -1432,9 +1566,12 @@ def decide_locked(
         if dropped:
             lines.append(_dropped_line(record))
         lines.append(NEXT_RECORDED)
-        return Decision("record", text="\n".join(lines) + "\n", managed_id=mid, generation=generation)
+        return _notify_decision(runtime, record, Decision(
+            "record", text="\n".join(lines) + "\n", managed_id=mid, generation=generation))
 
     target = build_target(record, request, runtime)
+    if target.kind == "profile" and _forced_profile_pending(record, target.profile):
+        forced = True
     eff = runtime.current_effective() if pending_only else _record_eff(record)
     # LIVE decisions keep unchanged grants from the recorded policy. A
     # save-only decision instead uses the current policy and gate an
@@ -1445,12 +1582,16 @@ def decide_locked(
     lineup = _evaluate(
         runtime, target.document or {}, eff, lcat, profile_name=target.profile, bindings=bindings
     )
+    refusal = _no_subagents_refusal(record, lineup, target.profile)
+    if refusal:
+        raise LineupRefusal(refusal)
     # An unchanged (key, effort) agent keeps its recorded context class
     # until resume; only new or changed slots take the class the installed
     # catalog and the session window decide.
     if not pending_only:
         lineup = profile.keep_recorded_agent_class(lineup, applied["agents"], lcat)
-    if request.verb == "follow" and _applied_matches(lineup, applied):
+    if (request.verb == "follow" and not forced and _applied_matches(lineup, applied)
+            and record.get("lead_class") == lineup.lead_class):
         fingerprint = _target_fingerprint(target, lineup, (EFFECT_RECORD,))
         if preview_only or (expected_target is not None and fingerprint != expected_target):
             shown = _preview_decision(record, request, [], effect=EFFECT_RECORD, follow_after=True,
@@ -1464,7 +1605,8 @@ def decide_locked(
         if dropped:
             lines.append(_dropped_line(record))
         lines.append(NEXT_RECORDED)
-        return Decision("record", text="\n".join(lines) + "\n", managed_id=mid, generation=generation)
+        return _notify_decision(runtime, record, Decision(
+            "record", text="\n".join(lines) + "\n", managed_id=mid, generation=generation))
 
     live_dir = scope.scope_dir(store.root, mid)
     classification: Classification | None = None
@@ -1500,6 +1642,13 @@ def decide_locked(
             lead_switch = classification.lead_switch
             effort_only = classification.effort_only
 
+    split = False
+    if classification is not None and not (forced or exec_ok or pending_only):
+        partial = split_candidate(record, target, lineup, lcat, eff, bindings, live_dir, classification)
+        if partial is not None:
+            lineup_live = partial
+            split = True
+
     new_lead = lineup.lead.binding
     lead_label = None
     if (new_lead.key, new_lead.effort) != (applied["lead"]["key"], applied["lead"]["effort"]):
@@ -1509,7 +1658,8 @@ def decide_locked(
         preview = _fallback_preview(lcat, record, request, target, lineup, reasons)
     resume_policy = ({"settings": settings_mod.snapshot(eff), "window_ceiling": profile.window_ceiling(eff)}
                      if pending_only else None)
-    fingerprint = _target_fingerprint(target, lineup, reasons or (EFFECT_LIVE,), resume_policy=resume_policy)
+    effect = EFFECT_SPLIT if split else EFFECT_RELAUNCH if reasons else EFFECT_LIVE
+    fingerprint = _target_fingerprint(target, lineup, (*reasons, effect), resume_policy=resume_policy)
     if preview_only or (expected_target is not None and fingerprint != expected_target):
         if request.verb == "fallback":
             text = "\n".join([*preview, FALLBACK_PREVIEW_ONLY.format(provider=request.provider)])
@@ -1519,13 +1669,13 @@ def decide_locked(
             rows = [f"  {label}: {old} → {new}" for label, old, new in _binding_changes(lcat, applied, lineup)]
             rows += [f"! {finding.message}" for finding in lineup.warnings]
             shown = _preview_decision(record, request, rows or ["  no binding changes"],
-                                      effect=EFFECT_RELAUNCH if reasons else EFFECT_LIVE,
+                                      effect=effect,
                                       follow_after=target.follow, profile_after=target.profile, reasons=reasons)
         return _shown_or_stale(shown, fingerprint, preview_only)
     if pending_only and not reasons:
         raise LineupRefusal("a saved lead choice cannot apply live; use charmer lineup --session "
                             f"{rid} to change its lineup")
-    if reasons:
+    if reasons and not split:
         decision = _relaunch(
             runtime,
             record,
@@ -1550,10 +1700,11 @@ def decide_locked(
             origin=origin,
             now=now,
             verb=request.verb,
+            pending_reasons=reasons if split else (),
         )
     if request.verb == "fallback" and decision.kind != "exec":
         decision.text = _fallback_text(preview, decision, record)
-    return decision
+    return _notify_decision(runtime, record, decision)
 
 
 def _binding_changes(
@@ -1584,6 +1735,7 @@ def _binding_changes(
 EFFECT_RECORD = "Effect: the record only — the applied lineup, the scope and the generation stay as they are"
 EFFECT_LIVE = "Effect: LIVE — the agents change now in the running session"
 EFFECT_RELAUNCH = "Effect: RELAUNCH — recorded as pending; it applies at the next resume"
+EFFECT_SPLIT = "Effect: LIVE for the agents now; the rest is recorded as pending for the next resume"
 PREVIEW_ONLY = "Preview only; nothing changed."
 PREVIEW_STALE = "The session changed since this preview; nothing was applied. The current preview:"
 DISCARD_PENDING = "Keep the current lineup — discard the pending change"
@@ -1610,7 +1762,7 @@ def _preview_decision(
     pending = record.get("pending")
     if pending:
         why = "; ".join(pending.get("reasons") or ()) or "a relaunch change"
-        fate = "replaced by this change" if effect == EFFECT_RELAUNCH else "dropped"
+        fate = "replaced by this change" if effect in (EFFECT_RELAUNCH, EFFECT_SPLIT) else "dropped"
         lines.append(f"  pending change ({why}): {fate}")
     lines.append(effect)
     if reasons:
@@ -1874,6 +2026,17 @@ def _dropped_line(record: Mapping[str, Any]) -> str:
     return f"dropped the pending relaunch change ({reasons})"
 
 
+def _pending_change(target: Target, reasons: Sequence[str], now: str) -> dict[str, Any]:
+    return {
+        "requested_at": now,
+        "kind": "profile" if target.kind == "profile" else "lineup",
+        "profile": target.profile,
+        "follow": bool(target.follow),
+        "document": _pending_document(target),
+        "reasons": _truncate_reasons(reasons),
+    }
+
+
 def _relaunch(
     runtime: Any,
     record: dict[str, Any],
@@ -1905,14 +2068,7 @@ def _relaunch(
             ),
             target=target,
         )
-    pending = {
-        "requested_at": now,
-        "kind": "profile" if target.kind == "profile" else "lineup",
-        "profile": target.profile,
-        "follow": bool(target.follow),
-        "document": _pending_document(target),
-        "reasons": _truncate_reasons(reasons),
-    }
+    pending = _pending_change(target, reasons, now)
     updated = copy.deepcopy(record)
     updated["pending"] = pending
     updated["mutation_token"] = sessions.new_mutation_token()
@@ -1939,8 +2095,9 @@ def _live_apply(
     origin: str,
     now: str,
     verb: str,
+    pending_reasons: Sequence[str] = (),
 ) -> Decision:
-    """§7.6 steps 5-9 (the classification is LIVE)."""
+    """Apply the live agents, optionally recording the remaining session change in the same save."""
 
     store = runtime.session_store
     mid = sessions.managed_id(record)
@@ -2012,8 +2169,11 @@ def _live_apply(
         # switch; set/unset keep an existing one.
         new_record.pop("lead_target", None)
     new_record["scope_lead"] = sessions.lead_ref(applied["lead"])
-    had_pending = "pending" in new_record
-    new_record.pop("pending", None)
+    had_pending = "pending" in new_record and not pending_reasons
+    if pending_reasons:
+        new_record["pending"] = _pending_change(target, pending_reasons, now)
+    else:
+        new_record.pop("pending", None)
 
     # 7. compile the non-launch-time files exactly as converge would:
     # first at the current generation (does anything in the scope move?),
@@ -2023,7 +2183,7 @@ def _live_apply(
     )
     if same is None:
         return _relaunch(
-            runtime, record, Request("follow"), target, (str(why),), exec_ok=False, now=now
+            runtime, record, Request("follow"), target, (*pending_reasons, str(why)), exec_ok=False, now=now
         )
     live_agents = _agent_relpaths(live_dir)
     changes = _change_rows(lcat, old_agents, new_bindings)
@@ -2062,7 +2222,7 @@ def _live_apply(
     )
     if plan is None:
         return _relaunch(
-            runtime, record, Request("follow"), target, (str(why),), exec_ok=False, now=now
+            runtime, record, Request("follow"), target, (*pending_reasons, str(why)), exec_ok=False, now=now
         )
     # 8. file diff against the live scope.
     new_files = sorted(rel for rel in plan.agent_files if rel not in live_agents)
@@ -2141,8 +2301,13 @@ def _live_apply(
         )
     else:
         next_line = NEXT_RECORDED
+    if pending_reasons:
+        extra.append(f"waits for the next resume: {'; '.join(pending_reasons)}")
+        next_line = ("next: type /reload-plugins for the agents now; the rest applies at the next resume: "
+                     f"charmer -r {mid}")
     return Decision(
         "live",
+        reasons=tuple(pending_reasons),
         text=_output_live(
             lcat, record, generation=new_generation, changes=changes, extra=extra,
             next_line=next_line,
@@ -2224,6 +2389,83 @@ def workflow_role(cat: Any, eff: settings_mod.Effective,
         return None
 
 
+def profile_status_lines(runtime: Any, record: Mapping[str, Any]) -> list[str]:
+    """Read-only profile drift, pin and pending explanations shared by session surfaces."""
+
+    if record.get("version") != sessions.RECORD_VERSION:
+        return []
+    name = record.get("profile")
+    mid = record["managed_id"]
+    lines: list[str] = []
+    if record["applied"].get("no_subagents") and record["applied"]["agents"]:
+        lines.append("! delegation is denied in this session (--no-subagents): its agents cannot run")
+    pending = record.get("pending")
+    if pending:
+        if pending.get("kind") == "profile":
+            intent = (f"follow profile {pending['profile']}" if pending.get("follow")
+                      else f"take profile {pending['profile']} and pin this session")
+        else:
+            intent = (f"take the recorded lineup and follow profile {pending['profile']}" if pending.get("follow")
+                      else "pin this session to the recorded lineup")
+        reasons = "; ".join(pending.get("reasons") or ())
+        lines.append(f"pending change: {intent} ({reasons}) — applies at the next resume "
+                     f"(charmer -r {mid}); drop it with /cm pin; replace it with "
+                     + ("/cm follow" if name else "/cm profile <name>"))
+    if not name:
+        return lines
+    if not record["follow"]:
+        try:
+            missing = not runtime.profiles.contains(name)
+        except (profile.ProfileError, OSError):
+            missing = False
+        if missing:
+            lines.append(f"pinned: profile {name} no longer exists — /cm profile <name> follows another profile")
+        else:
+            lines.append(f"pinned: edits of profile {name} do not reach this session — /cm follow follows it again")
+        return lines
+    try:
+        eff = _record_eff(record)
+        lcat = _record_gate(runtime.lineup_catalog(), record, eff)
+        bindings = _bindings_map(runtime)
+        target = build_target(record, Request("follow"), runtime)
+        resolved = _evaluate(runtime, target.document, eff, lcat, profile_name=name, bindings=bindings)
+        resolved = profile.keep_recorded_agent_class(resolved, record["applied"]["agents"], lcat)
+        rows = diff_rows(record["applied"], resolved, lcat, old_lead_class=record.get("lead_class"))
+        if not rows:
+            return lines
+        changes = "; ".join(f"{label} {old} → {new}" for label, old, new in rows)
+        prefix = f"profile {name} changed since this session applied it: {changes}"
+        if _no_subagents_refusal(record, resolved, name):
+            lines.append(prefix + " — /cm follow cannot take agents here (--no-subagents); "
+                         f"for agents, start a new session: charmer --profile {name}")
+            return lines
+        live_dir = scope.scope_dir(runtime.session_store.root, mid)
+        if not record["lineup_generation"]:
+            classification = Classification("relaunch", (REASON_GEN0,))
+        elif not live_dir.is_dir():
+            classification = Classification("relaunch", (REASON_NO_SCOPE,))
+        else:
+            classification = classify(record, resolved, live_dir, forced=_forced_profile_pending(record, name), lcat=lcat)
+        agents_changed = bool(_change_rows(lcat, record["applied"]["agents"], resolved.applied_bindings()["agents"]))
+        if classification.reasons:
+            partial = split_candidate(record, target, resolved, lcat, eff, bindings, live_dir, classification) is not None
+            now = "agents now" if partial else "nothing now"
+            later = "; ".join(classification.reasons) + " at the next resume"
+        else:
+            now = "agents now" if agents_changed else "no agent changes"
+            if classification.lead_switch:
+                later = "lead with /model (press s), or at the next resume"
+            elif classification.effort_only:
+                later = "lead effort at the next resume"
+            else:
+                later = "nothing waits for the next resume"
+        lines.append(prefix + f" — /cm follow applies it ({now}; {later})")
+    except (LineupRefusal, profile.ProfileError, settings_mod.SettingsError) as exc:
+        lines.append(f"profile {name} cannot be compared here: {_one_line(str(exc))} — "
+                     "choose a valid profile with /cm profile <name>, or keep this lineup with /cm pin")
+    return lines
+
+
 def show_text(runtime: Any, record: Mapping[str, Any]) -> str:
     """``lineup show`` (§7.8/§7.9); never raises on a lead unknown to the catalog."""
 
@@ -2241,7 +2483,7 @@ def show_text(runtime: Any, record: Mapping[str, Any]) -> str:
             *MODEL_HELP_LINES,
         ]
         return "\n".join(lines) + "\n"
-    block = profiles_block(runtime, lcat, current=record["profile"])
+    block = [*profile_status_lines(runtime, record), *profiles_block(runtime, lcat, current=record["profile"])]
     if record["profile"] is None:
         header = "profile (ad-hoc direct)"
     else:
@@ -2283,7 +2525,7 @@ def show_text(runtime: Any, record: Mapping[str, Any]) -> str:
             lineup,
             header=header,
             generation=generation,
-            pending=record.get("pending"),
+            pending=None,  # the shared status lines also explain how to drop or replace it
             lead_target=record.get("lead_target"),
             needs_choice=needs_choice,
             drift=drift,
@@ -2299,12 +2541,6 @@ def show_text(runtime: Any, record: Mapping[str, Any]) -> str:
             f"{_lead_label(lcat, lead['key'], lead['effort'])}"
         ]
         lines += [f"! {error}" for error in errors]
-        if record.get("pending"):
-            reasons = "; ".join(record["pending"].get("reasons") or ())
-            lines.append(
-                f"pending relaunch change: {reasons} — applies at the next resume "
-                f"(charmer -r {mid})"
-            )
         if needs_choice:
             lines.append(
                 f"needs a lead choice: {needs_choice} — charmer -r {mid} (interactive) "
@@ -2676,6 +2912,23 @@ def inside_session(environ: Mapping[str, str], mid: str) -> bool:
     return any(environ.get(name) == mid for name in _INSIDE_ENV)
 
 
+def fork_text(record: Mapping[str, Any]) -> str:
+    """Print-only guidance: the fork command itself owns launch checks and writes."""
+
+    mid = sessions.managed_id(dict(record))
+    pending = record.get("pending")
+    label = ((pending.get("profile") or "ad-hoc lineup") if pending
+             else sessions.record_summary(dict(record)).profile_label)
+    return ("Fork this session in another terminal:\n"
+            f"  charmer -r {mid} --fork\n"
+            "The fork is a new managed session with its own record and scope: it starts from this "
+            "conversation as saved when it launches, with the lineup this session would get at its "
+            f"next resume ({label}). This session is not changed and keeps running. "
+            "On the sessions screen (charmer -r): select this session, then N.\n"
+            "Claude Code's own /fork does not copy a charmer session: here it runs a one-off "
+            "subagent on the lead's model (not a lineup agent); use the command above.\n")
+
+
 def apply(
     runtime: Any,
     args: LineupArgs,
@@ -2715,6 +2968,8 @@ def apply(
         return ApplyResult(profiles_text(runtime, record))
     if verb == "review":
         return ApplyResult(review_text(runtime, record, args.request))
+    if verb == "fork":
+        return ApplyResult(fork_text(record))
     if args.preview:
         # A read-only fallback preview — no lock, no write (the apply
         # re-evaluates under the lock).
@@ -2763,6 +3018,37 @@ class Follower:
     last_seen_at: str
     generation: int
     has_pending: bool
+    pending_kind: str | None = None
+    pending_profile: str | None = None
+    pending_follow: bool = False
+    pending_forced: bool = False
+    follow: bool = True
+
+    @property
+    def eligible(self) -> bool:
+        """Pure view data, evaluated by the same rule as the save and its question."""
+        return propagation_eligible(self)
+
+
+def propagation_eligible(session: Follower) -> bool:
+    """One rule for the save question and the locked application re-check."""
+
+    return (session.follow and session.live and session.generation >= 1
+            and (not session.has_pending or (
+                session.pending_kind == "profile" and session.pending_profile == session.profile
+                and session.pending_follow and not session.pending_forced)))
+
+
+def _follower(runtime: Any, record: Mapping[str, Any]) -> Follower:
+    pending = record.get("pending") or {}
+    return Follower(
+        managed_id=record["managed_id"], runtime_id=record["runtime_session_id"],
+        profile=record["profile"], live=_is_live(runtime, record), cwd=record["cwd"],
+        last_seen_at=record["last_seen_at"], generation=record["lineup_generation"],
+        has_pending=bool(pending), pending_kind=pending.get("kind"),
+        pending_profile=pending.get("profile"), pending_follow=bool(pending.get("follow")),
+        pending_forced=REASON_FORCED in pending.get("reasons", ()), follow=record["follow"],
+    )
 
 
 def _records(runtime: Any) -> list[tuple[str, dict[str, Any] | None]]:
@@ -2783,30 +3069,31 @@ def followers(runtime: Any, profiles: Iterable[str]) -> tuple[list[Follower], li
     record's lock). Unreadable records are returned by managed id.
     """
 
+    return _profile_users(runtime, profiles, follow=True)
+
+
+def pinned_users(runtime: Any, profiles: Iterable[str]) -> list[Follower]:
+    """Lock-free preview of sessions which retain their own lineup of these profiles."""
+
+    return _profile_users(runtime, profiles, follow=False)[0]
+
+
+def _profile_users(runtime: Any, profiles: Iterable[str], *, follow: bool) -> tuple[list[Follower], list[str]]:
     names = set(profiles)
     found: list[Follower] = []
     unreadable: list[str] = []
     for mid, record in _records(runtime):
         if record is None:
             unreadable.append(mid)
-            continue
-        if record.get("version") != sessions.RECORD_VERSION:
-            continue
-        if not record["follow"] or record["profile"] not in names:
-            continue
-        found.append(
-            Follower(
-                managed_id=mid,
-                runtime_id=record["runtime_session_id"],
-                profile=record["profile"],
-                live=_is_live(runtime, record),
-                cwd=record["cwd"],
-                last_seen_at=record["last_seen_at"],
-                generation=record["lineup_generation"],
-                has_pending="pending" in record,
-            )
-        )
+        elif (record.get("version") == sessions.RECORD_VERSION
+              and record["follow"] == follow and record["profile"] in names):
+            found.append(_follower(runtime, record))
     return found, unreadable
+
+
+def no_followers_text(names: Iterable[str], pinned: int) -> str:
+    return (f"saved {', '.join(sorted(set(names)))} · no session follows it · "
+            f"{pinned} pinned session(s) keep their own lineup (Sessions → F)")
 
 
 def profiles_for_binding(runtime: Any, name: str) -> list[str]:
@@ -2833,7 +3120,8 @@ def on_saved(
 
     The store operation has released its leaf lock already. Membership is
     decided on the record re-loaded under its lifecycle lock (sc[9]); a
-    pending relaunch change is never dropped (sc[8]); never an exec.
+    pending intent for another target and forced relaunches are kept. A
+    pending follow of the same profile is re-evaluated; never an exec.
     Returns the number of records written.
 
     Propagation is one served-change phase — the caller's
@@ -2884,29 +3172,48 @@ def _on_saved_in_phase(
         def body(record: dict[str, Any]) -> Decision:
             if record.get("version") != sessions.RECORD_VERSION:
                 return Decision("skip")
-            if not record["follow"] or record["profile"] not in names:
+            if record["profile"] not in names:
                 return Decision("skip")
-            live = _is_live(runtime, record)
+            follower = _follower(runtime, record)
+            live = follower.live
             dot = "●" if live else "○"
             where = f"{m8} {_cwd_name(record)}"
             rid = record["runtime_session_id"]
-            if "pending" in record:
-                if live:
-                    return Decision("line", text=f"● {where}: has a pending relaunch change; not applied")
-                return Decision(
-                    "line",
-                    text=f"○ {where}: has a pending relaunch change; it applies at the next resume",
-                )
+
+            def reported(text: str, message: str) -> Decision:
+                return _notice_result(Decision("line", text=text), _post_notice(runtime, record, message))
+
+            if not follower.follow:
+                return Decision("line", text=f"{dot} {where}: pinned (follow off) — not changed; "
+                                "/cm follow there, or Sessions → F, follows the profile again")
+            if follower.has_pending:
+                if not follower.pending_follow:
+                    remedy = "/cm follow there" if live else f"charmer lineup --session {rid} follow"
+                    return reported(f"{dot} {where}: a pending change pins it at its next resume — not applied; "
+                                    f"{remedy} takes the profile instead",
+                                    f"charmer: profile {record['profile']} changed, but a pending /cm change pins "
+                                    "this session at its next resume — /cm follow takes the profile instead")
+                if follower.pending_forced:
+                    return reported(f"{dot} {where}: has a forced relaunch change; not applied — exit it, "
+                                    f"then charmer -r {mid}", f"charmer: profile {record['profile']} changed and "
+                                    "needs a relaunch here (a forced change is still pending) — "
+                                    f"exit, then charmer -r {mid}")
+                if follower.pending_kind != "profile" or follower.pending_profile != record["profile"]:
+                    remedy = "/cm follow there" if live else f"charmer lineup --session {rid} follow"
+                    return reported(f"{dot} {where}: has another pending relaunch change; not applied — "
+                                    f"{remedy} takes this profile instead", f"charmer: profile {record['profile']} "
+                                    "changed; another pending change still applies at the next resume — "
+                                    "/cm follow takes this profile instead")
             generation = record["lineup_generation"]
             if generation == 0 or not scope.scope_dir(store.root, mid).is_dir():
                 return Decision("line", text=f"○ {where}: no lineup-enabled scope yet; applies at the next resume")
             if not live:
                 return Decision("line", text=f"○ {where}: applies at the next resume")
-            if not apply_live and not served:
-                return Decision(
-                    "line",
-                    text=f"● {where}: not applied — apply with: charmer lineup --session {rid} follow",
-                )
+            if not propagation_eligible(follower) or (not apply_live and not served):
+                return reported(f"● {where}: not applied — apply with: charmer lineup --session {rid} follow",
+                                f"charmer: profile {record['profile']} changed; this session keeps its lineup "
+                                "until you type /cm follow (agents now) or resume it "
+                                f"(charmer -r {mid})")
             try:
                 decision = decide_locked(
                     runtime,
@@ -2918,8 +3225,18 @@ def _on_saved_in_phase(
                     now=now,
                 )
             except LineupRefusal as exc:
-                return Decision("line", text=f"● {where}: not applied ({_one_line(str(exc))})")
+                detail = hooks._clip_message(_one_line(str(exc)), 220)
+                return reported(f"● {where}: not applied ({_one_line(str(exc))})",
+                                f"charmer: profile {record['profile']} changed but cannot apply here ({detail}) "
+                                f"— inspect it with charmer lineup --session {rid} show")
+            def written(text: str) -> Decision:
+                return _notice_result(Decision("written", text=text), decision.notification_note)
+
             if decision.kind == "live":
+                if decision.reasons:
+                    return written(f"● {where}: agents applied live (lineup gen "
+                                    f"{decision.generation}); the rest waits for its next resume "
+                                    f"({'; '.join(decision.reasons)}) — run /reload-plugins in that session")
                 line = (
                     f"● {where}: applied live (lineup gen {decision.generation}) — run "
                     "/reload-plugins in that session"
@@ -2930,20 +3247,12 @@ def _on_saved_in_phase(
                         f"; then switch the lead with /model → "
                         f"{decision.lead_switch.get('display') or target.get('key')}"
                     )
-                return Decision("written", text=line)
+                return written(line)
             if decision.kind == "pending":
-                return Decision(
-                    "written",
-                    text=(
-                        f"● {where}: relaunch needed ({'; '.join(decision.reasons)}); recorded as "
-                        f"pending — exit it, then charmer -r {mid}"
-                    ),
-                )
+                return written(f"● {where}: relaunch needed ({'; '.join(decision.reasons)}); recorded as "
+                               f"pending — exit it, then charmer -r {mid}")
             if decision.kind == "record":
-                return Decision(
-                    "written",
-                    text=f"● {where}: already matches (lineup gen {decision.generation})",
-                )
+                return written(f"● {where}: already matches (lineup gen {decision.generation})")
             return Decision("line", text=f"● {where}: already matches (lineup gen {generation})")
 
         try:
@@ -3057,7 +3366,17 @@ def _on_removed_in_phase(
                 return Decision("skip")
             updated["mutation_token"] = sessions.new_mutation_token()
             store.save(updated)
-            return Decision("written", text="\n".join(lines))
+            if record["follow"] and record["profile"] == name:
+                message = (f"charmer: profile {name!r} was {what}; this session keeps its lineup and is now pinned "
+                           f"— /cm profile {renamed_to or '<name>'} follows another profile")
+            elif updated.get("pending"):
+                message = (f"charmer: profile {name!r} was {what}; the pending lineup change pins this session "
+                           "at its next resume — /cm pin drops it")
+            else:
+                message = (f"charmer: the pending change was dropped because profile {name!r} was removed "
+                           "— /cm show shows the lineup this session keeps")
+            return _notice_result(Decision("written", text="\n".join(lines)),
+                                  _post_notice(runtime, updated, message))
 
         try:
             decision = locked_decision(runtime, mid, body, barrier=barrier)

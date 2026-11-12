@@ -661,7 +661,11 @@ class _LineupDialog:
         if evaluation.errors:
             self.errors = list(evaluation.errors)
             return
-        lineup = evaluation.lineup
+        lineup = profile_mod.keep_recorded_agent_class(evaluation.lineup, record["applied"]["agents"], lcat)
+        refusal = lineup_mod._no_subagents_refusal(record, lineup, target.profile)
+        if refusal:
+            self.errors = [refusal]
+            return
         self.diff = lineup_mod.render_diff(
             lineup_mod.diff_rows(record["applied"], lineup, lcat, old_lead_class=record.get("lead_class"))
         )
@@ -671,8 +675,10 @@ class _LineupDialog:
         elif not scope_dir.is_dir():
             self.mode, self.reasons = "RELAUNCH", (lineup_mod.REASON_NO_SCOPE,)
         else:
-            cls = lineup_mod.classify(record, lineup, scope_dir, forced=False, lcat=lcat)
-            self.mode = "LIVE" if cls.kind == "live" else "RELAUNCH"
+            forced = target.kind == "profile" and lineup_mod._forced_profile_pending(record, target.profile)
+            cls = lineup_mod.classify(record, lineup, scope_dir, forced=forced, lcat=lcat)
+            partial = lineup_mod.split_candidate(record, target, lineup, lcat, eff, bindings, scope_dir, cls)
+            self.mode = "SPLIT" if partial is not None else "LIVE" if cls.kind == "live" else "RELAUNCH"
             self.reasons = cls.reasons
             if cls.lead_switch is not None:
                 self.lead_switch = str(cls.lead_switch.get("display") or cls.lead_switch.get("selector"))
@@ -1977,7 +1983,8 @@ class _SessionsScreen:
                 usage_lines = None
         lines = views.session_details(
             summary, record, state=self.states.get(mid, "unknown"), lead=lead, agents=agents, drift=drift,
-            pending_target=pending_target, explain=explain, usage=usage_lines)
+            pending_target=pending_target, explain=explain, usage=usage_lines,
+            profile_status=lineup_mod.profile_status_lines(runtime, record))
         tui.TextView(cli_text.SESSIONS_DETAILS_TITLE, lines, palette=self.palette).run(win)
 
     def _binding_text(self, binding: Any) -> str:
@@ -2672,6 +2679,13 @@ class _LaunchCardScreen(_CardHealthActions):
         elif unloadable and load_error is None:
             errors.append(f"cannot load profile {target.profile!r}")
         hold = self.gateway_hold
+        session_status: list[str] = []
+        if self.action == "resume" and prepared is not None:
+            try:
+                stored = runtime.session_store.load(sessions.managed_id(prepared.record))
+                session_status = lineup_mod.profile_status_lines(runtime, stored)
+            except (sessions.SessionError, cli_errors.CharmerError, OSError):
+                session_status = ["session status unavailable — inspect it with /cm show"]
         card = views.card_model(
             target=target,
             action=self.action,
@@ -2696,6 +2710,7 @@ class _LaunchCardScreen(_CardHealthActions):
             project=project,
             diff=prepared.diff if (self.resume and prepared is not None) else (),
             notices=tuple(notices),
+            session_status=session_status,
             claude_row=claude_row,
             description=description,
             is_default=is_default,

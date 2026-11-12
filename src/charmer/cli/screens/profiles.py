@@ -458,6 +458,9 @@ class _ProfilesScreen:
         lines = output.getvalue().splitlines()
         if saved:
             self._say(lines[-1] if lines else tui.PROFILE_FORM_SAVED.format(name=name))
+            shown = screens_propagation.run_propagation_screen(self.runtime, win, self.palette, [name])
+            if shown == "none":
+                self._say(lineup_mod.no_followers_text([name], 0))
         else:
             tui.TextView(cli_text.RAW_EDIT_TITLE.format(name=name), lines, palette=self.palette).run(win)
         self._reload(select=name)

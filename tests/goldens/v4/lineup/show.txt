@@ -17,6 +17,6 @@ profiles:
   openrouter  Opus 5.5 · OpenRouter · ultracode — Fixture seed openrouter: frozen test data mirroring the shipped seed's…
   quality     Opus 5.5 · 1M selector · ultracode — Fixture seed quality: frozen test data mirroring the shipped seed's slo…
 switch: /cm profile <name> (agents change now; a different lead applies at the next resume)
-/cm show · /cm profiles · /cm profile <name> · /cm set <agent>=<model>[:<effort>] · /cm unset <agent> · /cm direct [<model>[:<effort>]] · /cm pin · /cm follow · /cm fallback <provider> [--preview] · /cm review [high-stakes] [<range>] · /cm quota
+/cm show · /cm profiles · /cm profile <name> · /cm set <agent>=<model>[:<effort>] · /cm unset <agent> · /cm direct [<model>[:<effort>]] · /cm pin · /cm follow · /cm fallback <provider> [--preview] · /cm review [high-stakes] [<range>] · /cm quota · /cm fork
 /model: press s to switch for this session only — Enter saves the choice into ~/.claude/settings.json, which plain claude then inherits
 /model lists only the lead set; another provider family asks first (Alt+P and /config block instead); a model outside the set is refused — relaunch with a profile whose lead is that model.

@@ -166,10 +166,11 @@ class NoticeGoldenTests(_HookCase):
                     gen_line + "\n", _plan().other_files[scope.LINEUP_GEN].decode("ascii")
                 )
 
-    def test_notice_shape_and_staged_wording(self) -> None:
+    def test_notice_shape_and_conditional_reload_wording(self) -> None:
         md = _plan().other_files[scope.LINEUP_MD].decode("utf-8")
         gen = _plan().other_files[scope.LINEUP_GEN].decode("ascii").strip()
-        staged = "Lineup gen 1 staged — active after /reload-plugins in this session."
+        staged = ("Lineup gen 1 was applied while this session was running: if /reload-plugins "
+                  "has not been run since, run it before starting agents.")
         for event, source, expect_staged in (
             ("UserPromptSubmit", None, True),
             ("SessionStart", "compact", True),
@@ -186,9 +187,16 @@ class NoticeGoldenTests(_HookCase):
                     text.startswith("[charmer lineup notice · lineup_generation 1]\n")
                 )
                 self.assertIn(md.rstrip("\n"), text)
-                # Stated once and repeated once, in-process only.
-                self.assertEqual(text.count(staged), 2 if expect_staged else 0)
+                # Without start provenance an in-process notice is conditional.
+                self.assertEqual(text.count(staged), 1 if expect_staged else 0)
                 self.assertLess(len(text.encode("utf-8")), lineup_files.LINEUP_MD_MAX_BYTES + 600)
+
+    def test_own_fork_preface_stays_reload_free(self) -> None:
+        text, _gen = hooks.read_notice(self.state, MID, event="SessionStart", source="fork", own_fork=True)
+        preface = text.split("\n\n", 1)[0]
+        self.assertIn("has its own record and scope", preface)
+        self.assertNotIn("/reload-plugins", preface)
+        self.assertNotIn("was applied while this session was running", text)
 
     def test_resume_restates_the_recorded_lead(self) -> None:
         lead = _lead_set()["lead"]

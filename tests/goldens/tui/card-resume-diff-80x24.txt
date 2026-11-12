@@ -1,6 +1,7 @@
 
   charmer — profile: balanced · follows profile · Resume 11111111 · lineup gen…
   ─────────────────────────────────────────────────────────────────────────────
+  Before this resume: profile changed — V details
   lead      Opus 5.5 · effort ultracode · 1M class   workflows: native
   context   window 800K (lead and agents) · compacts at ~702K (90 %)
   lineup    8 agents · durable scope · Explore→cm-explorer · GP off
@@ -11,8 +12,7 @@
   implementer-light    GPT-5.6 Sol   xhigh    openai      (worktree)
   implementer          GPT-5.6 Sol   high     openai      (worktree)
   implementer-strong   GPT-5.6 Sol   xhigh    openai      (worktree)
-  reviewer             GPT-5.6 Sol   xhigh    openai      read-only
-  reviewer-strong      Opus 5.5      xhigh    anthropic   read-only
+  … 2 more agents (resize to show all)
   review    ✓ cross-family · writers(openai)→reviewer-strong · lead→reviewer
   health    gateway ok · Claude 2.1.281 · catalog 31
   ! explorer and every implementer are on openai (codex quota shared)

@@ -364,6 +364,9 @@ def _reconcile_session_start(
         normalize=_normalize_model_evidence(
             runtime, source=source, agent_context=agent_context
         ),
+        on_runtime_change=(
+            lambda previous, current: hooks.carry_runtime_notice(runtime.session_store.root, previous, current)
+        ) if source in ("compact", "clear") else None,
     )
     return _session_start_messages(record, observed, source, stable_id)
 
@@ -403,8 +406,9 @@ def _session_start_v3(
     """``session-event start --hook-protocol 3``: the lineup notice + the legacy reconcile.
 
     The payload is
-    read once, the runtime session's ``.seen`` marker is dropped first, the
-    notice is built from scope files only, and only then is ``Runtime``
+    read once, the runtime session's ``.seen`` generation is reset first
+    (queued messages survive only in-process; a process start replaces provenance),
+    the notice is built from scope files only, and only then is ``Runtime``
     built (``runtime_factory``) and the record reconciled — any failure
     there becomes one context line plus a stderr note while the notice is
     still written (exit 0). ``.seen`` is written after the output. Without a
@@ -431,11 +435,18 @@ def _session_start_v3(
     source = payload.get("source")
     if not isinstance(source, str):
         source = None
+    marker, marker_raw, marker_reset = hooks.NoticeMarker(), None, False
     if observed is not None:
         try:
-            hooks.clear_seen(state_path, observed)
+            marker, marker_raw, marker_reset = hooks.start_marker(
+                state_path, stable_id, observed,
+                new_process=source in ("startup", "resume") or (source == "fork" and observed == stable_id),
+                launch_epoch=args.launch_epoch, in_process=source in ("compact", "clear"),
+            )
+            if not marker_reset:
+                note("notice marker busy; not acknowledged")
         except (OSError, hooks.HookInputError) as exc:
-            note(f"notice marker not cleared: {exc}")
+            note(f"notice marker not reset: {exc}")
     notice: str | None = None
     gen: str | None = None
     try:
@@ -448,7 +459,7 @@ def _session_start_v3(
         # started with its own record and scope (``charmer -r S --fork``).
         notice, gen = hooks.read_notice(
             state_path, stable_id, event="SessionStart", source=source, lead=lead,
-            own_fork=source == "fork" and observed == stable_id,
+            own_fork=source == "fork" and observed == stable_id, start_gen=marker.start,
         )
     except Exception as exc:  # the notice is best effort; the reconcile still runs
         note(f"no lineup notice: {exc}")
@@ -497,10 +508,11 @@ def _session_start_v3(
     elif warning is not None:
         output_stream.write(strict_json.canonical_file_bytes({"systemMessage": warning}).decode("utf-8"))
         output_stream.flush()
-    if observed is not None and gen is not None and not failed and mismatch is None:
-        # A failed start leaves no marker, so the next prompt re-notifies.
+    if observed is not None and gen is not None and not failed and mismatch is None and marker_reset:
+        # A failed start stays unseen. A queued message is for the prompt,
+        # not consumed here, and a concurrent writer cannot be overwritten.
         try:
-            hooks.write_seen(state_path, observed, gen)
+            hooks.acknowledge_seen(state_path, stable_id, observed, gen, marker_raw, keep_message=True)
         except (OSError, hooks.HookInputError) as exc:
             note(f"notice marker not written: {exc}")
     return 0

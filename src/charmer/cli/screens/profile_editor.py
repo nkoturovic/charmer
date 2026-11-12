@@ -27,6 +27,7 @@ def _profile_editor_callbacks(
     palette: tui.Palette,
     *,
     editor_state: tui.ProfileEditorState | None = None,
+    apply_live: bool | None = None,
 ) -> tui.ProfileEditorCallbacks:
     """The store access of the profile editor stack (save, named bindings, propagation).
 
@@ -99,9 +100,10 @@ def _profile_editor_callbacks(
         if editor_state is not None:
             editor_state.mark_saved(outcome)
             editor_state.loaded_digest = digest
-        shown = screens_propagation.run_propagation_screen(runtime, win, palette, [outcome.name], preface=preface)
+        shown = screens_propagation.run_propagation_screen(runtime, win, palette, [outcome.name],
+                                                          preface=preface, apply_live=apply_live)
         if shown == "none" and not preface:
-            return True, cli_text.PROPAGATION_NO_FOLLOWERS.format(name=outcome.name)
+            return True, lineup_mod.no_followers_text([outcome.name], 0)
         return True, tui.PROFILE_FORM_SAVED.format(name=outcome.name)
 
     def load_bindings() -> tuple[dict[str, dict[str, Any]], list[str]]:
@@ -130,7 +132,7 @@ def _profile_editor_callbacks(
             return screens_common._state_error_text(exc)
         users = lineup_mod.profiles_for_binding(runtime, name)
         if users:
-            screens_propagation.run_propagation_screen(runtime, win, palette, users, binding=name)
+            screens_propagation.run_propagation_screen(runtime, win, palette, users, binding=name, apply_live=apply_live)
         return None
 
     def delete_binding(name: str) -> str | None:
@@ -244,6 +246,7 @@ def _run_profile_editor(
     input_stream: TextIO,
     output_stream: TextIO,
     no_color: bool = False,
+    apply_live: bool | None = None,
 ) -> int | None:
     """``profile new|edit NAME`` on a capable terminal: the profile editor.
 
@@ -275,7 +278,7 @@ def _run_profile_editor(
             output_stream=output_stream,
             environ=runtime.environ,
             palette=palette,
-            callbacks=_profile_editor_callbacks(runtime, palette, editor_state=state_),
+            callbacks=_profile_editor_callbacks(runtime, palette, editor_state=state_, apply_live=apply_live),
             initial_focus="general" if verb == "new" else None,
             on_start=on_start,
         )

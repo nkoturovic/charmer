@@ -227,6 +227,14 @@ def _add_presentation_flags(parser: argparse.ArgumentParser) -> None:
     visit(parser)
 
 
+def _profile_propagation_flags(parser: argparse.ArgumentParser) -> None:
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--apply", dest="profile_apply", action="store_const", const=True, default=None,
+                       help="apply the saved change to eligible running followers without asking")
+    group.add_argument("--later", dest="profile_apply", action="store_const", const=False,
+                       help="keep running lineups for now (the default without a terminal)")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="charmer",
@@ -290,13 +298,20 @@ def build_parser() -> argparse.ArgumentParser:
                               help="one JSON document (stable fields)")
     profile_show = profile_commands.add_parser("show", help="show a profile's evaluated lineup")
     profile_show.add_argument("name", nargs="?", help="profile name (default: balanced)")
-    profile_new = profile_commands.add_parser("new", help="create a profile ($EDITOR, or --from SRC)")
+    profile_new = profile_commands.add_parser("new", help="create a profile ($EDITOR, or --from PROFILE)")
     profile_new.add_argument("name", help="profile name")
-    profile_new.add_argument("--from", dest="from_profile", metavar="SRC", help="copy SRC (non-interactive)")
+    profile_new.add_argument("--from", dest="from_profile", metavar="PROFILE", help="copy PROFILE (non-interactive)")
     profile_new.add_argument("--keep-fallback", dest="keep_fallback", action="store_true",
-                             help="with --from: the copy stays a fallback profile for SRC's provider")
-    profile_commands.add_parser("edit", help="edit a profile in $VISUAL/$EDITOR").add_argument(
-        "name", help="profile name")
+                             help="with --from: the copy stays a fallback profile for PROFILE's provider")
+    edit = profile_commands.add_parser("edit", help="edit a profile in $VISUAL/$EDITOR")
+    edit.add_argument("name", help="profile name")
+    _profile_propagation_flags(edit)
+    setter = profile_commands.add_parser("set", help="edit saved lead or agent bindings in one command")
+    setter.add_argument("name", metavar="NAME", help="profile name")
+    setter.add_argument("assignments", nargs="+", metavar="ASSIGNMENT",
+                        help="lead=MODEL[:EFFORT] or ROLE=MODEL[:EFFORT]; omitted effort uses the model default")
+    setter.add_argument("--preview", action="store_true", help="show the edit without writing anything")
+    _profile_propagation_flags(setter)
     profile_rm = profile_commands.add_parser("rm", help="remove a profile of yours (a copy is kept)")
     profile_rm.add_argument("name", help="profile name")
     profile_rm.add_argument("--yes", action="store_true", help="skip the y/N confirmation")
@@ -311,6 +326,7 @@ def build_parser() -> argparse.ArgumentParser:
         "reseed", help="restore a shipped profile to its shipped version (your version is kept as a copy)")
     reseed.add_argument("name", help="profile name")
     reseed.add_argument("--yes", action="store_true", help="skip the y/N confirmation")
+    _profile_propagation_flags(reseed)
     default = profile_commands.add_parser(
         "default", help="show, set or clear the default profile (used where nothing else chooses one)")
     default.add_argument("name", nargs="?", help="the profile to make the default")
@@ -1014,7 +1030,7 @@ def _read_only_listing(args: argparse.Namespace) -> bool:
     if command == "sessions":
         return args.sessions_command in ("list", "show")
     if command == "profile":
-        return args.profile_command in ("list", "show", "starter", "default") and not _profile_command_writes(
+        return args.profile_command in ("list", "show", "starter", "default", "set") and not _profile_command_writes(
             args.profile_command, args)
     if command == "compose":
         alias = _COMPOSE_ALIASES.get(args.compose_command)
@@ -1081,6 +1097,8 @@ def _profile_command_writes(command: str, args: argparse.Namespace) -> bool:
         return bool(getattr(args, "profile_migrate_apply", False))
     if command == "starter":
         return bool(getattr(args, "starter_apply", False))
+    if command == "set":
+        return not bool(getattr(args, "preview", False))
     return True
 
 
