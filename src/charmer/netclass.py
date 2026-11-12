@@ -106,14 +106,12 @@ def _rule(prefix: str, cls: str, why: str) -> Rule:
 
 
 # Cloud instance metadata services (never a provider, whatever the network).
+# The IPv6 ones are unique local addresses inside fc00::/7 (see the module
+# text). The endpoint policy refuses the same list at declaration.
 METADATA = (
     _rule("169.254.169.254/32", NEVER, "a cloud metadata address"),
     _rule("100.100.100.200/32", NEVER, "a cloud metadata address"),
     _rule("fd00:ec2::254/128", NEVER, "a cloud metadata address"),
-)
-# Cloud metadata services on unique local IPv6 addresses, inside fc00::/7
-# (see the module text). The endpoint policy's literal list is ``METADATA``.
-METADATA_ULA = (
     _rule("fd20:ce::254/128", NEVER, "a cloud metadata address"),
     _rule("fd00:c1::a9fe:a9fe/128", NEVER, "a cloud metadata address"),
     _rule("fd00:a9fe:a9fe::1/128", NEVER, "a cloud metadata address"),
@@ -137,7 +135,6 @@ OVERLAY_RESERVED = (
 # fc00::/7, ::1 before the IPv4-compatible ::/96).
 RULES: tuple[Rule, ...] = (
     *METADATA,
-    *METADATA_ULA,
     _rule("127.0.0.0/8", LOOPBACK, "loopback"),
     _rule("::1/128", LOOPBACK, "loopback"),
     _rule("0.0.0.0/8", NEVER, "this-network and unspecified addresses"),

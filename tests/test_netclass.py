@@ -89,12 +89,14 @@ class TableTests(unittest.TestCase):
                                     for net in tailnet))
 
     def test_cloud_metadata_on_unique_local_addresses_is_never(self) -> None:
-        self.assertEqual([rule.prefix.with_prefixlen for rule in netclass.METADATA_ULA], [
-            "fd20:ce::254/128", "fd00:c1::a9fe:a9fe/128", "fd00:a9fe:a9fe::1/128", "fd00:42::42/128",
-            "fd00:ec2::23/128",
-        ])
         unique_local = ipaddress.ip_network("fc00::/7")
-        for rule in netclass.METADATA_ULA:
+        inside = [rule for rule in netclass.METADATA
+                  if rule.prefix.version == 6 and rule.prefix.subnet_of(unique_local)]
+        self.assertEqual([rule.prefix.with_prefixlen for rule in inside], [
+            "fd00:ec2::254/128", "fd20:ce::254/128", "fd00:c1::a9fe:a9fe/128", "fd00:a9fe:a9fe::1/128",
+            "fd00:42::42/128", "fd00:ec2::23/128",
+        ])
+        for rule in inside:
             with self.subTest(rule=rule.text()):
                 self.assertTrue(rule.prefix.subnet_of(unique_local))
                 address = rule.prefix.network_address
