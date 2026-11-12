@@ -28,8 +28,10 @@ or unknown ids refuse and list candidates instead of choosing a session.
 | launch | Enter; Tab | `charmer`; `charmer --profile <name>` | not a `/cm` request | the card shows the profile it launches |
 | launch one model as the lead | D | `charmer direct [--model <model>]` | not a `/cm` request | no `cm-*` agents |
 | continue, resume | S → Enter | `charmer -c`; `charmer -r [<id>]` | not a `/cm` request | resume keeps the lineup |
+| fork a session | S → N → Enter | `charmer -r <id> --fork` | `/cm fork` | a new managed session from a copy of the conversation; the original may keep running |
 | see a launch without launching | not in the launcher: a dry run for scripts and issue reports; the card shows the plan before Enter | `charmer --print-launch` | not a `/cm` request | the gateway key is never shown |
 | connect a provider | G → K, Enter on an account provider not signed in | `charmer providers set-key <provider>`; `charmer providers sign-in anthropic\|openai` | not a `/cm` request | [providers](providers/api-keys.md) |
+| a server with a key on your private network | G → N → a server on your network with an API key | `charmer providers add [<provider>] --network loopback\|lan\|tailnet`; `charmer providers template --network loopback\|lan\|tailnet` | not a `/cm` request | [self-hosted](guides/self-hosted.md) |
 | test a provider | G → T | `charmer providers test <provider>…` | not a `/cm` request | one request each, after you agree; may be billed |
 | profiles | P; V; S → T → ← → | `charmer profile list`; `charmer profile show [<name>]` | `/cm profiles` | P is the Profiles screen, not provider fallback |
 | fallback profiles for an outage | P → F; S → T → Fallback → provider | `charmer profile list`; `charmer lineup --session <runtime-id> fallback <provider> [--preview]` | `/cm fallback <provider> [--preview]` | one provider each |
