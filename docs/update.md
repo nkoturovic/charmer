@@ -139,11 +139,13 @@ the restart and `running-gateway: current-match` after it (on macOS,
 `unavailable`).
 
 2.4.0's doctor then reports BLOCKED for each session 2.5.0 launched or
-resumed, because 2.5.0 compiles settings 2.4.0 does not:
-`session <id8>: scope differs from the record-authoritative compile (settings.json content differs)`
-and `1 scope(s) diverged from record authority`. Run
+resumed, because 2.5.0 compiles settings and a `/cm` skill 2.4.0 does not:
+`session <id8>: scope differs from the record-authoritative compile`, naming
+`settings.json` and `.claude/skills/cm/SKILL.md`, and
+`1 scope(s) diverged from record authority`. Run
 `charmer doctor --repair-all` (or `charmer doctor --repair <id>` for each);
-the session's
+it defers a session that was on Fable 5.2 until that session resumes, on
+Fable 5.1. The session's
 `fence/picker differ from the installed catalog (catalog changed since launch); applies at the next resume`
 row stays until its next resume. A fork that 2.5.0 created, resumed under
 2.4.0, sends its parent's recorded system prompt until its first
