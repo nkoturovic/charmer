@@ -28,10 +28,13 @@ compiled settings and routes until their next launch or resume.
   (`charmer providers add --network loopback|lan|tailnet …`). Its key is
   sent over plain HTTP only to addresses in that network, checked at
   declaration, at approval and at every connection; the gateway receives
-  the base URL and the network class, never a plain base URL. In the
-  launcher, Providers **N** and Get started **A** offer a server on your
-  network with an API key, the OpenAI-compatible forms choose the network,
-  and **E** changes it (approved again).
+  the base URL and the network class, never a plain base URL, and a reload
+  that changes the declaration stops a request already connecting before
+  it sends anything. In the launcher, Providers **N** and Get started **A**
+  offer a server on your network with an API key, the OpenAI-compatible
+  forms choose the network, and **E** changes it (approved again). The new
+  self-hosted guide covers the classes, what the gateway enforces and what
+  it cannot check.
 - Models: **A** adds a model from the screen. Every screen has complete key
   help, and a census checks that each key a screen handles is listed.
 
@@ -109,7 +112,9 @@ compiled settings and routes until their next launch or resume.
   the session without charmer's lead prompt.
 - Private-network routes refuse public, link-local, metadata and
   overlay-reserved addresses; `charmer discover` reaches them directly,
-  with no proxy and no redirects. A build whose gateway lacks the
+  with no proxy and no redirects. Cloud metadata addresses in the IPv6
+  unique-local range (AWS, Google Cloud, Oracle Cloud and others) are
+  refused at declaration and at every connection. A build whose gateway lacks the
   private-network guard renders, serves, captures and fences nothing of
   such a provider.
 - An exact, expiring non-use review covers CPython CVE-2026-124249: the
@@ -122,6 +127,10 @@ compiled settings and routes until their next launch or resume.
   program the model runs: in bypass mode such a program can still write the
   mod folder. In default and auto mode the client asks first.
 - `setup --answers` cannot declare a private network yet.
+- The gateway does not forward a provider's `x-should-retry`, and on Claude
+  routes its `Retry-After` is its own: the provider's value plus 1–30 s of
+  random fuzz from the executor's reset hint (11–34 s measured against a
+  provider's 7 s).
 - The Nix development shell keeps GnuPG 2.4.9 (FreePG).
 
 ## [2.4.0] — 2026-10-28
