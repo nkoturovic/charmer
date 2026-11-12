@@ -76,6 +76,13 @@ class ProfileCommandSurfaceTests(PropagationCase):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             parser.build_parser().parse_args(["profile", "set", "mine", "lead=fable:max", "--apply", "--later"])
 
+    def test_profile_assignment_placeholder_covers_the_generated_grammar(self):
+        from _docs_vocab import check_span
+
+        result = check_span("charmer profile set <name> <assignment> [--preview] [--apply | --later]")
+        self.assertEqual(result.problem, "")
+        self.assertGreater(result.forms, 1)
+
     def test_profile_set_reports_to_stdout_even_with_a_terminal_stream(self):
         from charmer.cli import streams
         tty, output = io.StringIO(), io.StringIO()

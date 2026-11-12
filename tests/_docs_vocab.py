@@ -1574,6 +1574,7 @@ PLACEHOLDERS: dict[str, Placeholder] = {
     "model": Placeholder("a model line", "opus"),
     "line": Placeholder("a model line", "opus"),
     "agent": Placeholder("an agent id", "implementer"),
+    "assignment": Placeholder("a lead or agent model binding", "lead=opus:high"),
     "effort": Placeholder("an effort", "high"),
     "alias": Placeholder("a gateway continuity alias", "charmer-example-alias"),
     "provider": Placeholder("a provider id", "kimi"),
