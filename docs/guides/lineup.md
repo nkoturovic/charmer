@@ -20,11 +20,16 @@ charmer tells you in the session and doctor offers the revert.
 
 `/cm` changes the agents and the profile. Its grammar:
 
-`/cm show · /cm profiles · /cm profile <name> · /cm set <agent>=<model>[:<effort>] · /cm unset <agent> · /cm direct [<model>[:<effort>]] · /cm pin · /cm follow · /cm fallback <provider> [--preview] · /cm review [high-stakes] [<range>] · /cm quota`
+`/cm show · /cm profiles · /cm profile <name> · /cm set <agent>=<model>[:<effort>] · /cm unset <agent> · /cm direct [<model>[:<effort>]] · /cm pin · /cm follow · /cm fallback <provider> [--preview] · /cm review [high-stakes] [<range>] · /cm quota · /cm fork`
 
 - `/cm` alone, or `/cm show`, prints the lineup, each role's effective
-  context window, and the profiles you can switch to (`*` marks the
-  current one).
+  context window, the profiles you can switch to (`*` marks the current
+  one), and whether the session follows its profile, is pinned, has
+  unapplied profile edits or holds a pending change, with how to drop or
+  replace it.
+- `/cm fork` prints the command that forks this session, to run in another
+  terminal ([sessions](sessions.md#fork-a-session)); the session itself is
+  unchanged and may keep running.
 - Only you can run `/cm`; the model cannot invoke it.
 - Everything after `/cm` is one argument: write it without quotes.
 - `/cm` runs charmer's `lineup` command, so `charmer` must be on
@@ -113,7 +118,12 @@ A session started from a profile **follows** it: saving the profile offers
 the change to its running sessions. `/cm set <agent>=<model>`, `/cm unset <agent>`,
 `/cm direct`, `/cm pin` and a `/model` switch **pin** the session to its own lineup;
 `/cm follow` or `/cm profile <name>` follows again (**F** in the sessions
-screen toggles it, after a preview of what changes).
+screen toggles it, after a preview of what changes). A `/model` switch does
+not cancel a change already recorded for the next resume. A change saved to
+the profile while the session runs is shown at the session's next prompt;
+after agents changed live, run `/reload-plugins` before starting new
+agents. To take saved edits into a session that already follows, use
+**S** → **T** → Enter.
 
 ## Fallback during an outage
 

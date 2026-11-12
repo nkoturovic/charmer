@@ -30,7 +30,10 @@ charmer -r                  # open the sessions screen
 Resume reopens the same transcript with the recorded lineup, compiled
 fresh against the installed release, plus any change you recorded for it
 (the resume card shows that change). Resume runs from the recorded
-project directory, so it works from anywhere.
+project directory, so it works from anywhere. Session details and the
+resume card show whether the session follows its profile, is pinned, has
+unapplied profile edits or holds a pending change; on a narrow card **V**
+shows the complete text.
 
 Before a resume launches, charmer checks what could go wrong and asks
 when something needs a decision:
@@ -264,7 +267,8 @@ Each launch of a fork turns Claude Code's system-prompt record off, so
 the fork and its own resumes send the fork's lead prompt. Its first
 request is therefore probably not served from the prompt cache (inferred,
 not measured). The sessions screen marks it `(fork of <id8>…)`, and
-`charmer -c` afterwards continues the fork.
+`charmer -c` afterwards continues the fork. Inside a session, `/cm fork`
+prints the command for another terminal.
 
 Claude Code's own `/fork` does not copy a managed session: managed
 sessions keep Claude Code's agent view off, so `/fork` is its

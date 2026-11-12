@@ -108,7 +108,14 @@ charmer profile duplicate <name> <new>
 charmer profile rename <name> <new>
 charmer profile rm <name>
 charmer profile reseed <name>
+charmer profile set <name> <assignment>… --preview   # several bindings at once; writes nothing
+charmer profile set <name> <assignment>…
 ```
+
+`charmer profile set` edits lead and agent bindings together, for example
+`charmer profile set balanced lead=opus:high`; an assignment without an
+effort uses the model's default. Editing a shipped profile creates a copy
+of yours, and a concurrent edit refuses rather than overwriting it.
 
 ### The profile editor
 
@@ -163,10 +170,18 @@ restriction. An update never reseeds by itself.
 
 ## Sessions that follow a profile
 
-A session started from a profile **follows** it: when you save the
-profile, charmer offers to apply the change to its running sessions,
-LIVE where it can and otherwise recorded for their next resume. A session
-that is **pinned** keeps its own lineup. See [lineup.md](lineup.md).
+A session started from a profile **follows** it. Saving the profile lists
+its running, stopped and pinned sessions and any pending changes. In a
+terminal, Apply is the default: Enter (or **A**) applies the change to the
+eligible running followers, LIVE where it can and otherwise recorded for
+their next resume. **L** or Esc keeps the saved profile but leaves their
+running lineups unchanged and tells them at their next prompt. Without a
+terminal, `--apply` applies now (`charmer profile edit <name> --apply`);
+otherwise the save is left for later. A change that mixes agents with
+session-level changes applies the agents now and leaves the rest pending
+for the next resume, unless the partial change would add a warning the
+complete one does not have. A session that is **pinned** keeps its own
+lineup. See [lineup.md](lineup.md).
 
 ## Named bindings
 

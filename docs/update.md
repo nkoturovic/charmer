@@ -99,6 +99,11 @@ newer host switches are cleared at launch
 ([security](security.md)). They do not change your own settings or plain
 `claude`.
 
+An interactive profile save now applies to the profile's eligible running
+sessions by default: Enter accepts Apply; choose Later or Esc to keep their
+current lineups. A save without a terminal still leaves them unchanged
+unless you pass `--apply` ([profiles](guides/profiles.md#sessions-that-follow-a-profile)).
+
 The `fable` line now selects Fable 5.2. Profiles and bindings that name
 `fable` follow it without reseeding or effort changes; a running Fable 5.1
 session keeps its route until it is resumed. If you declared Fable 5.2
@@ -140,7 +145,8 @@ the session's
 `fence/picker differ from the installed catalog (catalog changed since launch); applies at the next resume`
 row stays until its next resume. A fork that 2.5.0 created, resumed under
 2.4.0, sends its parent's recorded system prompt until its first
-compaction.
+compaction. A lineup message 2.5.0 queued for a session's next prompt is
+not delivered by 2.4.0, which shows its own notice instead.
 
 ### Updating from 2.3.0
 
