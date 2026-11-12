@@ -76,7 +76,7 @@ Use `charmer doctor` for per-model 429/402/403 counts and `/cm fallback <provide
 to move affected roles. The readings and counts are observations, not a remaining balance. `quota --json` keeps its structured condition and
 exit status; the availability hint is text-only ([tasks](reference/tasks.md)).
 
-`/cm` grammar: `/cm show · /cm profiles · /cm profile <name> · /cm set <agent>=<model>[:<effort>] · /cm unset <agent> · /cm direct [<model>[:<effort>]] · /cm pin · /cm follow · /cm fallback <provider> [--preview] · /cm review [high-stakes] [<range>] · /cm quota`
+`/cm` grammar: `/cm show · /cm profiles · /cm profile <name> · /cm set <agent>=<model>[:<effort>] · /cm unset <agent> · /cm direct [<model>[:<effort>]] · /cm pin · /cm follow · /cm fallback <provider> [--preview] · /cm review [high-stakes] [<range>] · /cm quota · /cm fork`
 
 ### Keys
 
@@ -164,6 +164,8 @@ restart.
 | want it supervised (Linux) | `charmer gateway service install`; back to on demand: `charmer gateway service uninstall` |
 | one provider's agents stall; doctor counts 429, 402 or 403 for a model | `/cm fallback <provider>`, then `/reload-plugins`; new launches: P → F |
 | HTTP 400 `prompt_cache_retention is not supported on this model` | the running gateway predates the release: `charmer gateway restart` between turns |
+| after `charmer update`: two `gateway restart pending` rows | one `charmer gateway restart` between turns clears both; then `charmer update --verify` |
+| doctor: `private-network providers are served only after the gateway restarts`, or `gateway reloaded without the private-network selector(s)` | `charmer gateway restart` between turns |
 | doctor: “gateway persistence hold: HELD because part of the log could not be evaluated” | keep it running; `charmer providers list`, then `charmer gateway clear-hold` in a terminal outside Claude Code |
 | the gateway does not start after `charmer update`; doctor: “if this began after charmer update” | `charmer update --rollback`, then `charmer gateway start` |
 | `charmer update --rollback` lists what the previous version “cannot read”, or `--yes` refuses | apply the listed fixes, or run `charmer update --rollback` without `--yes` and confirm to roll back anyway |
@@ -183,6 +185,10 @@ restart.
 | Anthropic or OpenAI on its API key: doctor “<name> is not set — charmer providers set-key” | save the key: `charmer providers set-key <provider>`, or G → K on the provider; or back to the account: `charmer providers transport <provider> oauth-pool` ([providers/api-keys.md](providers/api-keys.md#openai)) |
 | doctor: “the <choice> transport of <provider> is not approved for the current …” or “its selectors are not served” | `charmer providers transport <provider> api-key` again (terminal), or back: `charmer providers transport <provider> oauth-pool` |
 | a preset: “not available in this release” | this build's keyed OpenAI-compatible audit is closed; use the vendor's Anthropic-compatible endpoint, OpenRouter, or a keyless server on your network ([providers/openai-compatible.md](providers/openai-compatible.md)) |
+| a server with a key on your own network, over plain HTTP | `charmer providers add <provider> --kind openai-compatible --base-url <url> --auth bearer --secret-ref <secret-ref> --family <family> --network tailnet` (or `lan`, `loopback`); then `charmer providers set-key <provider>` ([self-hosted](guides/self-hosted.md)) |
+| what the server's name resolves to; HTTP 502 `upstream address refused: outside the provider's private network (tailnet)` | `charmer doctor` shows the answers; fix the name or network, or run the overlay client in kernel mode |
+| changed a provider's network or address | `charmer providers approve <provider>` (terminal outside Claude Code) |
+| `private-network routes are unavailable in this build` | `charmer providers rm <provider>` names the lines still in use; remove them first |
 | a spending or usage limit reached at the provider | raise or wait out the limit in its console ([costs per provider](providers/api-keys.md#6-costs-and-limits)) |
 
 ### Lineups and `/cm`
@@ -215,6 +221,8 @@ restart.
 | doctor: “Advisories (optional evidence; does not change the verdict)” | nothing is required; optional: `charmer models qualify <line> --agents` or M → Q |
 | doctor: “scope differs from the record-authoritative compile”, “scope unreadable” or “scope(s) diverged from record authority” | `charmer doctor --repair <id>`; all stopped sessions: `charmer doctor --repair-all` |
 | doctor: “compiled hook target” | `charmer doctor --repair <id>` |
+| after rolling back to 2.4.0: BLOCKED, `scope differs from the record-authoritative compile (settings.json content differs)` | `charmer doctor --repair-all` |
+| copy a session to try something else | `charmer -r <id> --fork`, or S → N; Claude Code's `/fork` runs a one-off subagent instead |
 | doctor: “session record <id> is unreadable” | `charmer sessions show <id>` names the error; never edit the record |
 | doctor: “session record directory is unavailable; records are unknown” | the state directory must be yours, mode 0700; fix it, then `charmer doctor` |
 | doctor: “collides with the managed cm-* namespace” | rename or remove that project agent, or launch from another directory |

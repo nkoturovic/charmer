@@ -18,7 +18,8 @@ you can change or an approval to send your key anywhere.
 
 In the launcher: **G** Providers → **N** (or **W** Get started → **A**) →
 OpenAI-compatible endpoint or a preset below. Give its name and `https`
-address, the models' family (`unknown` if unsure), and optionally the model
+address (plain `http` only on a private network you declare, see
+[self-hosted](../guides/self-hosted.md)), the models' family (`unknown` if unsure), and optionally the model
 list's address. The key is always sent as `Authorization: Bearer`. Approve
 where the key goes, then type the key; adding models follows. In **M** Models,
 Enter changes the optional admission badge and **Q** offers optional
@@ -86,7 +87,9 @@ Other options:
   offers them;
 - a keyless server on your own network that speaks the OpenAI chat
   protocol: [lan.md](lan.md) (a different route, available in every
-  build).
+  build);
+- a server with a key on your own network over plain HTTP:
+  [self-hosted](../guides/self-hosted.md) (`--network`).
 
 ## Presets
 
@@ -115,7 +118,8 @@ choose and bind them as leads or agents; the badge and diagnostics are optional.
 ## What the route does
 
 - It is an addition, never the default: one provider, one bearer key,
-  HTTPS only, to the address you approve.
+  HTTPS only, to the address you approve, unless you declare a private
+  network ([self-hosted](../guides/self-hosted.md)).
 - Claude Code's `/v1/messages` requests become upstream
   `/chat/completions` requests, including manual and automatic compaction.
 - Declared efforts are passed as the chat API's reasoning effort, clamped

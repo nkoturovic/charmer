@@ -66,9 +66,10 @@ Before the restart, status and doctor show two restart rows, and one
 restart clears both: the running gateway's binary differs from the one this
 installation provides (different on-disk SHA-256 hashes), and
 `gateway restart pending: the running gateway was started by charmer 2.4.0 and this release changes its start arguments or environment filter, which apply only at a restart`.
-Until the restart, `charmer update --verify` reports
-`running-gateway: different-running-build`; after it, on Linux,
-`running-gateway: current-match`. The restart checks ownership and the
+On Linux, `charmer update --verify` reports
+`running-gateway: different-running-build` until the restart and
+`running-gateway: current-match` after it; on macOS running-byte
+verification reports `unavailable`. The restart checks ownership and the
 persistence hold before stopping. If it is held, keep the gateway running
 and follow [the persistence hold](guides/gateway.md#the-persistence-hold);
 never bypass a held stop with a service-manager stop or a signal.
@@ -99,6 +100,11 @@ newer host switches are cleared at launch
 ([security](security.md)). They do not change your own settings or plain
 `claude`.
 
+An interactive profile save now applies to the profile's eligible running
+sessions by default: Enter accepts Apply; choose Later or Esc to keep their
+current lineups. A save without a terminal still leaves them unchanged
+unless you pass `--apply` ([profiles](guides/profiles.md#sessions-that-follow-a-profile)).
+
 The `fable` line now selects Fable 5.2. Profiles and bindings that name
 `fable` follow it without reseeding or effort changes; a running Fable 5.1
 session keeps its route until it is resumed. If you declared Fable 5.2
@@ -128,8 +134,9 @@ finds before it asks; the default is then No. Prepare first, between turns:
 
 After the rollback the running gateway is still 2.5.0's. Run the guarded
 `charmer gateway restart` between turns, then `charmer update --verify`:
-2.4.0 reports `running-gateway: different-running-build` until the restart
-and `running-gateway: current-match` after it.
+on Linux, 2.4.0 reports `running-gateway: different-running-build` until
+the restart and `running-gateway: current-match` after it (on macOS,
+`unavailable`).
 
 2.4.0's doctor then reports BLOCKED for each session 2.5.0 launched or
 resumed, because 2.5.0 compiles settings 2.4.0 does not:
@@ -140,7 +147,8 @@ the session's
 `fence/picker differ from the installed catalog (catalog changed since launch); applies at the next resume`
 row stays until its next resume. A fork that 2.5.0 created, resumed under
 2.4.0, sends its parent's recorded system prompt until its first
-compaction.
+compaction. A lineup message 2.5.0 queued for a session's next prompt is
+not delivered by 2.4.0, which shows its own notice instead.
 
 ### Updating from 2.3.0
 
