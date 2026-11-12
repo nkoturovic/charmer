@@ -59,6 +59,11 @@ Notes:
   certificate override. Certificate paths supplied only by the user
   manager have not been verified inside the service's restricted
   filesystem view.
+- **Private-network providers.** The gateway connects to a provider you
+  declared on a private network ([self-hosted](self-hosted.md)) directly,
+  never through a proxy from any source and never following a redirect;
+  `charmer discover` does the same. On a tailnet the overlay client must
+  run in kernel mode.
 - **Sessions configure loopback as direct.** When a proxy is set, every
   managed session is compiled with `127.0.0.1,localhost,::1` in `NO_PROXY`
   and `no_proxy`. These entries configure a bypass for local gateway

@@ -117,6 +117,18 @@ charmer itself makes to a provider (a listing, a test, an admission
 or qualification check) is listed and needs your yes; no flag waives
 this, and these commands refuse inside a Claude Code session.
 
+A key goes only over HTTPS, except to a provider you declare on a private
+network ([self-hosted](guides/self-hosted.md)). Such a key may go over
+plain HTTP, and only to addresses in the declared class: on `loopback`
+any local program can listen on that port; on a `lan` anyone on the
+network can read the key and your prompts; on a `tailnet` the key is
+encrypted only while the connection runs through your tailnet. Addresses
+outside the class, cloud metadata and link-local addresses and the
+gateway's own ports are refused at every connection, with no proxy and no
+redirect, and a connection whose declaration a reload changed writes
+nothing more. A build whose gateway lacks this guard renders, serves and
+sends nothing of such a provider.
+
 ## Model and permission fences
 
 A managed session's `/model` offers only its lead set; a hook refuses a
@@ -124,6 +136,25 @@ switch outside it and asks before a switch to another provider family.
 Agents are bound by the compiled lineup. Managed sessions start in
 Claude Code's default permission mode unless your own settings choose
 another one.
+
+In a managed session the model can neither use Claude Code's built-in
+plugin-authoring skill nor write into the session's mod folder
+(`~/.claude/dev-mods`), where a mod would load at the next start without
+a question. Deny rules cover Claude Code's tools, shell commands
+included, not a program the model runs: in bypass mode such a program can
+still write the folder, as it can read a file a deny names; in default
+and auto mode the client asks you first. To write a mod, use plain
+`claude`, or write it yourself and load it with `--plugin-dir`.
+
+Managed sessions turn off Claude Code's background service
+(`/background`, `--bg` and its choice to move a session to the
+background): it would run the session on its own binary and environment,
+without charmer's lead prompt. Typing `/fork` with a directive runs a
+one-off subagent in the same Claude Code process, on the lead's model and
+with this conversation; it is not a lineup agent and charmer cannot
+switch it off. The model itself cannot start a fork: the fork subagent is
+turned off and denied in every managed session. To copy a session, use
+`charmer -r <id> --fork` ([sessions](guides/sessions.md)).
 
 ## On-demand and supervised gateway
 

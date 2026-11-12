@@ -249,6 +249,29 @@ the explicit per-session choose-and-resume path, or bulk forget. **H**'s
 needs-choice row opens the same chooser filtered to sessions that still
 need a lead choice, across all directories. The save paths never launch.
 
+## Fork a session
+
+`charmer -r <id> --fork` (or **N** on the sessions screen, then Enter on
+the card) starts a new managed session from a copy of a session's
+conversation. The fork gets its own record, scope, hooks and lead prompt,
+and the lineup the original would get at its next resume. The original is
+not changed and may keep running. `--print-launch` shows the fork's
+command and writes nothing. A fork is refused inside a managed session,
+with `-c` and with a profile. Client flags given after `--` on the
+original's command line are not copied: give them again.
+
+Each launch of a fork turns Claude Code's system-prompt record off, so
+the fork and its own resumes send the fork's lead prompt. Its first
+request is therefore probably not served from the prompt cache (inferred,
+not measured). The sessions screen marks it `(fork of <id8>…)`, and
+`charmer -c` afterwards continues the fork.
+
+Claude Code's own `/fork` does not copy a managed session: managed
+sessions keep Claude Code's agent view off, so `/fork` is its
+fork-subagent command ([security](../security.md#model-and-permission-fences)),
+and the session copy it would otherwise make would run in Claude Code's
+shared background service, without this session's lead prompt.
+
 ## Native forks
 
 Claude Code forks a session when a second process opens a session another
