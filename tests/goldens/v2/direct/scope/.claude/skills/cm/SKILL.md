@@ -1,7 +1,7 @@
 ---
 name: cm
-description: Show or change this charmer session's agent lineup (/cm, /cm profiles, /cm profile NAME, /cm set AGENT=MODEL[:EFFORT], /cm unset AGENT, /cm direct [MODEL[:EFFORT]], /cm pin, /cm follow, /cm fallback PROVIDER [--preview], /cm review [high-stakes] [RANGE], /cm quota)
-argument-hint: "profiles · profile NAME · set AGENT=MODEL[:EFFORT] · unset AGENT · direct [MODEL[:EFFORT]] · pin · follow · fallback PROVIDER [--preview] · review [high-stakes] [RANGE] · quota"
+description: Show or change this charmer session's agent lineup (/cm, /cm profiles, /cm profile NAME, /cm set AGENT=MODEL[:EFFORT], /cm unset AGENT, /cm direct [MODEL[:EFFORT]], /cm pin, /cm follow, /cm fallback PROVIDER [--preview], /cm review [high-stakes] [RANGE], /cm quota, /cm fork)
+argument-hint: "profiles · profile NAME · set AGENT=MODEL[:EFFORT] · unset AGENT · direct [MODEL[:EFFORT]] · pin · follow · fallback PROVIDER [--preview] · review [high-stakes] [RANGE] · quota · fork"
 disable-model-invocation: true
 allowed-tools: Bash(charmer lineup:*)
 ---
