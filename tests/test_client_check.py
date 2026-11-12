@@ -151,14 +151,17 @@ class HookMessageTests(test_hooks._HookCase):
         self.assertEqual(code, 0)
         return strict_json.loads(output.getvalue())
 
-    def test_session_start_warns_and_writes_no_marker(self) -> None:
+    def test_session_start_warns_and_leaves_the_marker_unseen(self) -> None:
         document = self.start(None)
         self.assertNotIn("systemMessage", document)
         self.assertTrue(hooks.seen_path(self.state, RID).exists())
         document = self.start(self.mismatch())
         self.assertIn(f"charmer -r {MID}", document["systemMessage"])
         self.assertIn("additionalContext", document["hookSpecificOutput"])
-        self.assertFalse(hooks.seen_path(self.state, RID).exists())
+        marker, raw = hooks.read_marker(self.state, RID)
+        self.assertIsNone(marker.seen)
+        self.assertEqual(marker.start, hooks.read_gen(hooks.scope_path(self.state, MID)))
+        self.assertTrue(raw.startswith(b"-\n"))
 
 
 if __name__ == "__main__":
