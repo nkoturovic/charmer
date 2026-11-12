@@ -150,7 +150,8 @@ METADATA_ADDRESSES = frozenset(
     {ipaddress.ip_address("169.254.169.254"), ipaddress.ip_address("100.100.100.200"),
      ipaddress.ip_address("fd00:ec2::254"), ipaddress.ip_address("fd20:ce::254"),
      ipaddress.ip_address("fd00:c1::a9fe:a9fe"), ipaddress.ip_address("fd00:a9fe:a9fe::1"),
-     ipaddress.ip_address("fd00:42::42"), ipaddress.ip_address("fd00:ec2::23")}
+     ipaddress.ip_address("fd00:42::42"), ipaddress.ip_address("fd00:ec2::23"),
+     ipaddress.ip_address("fd00:100::100:200")}
 )
 LAN_SUFFIXES = (".lan", ".local", ".home.arpa", ".internal")
 _IPV4_COMPATIBLE = ipaddress.ip_network("::/96")

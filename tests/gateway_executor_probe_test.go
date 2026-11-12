@@ -189,6 +189,16 @@ func TestOmissionPrivateNetwork(t *testing.T) {
 		t.Fatalf("a private-network entry is absent: %d compat entries, %d auths", len(cfg.OpenAICompatibility), len(auths))
 	}
 	exec := NewOpenAICompatExecutor("openai-compatibility", cfg)
+	// The service makes a configuration's private-network declarations
+	// current before it binds an executor; this probe binds one itself. The
+	// method is looked up at run time so the probe builds without the patch.
+	type declarations interface{ PublishDeclarations() }
+	if publish, ok := any(exec).(declarations); ok {
+		publish.PublishDeclarations()
+		t.Cleanup(func() {
+			any(NewOpenAICompatExecutor("openai-compatibility", &config.Config{})).(declarations).PublishDeclarations()
+		})
+	}
 	payload := []byte(`{"model":"omission-wire","messages":[{"role":"user","content":"hi"}]}`)
 	run := func(auth *coreauth.Auth) error {
 		_, errExec := exec.Execute(context.Background(), auth, coreexecutor.Request{Model: "omission-wire", Payload: payload}, coreexecutor.Options{SourceFormat: translator.FormatOpenAI})
