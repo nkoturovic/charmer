@@ -1747,7 +1747,7 @@ class NativeContractTests(unittest.TestCase):
         self.assertEqual(entry["platforms"]["linux-x64"]["size"], 341914128)
         self.assertEqual(entry["key_fingerprint"], "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE")
         self.assertEqual(entry["evidence"]["linux-x64"], "battery")
-        self.assertEqual(entry["verified_at"], "2026-11-11")
+        self.assertEqual(entry["verified_at"], "2026-11-12")
         self.assertEqual(bundle.docs["native-contract"]["recorded_at"], "2026-09-25")
         self.assertEqual(bundle.docs["native-contract"]["evidence_version"], 3)
         # Every listed platform has an evidence class (battery or identity+smoke).

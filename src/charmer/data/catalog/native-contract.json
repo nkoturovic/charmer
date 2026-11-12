@@ -177,7 +177,7 @@
       "evidence": {
         "linux-x64": "battery",
         "others": "identity+smoke",
-        "receipt_sha256": "1f12e2c4b5988a5390c5b9bc26317b4755cfdc3ebd172ccf77b5dd582e535123"
+        "receipt_sha256": "607cb0ba7b203d7354d29623841025d86d00b25bb0e9918f28d803f423f109d2"
       },
       "key_fingerprint": "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE",
       "manifest_sha256": "05d2eff648bb528c1479c719bb8eca9a759657631e285d03aaf37fe779173f1c",
@@ -408,7 +408,7 @@
         "xaaIdp"
       ],
       "signature_sha256": "c66b0b463899b33dd9ef3c086cd9451aac3b2494a2f4f3134683d10cab0309c3",
-      "verified_at": "2026-11-11",
+      "verified_at": "2026-11-12",
       "version": "2.1.322"
     }
   ],
