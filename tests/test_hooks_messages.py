@@ -270,13 +270,21 @@ class NoticeMessageTests(_SeamCase):
         self.assertFalse(child.message)
         self.assertIn("parent-only notice", parent.message)
 
-    def test_resume_replaces_start_but_preserves_a_pending_message(self):
-        old = self.gen(3)
-        path = self.marker(old, start=old, message="charmer: resume pending notice")
-        current = self.gen(4)
-        self.start("resume")
-        self.assertIn("start " + current, path.read_text())
-        self.assertIn("resume pending notice", self.prompt().get("systemMessage", ""))
+    def test_new_process_replaces_start_and_drops_obsolete_messages(self):
+        for source in ("startup", "resume"):
+            with self.subTest(source=source):
+                old = self.gen(3)
+                path = self.marker(old, start=old, message="charmer: exit, then resume; reload before new agents")
+                current = self.gen(4)
+                self.start(source)
+                self.assertEqual(path.read_text().splitlines(), [current, "start " + current])
+                self.assertEqual(self.prompt(), {})
+
+    def test_clear_keeps_undelivered_message_in_the_same_process(self):
+        gen = self.gen()
+        self.marker(gen, start=gen, message="charmer: still needed after clear")
+        self.start("clear")
+        self.assertIn("still needed after clear", self.prompt().get("systemMessage", ""))
 
     def test_old_marker_means_unknown_start_and_old_reader_rejects_new_forms(self):
         gen = self.gen()

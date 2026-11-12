@@ -420,7 +420,7 @@ def acknowledge_seen(state_root: Path | str, managed_id: str, runtime_id: str, g
 def start_marker(state_root: Path | str, managed_id: str, runtime_id: str, *,
                  new_process: bool, in_process: bool = False,
                  launch_epoch: int | None = None) -> tuple[NoticeMarker, bytes | None, bool]:
-    """Reset only the seen generation; only a process start replaces start provenance."""
+    """Reset seen; a new process replaces provenance and drops obsolete queued instructions."""
 
     lock = _marker_lock(state_root, managed_id)
     if not lock.acquire(blocking=False):
@@ -442,7 +442,7 @@ def start_marker(state_root: Path | str, managed_id: str, runtime_id: str, *,
             except (sessions.SessionError, OSError):
                 pass
         start = read_gen(scope_path(state_root, managed_id)) if new_process else marker.start
-        marker = NoticeMarker(None, start, marker.message)
+        marker = NoticeMarker(None, start, "" if new_process else marker.message)
         return marker, _write_marker(state_root, runtime_id, marker), True
     finally:
         lock.release()
@@ -451,8 +451,8 @@ def start_marker(state_root: Path | str, managed_id: str, runtime_id: str, *,
 def clear_seen(state_root: Path | str, runtime_id: str) -> bool:
     """Explicitly remove a runtime session's marker (cleanup, not a SessionStart reset).
 
-    SessionStart uses :func:`start_marker` so pending messages and process
-    provenance survive. Never creates ``notice/``; refuses an unsafe marker.
+    SessionStart uses :func:`start_marker`; messages and provenance survive
+    only in-process starts. Never creates ``notice/``; refuses an unsafe marker.
     """
 
     path = seen_path(state_root, runtime_id)

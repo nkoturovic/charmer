@@ -407,7 +407,7 @@ def _session_start_v3(
 
     The payload is
     read once, the runtime session's ``.seen`` generation is reset first
-    (queued messages survive; only process starts replace its start generation),
+    (queued messages survive only in-process; a process start replaces provenance),
     the notice is built from scope files only, and only then is ``Runtime``
     built (``runtime_factory``) and the record reconciled — any failure
     there becomes one context line plus a stderr note while the notice is
