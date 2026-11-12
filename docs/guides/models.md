@@ -323,6 +323,17 @@ keeps serving the session's selector (a continuity alias) until no live
 session uses it; `charmer doctor --prune-aliases --preview` shows the
 unused ones and `charmer doctor --prune-aliases` removes them.
 
+With `--successor`, existing sessions keep that choice too, pinned ones
+included: a session recorded on the removed line resumes on the successor
+directly. Messages say you removed the model, not that a catalog retired
+it. After a rollback to 2.4.0, which ignores such successors, those
+sessions need a model choice ([going back](../update.md#before-going-back-to-240)).
+
+A line you declared yourself that a later catalog ships (for example a
+`custom-fable-5-2` line once `fable` selects Fable 5.2) yields to the
+shipped line: the shipped line serves the model, and doctor and the models
+listing show one row with the remedy, `charmer models rm <line> --successor <line>`.
+
 ## Context windows
 
 One **window ceiling** governs the lead and every agent: 200K to 800K
