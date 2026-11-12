@@ -35,6 +35,14 @@ compiled settings and routes until their next launch or resume.
   forms choose the network, and **E** changes it (approved again). The new
   self-hosted guide covers the classes, what the gateway enforces and what
   it cannot check.
+- `charmer profile set` edits several lead and agent bindings of a profile
+  at once, with a preview that writes nothing; a shipped profile becomes a
+  copy of yours.
+- A profile or lineup change saved while a session runs is shown in that
+  session at its next prompt. `/cm show`, session details and the resume
+  card show whether a session follows its profile, is pinned, has unapplied
+  edits or holds a pending change. `/cm fork` prints the command that forks
+  the session.
 - Models: **A** adds a model from the screen. Every screen has complete key
   help, and a census checks that each key a screen handles is listed.
 
@@ -46,6 +54,11 @@ compiled settings and routes until their next launch or resume.
   sessions keep their route until they are resumed. A model you declared
   for Fable 5.2 yourself yields to the shipped line, with one Attention row
   and its remedy.
+- Saving a profile in a terminal applies the change to its eligible running
+  sessions by default (Enter; **L** or Esc for later); without a terminal,
+  `--apply` applies now. A change that mixes agents with session-level
+  changes applies the agents now and leaves the rest for the next resume,
+  unless that would add a warning.
 - `--system-prompt-snapshot` is reserved for the launcher in managed
   sessions; every launch of a fork turns Claude Code's system-prompt record
   off, so a fork and its own resumes send the fork's lead prompt.
@@ -90,6 +103,9 @@ compiled settings and routes until their next launch or resume.
   retired by a catalog.
 - `charmer sessions forget` also removes the lead prompts charmer generated
   for the session.
+- A `/model` switch no longer drops a change recorded for the next resume;
+  a session started with `--no-subagents` refuses a lineup with agents; an
+  unchanged compaction no longer asks for `/reload-plugins`.
 - The advice to fork with plain `claude --resume … --fork-session` and adopt
   the copy is gone: it ran a managed conversation unmanaged.
 - Account rows offer **Add models** and signed-in rows offer **Sign out**.
