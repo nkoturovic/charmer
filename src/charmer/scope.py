@@ -2693,9 +2693,14 @@ def fork_policy_drift(live: Path, plan: ScopePlan, drifted: Sequence[str]) -> bo
     ``doctor --repair`` resolves. A ``permissions.defaultMode`` or
     release-compiled ``subagentStatusLine`` difference alongside is lazy too
     (:func:`default_mode_differs` and :func:`status_line_differs` report
-    them). Any other difference is not: doctor keeps it BLOCK. Read-only."""
+    them). Admitted previous ``/cm`` skill bytes alongside are lazy too.
+    Any other difference is not: doctor keeps it BLOCK. Read-only."""
 
-    if list(drifted) != [f"{SETTINGS_RELPATH} content differs"]:
+    settings_drift = f"{SETTINGS_RELPATH} content differs"
+    if settings_drift not in drifted or any(line not in _SKILL_POLICY_DRIFT_LINES for line in drifted):
+        return False
+    skill_drift = [line for line in drifted if line != settings_drift]
+    if skill_drift and not skill_policy_drift(live, plan, skill_drift):
         return False
 
     def policy_split(document: Any) -> tuple[Any, tuple[bool, Any]] | None:

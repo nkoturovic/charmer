@@ -1371,10 +1371,10 @@ class SkillTests(unittest.TestCase):
         "description: Show or change this charmer session's agent lineup "
         "(/cm, /cm profiles, /cm profile NAME, /cm set AGENT=MODEL[:EFFORT], /cm unset AGENT, "
         "/cm direct [MODEL[:EFFORT]], /cm pin, /cm follow, /cm fallback PROVIDER [--preview], "
-        "/cm review [high-stakes] [RANGE], /cm quota)\n"
+        "/cm review [high-stakes] [RANGE], /cm quota, /cm fork)\n"
         'argument-hint: "profiles · profile NAME · set AGENT=MODEL[:EFFORT] · unset AGENT · '
         'direct [MODEL[:EFFORT]] · pin · follow · fallback PROVIDER [--preview] · '
-        'review [high-stakes] [RANGE] · quota"\n'
+        'review [high-stakes] [RANGE] · quota · fork"\n'
         "disable-model-invocation: true\n"
         "allowed-tools: Bash(charmer lineup:*)\n"
         "---\n"
