@@ -206,10 +206,10 @@ index 00000000..ee803c33
 +}
 diff --git a/internal/privatenet/privatenet.go b/internal/privatenet/privatenet.go
 new file mode 100644
-index 00000000..7c4ef532
+index 00000000..a8d781d9
 --- /dev/null
 +++ b/internal/privatenet/privatenet.go
-@@ -0,0 +1,442 @@
+@@ -0,0 +1,550 @@
 +// Package privatenet is the dial guard for OpenAI-compatible providers that
 +// are declared on a private network (the "private-network" block of an
 +// openai-compatibility entry: a base URL and one class, loopback, lan or
@@ -222,6 +222,11 @@ index 00000000..7c4ef532
 +// control hook and, for a tailnet, checks the connection's local address
 +// before any byte is written. Loopback to the gateway's own port, 8316 and
 +// 8317 is refused whatever the class.
++//
++// A connection belongs to one declaration of one provider (Declaration): it
++// is dialled, and writes each byte, only while that declaration is its
++// provider's current one (Publish), so a reload that changes the declaration
++// stops a request at whatever stage it is, before its next byte.
 +//
 +// Classification is one ordered table (the first matching rule wins), the
 +// same table the launcher uses; both are tested against one corpus of
@@ -243,6 +248,7 @@ index 00000000..7c4ef532
 +	"strconv"
 +	"strings"
 +	"sync"
++	"sync/atomic"
 +	"syscall"
 +	"time"
 +)
@@ -432,14 +438,103 @@ index 00000000..7c4ef532
 +// dial control hook the connection must run before it connects.
 +type ConnectFunc func(ctx context.Context, network, address string, control func(ctx context.Context, network, address string, c syscall.RawConn) error) (net.Conn, error)
 +
++// Declaration is one provider's private-network declaration: its name (in
++// lower case), class and base URL. Declarations are compared by value.
++type Declaration struct {
++	Provider string
++	Class    string
++	BaseURL  string
++}
++
++// declarations is the current declaration of each provider, by name; nil
++// until the first Publish.
++var declarations atomic.Pointer[map[string]Declaration]
++
++// Publish makes current the declarations of one configuration, replacing
++// every earlier one; a provider not listed has no current declaration. It is
++// called before any executor or route of that configuration is published.
++// Idle connections of a declaration that is no longer current are closed.
++func Publish(current []Declaration) {
++	table := make(map[string]Declaration, len(current))
++	for _, d := range current {
++		d.Provider = strings.ToLower(strings.TrimSpace(d.Provider))
++		if _, twice := table[d.Provider]; twice {
++			// A name declared twice has no current declaration.
++			table[d.Provider] = Declaration{Provider: d.Provider}
++			continue
++		}
++		table[d.Provider] = d
++	}
++	declarations.Store(&table)
++	transportsMu.Lock()
++	defer transportsMu.Unlock()
++	for key, t := range transports {
++		if !Current(key.declaration) {
++			t.CloseIdleConnections()
++			delete(transports, key)
++		}
++	}
++}
++
++// Current reports whether d is its provider's current declaration. Before
++// the first Publish no declaration is current.
++func Current(d Declaration) bool {
++	table := declarations.Load()
++	if table == nil || !ValidClass(d.Class) {
++		return false
++	}
++	got, ok := (*table)[d.Provider]
++	return ok && got == d
++}
++
 +// Dialer is the guarded dialer of one class.
 +type Dialer struct {
 +	Class        string
 +	GatewayPorts []int
++	// Declaration, when set, is the declaration every connection belongs
++	// to: nothing is dialled or written unless it is current.
++	Declaration *Declaration
 +	// Lookup resolves a host name once; nil uses the default resolver.
 +	Lookup LookupFunc
 +	// Connect opens a connection; nil uses a net.Dialer with DialTimeout.
 +	Connect ConnectFunc
++}
++
++// testConnect, when set, opens the connections of every dialer without a
++// Connect of its own (SetTestConnect).
++var testConnect atomic.Pointer[ConnectFunc]
++
++// SetTestConnect makes connect open the connections of every dialer without
++// a Connect of its own, the cached transports' included, until restore is
++// called. For tests only.
++func SetTestConnect(connect ConnectFunc) (restore func()) {
++	previous := testConnect.Swap(&connect)
++	return func() { testConnect.Store(previous) }
++}
++
++// declared refuses when the dialer's declaration is no longer current.
++func (d *Dialer) declared(remote string) error {
++	if d.Declaration == nil || Current(*d.Declaration) {
++		return nil
++	}
++	return &RefusedError{Class: d.Class, Remote: remote, Reason: ReasonPolicyChanged}
++}
++
++// declaredConn is a connection of one declaration: each Write first checks
++// that the declaration is still current and otherwise writes nothing. It
++// sits under TLS, so the check covers the handshake's records as well as the
++// request's.
++type declaredConn struct {
++	net.Conn
++	dialer *Dialer
++	remote string
++}
++
++func (c *declaredConn) Write(p []byte) (int, error) {
++	if err := c.dialer.declared(c.remote); err != nil {
++		return 0, err
++	}
++	return c.Conn.Write(p)
 +}
 +
 +// NewDialer returns the guarded dialer of class for a gateway listening on
@@ -484,8 +579,13 @@ index 00000000..7c4ef532
 +
 +// DialContext resolves address's host once, keeps the addresses the class
 +// allows and dials them in order by literal address. When every address is
-+// refused, the strongest refusal is returned.
++// refused, the strongest refusal is returned. A dialer with a declaration
++// dials only while it is current, and its connections write only while it
++// is.
 +func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
++	if err := d.declared(""); err != nil {
++		return nil, err
++	}
 +	host, portText, err := net.SplitHostPort(address)
 +	if err != nil {
 +		return nil, err
@@ -530,6 +630,9 @@ index 00000000..7c4ef532
 +	connect := d.Connect
 +	if connect == nil {
 +		connect = defaultConnect
++		if hook := testConnect.Load(); hook != nil {
++			connect = *hook
++		}
 +	}
 +	var lastErr error
 +	for _, target := range allowed {
@@ -544,6 +647,9 @@ index 00000000..7c4ef532
 +		if errLocal := d.checkLocal(conn); errLocal != nil {
 +			_ = conn.Close()
 +			return nil, errLocal
++		}
++		if d.Declaration != nil {
++			return &declaredConn{Conn: conn, dialer: d, remote: target.String()}, nil
 +		}
 +		return conn, nil
 +	}
@@ -581,8 +687,8 @@ index 00000000..7c4ef532
 +}
 +
 +type transportKey struct {
-+	class string
-+	ports string
++	declaration Declaration
++	ports       string
 +}
 +
 +var (
@@ -590,21 +696,23 @@ index 00000000..7c4ef532
 +	transports   = map[transportKey]*http.Transport{}
 +)
 +
-+// Transport returns the cached transport of class for a gateway listening on
-+// gatewayPort. The class and the refused port set are its cache identity.
-+func Transport(class string, gatewayPort int) *http.Transport {
++// Transport returns the cached transport of the provider declaration d for
++// a gateway listening on gatewayPort. The declaration and the refused port
++// set are its cache identity, so a connection is only ever reused by
++// requests of the declaration it was dialled under.
++func Transport(d Declaration, gatewayPort int) *http.Transport {
 +	ports := gatewayPorts(gatewayPort)
 +	texts := make([]string, len(ports))
 +	for i, port := range ports {
 +		texts[i] = strconv.Itoa(port)
 +	}
-+	key := transportKey{class: class, ports: strings.Join(texts, ",")}
++	key := transportKey{declaration: d, ports: strings.Join(texts, ",")}
 +	transportsMu.Lock()
 +	defer transportsMu.Unlock()
 +	if t, ok := transports[key]; ok {
 +		return t
 +	}
-+	t := NewTransport(&Dialer{Class: class, GatewayPorts: ports})
++	t := NewTransport(&Dialer{Class: d.Class, GatewayPorts: ports, Declaration: &d})
 +	transports[key] = t
 +	return t
 +}
@@ -629,10 +737,10 @@ index 00000000..7c4ef532
 +	return http.ErrUseLastResponse
 +}
 +
-+// Client returns an HTTP client for a provider declared on class: the cached
++// Client returns an HTTP client for the provider declaration d: the cached
 +// transport and no redirect.
-+func Client(class string, gatewayPort int) *http.Client {
-+	return &http.Client{Transport: Transport(class, gatewayPort), CheckRedirect: RefuseRedirect}
++func Client(d Declaration, gatewayPort int) *http.Client {
++	return &http.Client{Transport: Transport(d, gatewayPort), CheckRedirect: RefuseRedirect}
 +}
 +
 +// refusingTransport refuses every request before any connection.
@@ -654,10 +762,10 @@ index 00000000..7c4ef532
 +}
 diff --git a/internal/privatenet/privatenet_test.go b/internal/privatenet/privatenet_test.go
 new file mode 100644
-index 00000000..41bc4fa3
+index 00000000..47ccb6b9
 --- /dev/null
 +++ b/internal/privatenet/privatenet_test.go
-@@ -0,0 +1,503 @@
+@@ -0,0 +1,757 @@
 +package privatenet
 +
 +import (
@@ -666,6 +774,8 @@ index 00000000..41bc4fa3
 +	"crypto/x509"
 +	"encoding/json"
 +	"errors"
++	"io"
++	"log"
 +	"net"
 +	"net/http"
 +	"net/http/httptest"
@@ -1021,10 +1131,22 @@ index 00000000..41bc4fa3
 +	}
 +}
 +
++// declared makes ds the current declarations for the test and restores the
++// previous table after it.
++func declared(t *testing.T, ds ...Declaration) {
++	t.Helper()
++	previous := declarations.Load()
++	Publish(ds)
++	t.Cleanup(func() { declarations.Store(previous) })
++}
++
 +func TestDialerConnectsOnLoopback(t *testing.T) {
 +	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }))
 +	defer server.Close()
-+	resp, err := Client(Loopback, 0).Get(server.URL)
++	loopback := Declaration{Provider: "pn-loopback", Class: Loopback, BaseURL: server.URL}
++	tailnet := Declaration{Provider: "pn-tailnet", Class: Tailnet, BaseURL: server.URL}
++	declared(t, loopback, tailnet)
++	resp, err := Client(loopback, 0).Get(server.URL)
 +	if err != nil {
 +		t.Fatal(err)
 +	}
@@ -1032,7 +1154,7 @@ index 00000000..41bc4fa3
 +	if resp.StatusCode != http.StatusOK || resp.ProtoMajor != 1 {
 +		t.Fatalf("status %d proto %s", resp.StatusCode, resp.Proto)
 +	}
-+	if _, err := Client(Tailnet, 0).Get(server.URL); !IsRefused(err) {
++	if _, err := Client(tailnet, 0).Get(server.URL); !IsRefused(err) {
 +		t.Fatalf("tailnet to loopback: err = %v", err)
 +	}
 +}
@@ -1058,12 +1180,22 @@ index 00000000..41bc4fa3
 +}
 +
 +func TestTransportShapeAndCacheIdentity(t *testing.T) {
-+	a := Transport(LAN, 0)
-+	if a != Transport(LAN, 0) || a != Transport(LAN, 8317) {
-+		t.Fatal("the same class and port set built two transports")
++	lan := Declaration{Provider: "pn-cache", Class: LAN, BaseURL: "http://box.lan:8000/v1"}
++	a := Transport(lan, 0)
++	if a != Transport(lan, 0) || a != Transport(lan, 8317) {
++		t.Fatal("the same declaration and port set built two transports")
 +	}
-+	if a == Transport(Tailnet, 0) || a == Transport(LAN, 18317) {
-+		t.Fatal("a different class or port set shared a transport")
++	for _, other := range []Declaration{
++		{Provider: "pn-cache", Class: Tailnet, BaseURL: lan.BaseURL},
++		{Provider: "pn-cache", Class: LAN, BaseURL: "http://box.lan:8001/v1"},
++		{Provider: "pn-other", Class: LAN, BaseURL: lan.BaseURL},
++	} {
++		if a == Transport(other, 0) {
++			t.Fatalf("declaration %+v shared a transport", other)
++		}
++	}
++	if a == Transport(lan, 18317) {
++		t.Fatal("a different port set shared a transport")
 +	}
 +	if a.Proxy != nil || a.ForceAttemptHTTP2 || a.TLSNextProto == nil || len(a.TLSNextProto) != 0 || a.ResponseHeaderTimeout != 0 {
 +		t.Fatal("transport is not proxy-free HTTP/1.1 without a response-header timeout")
@@ -1071,7 +1203,7 @@ index 00000000..41bc4fa3
 +	if DialTimeout != 30*time.Second {
 +		t.Fatalf("dial timeout %s", DialTimeout)
 +	}
-+	client := Client(LAN, 0)
++	client := Client(lan, 0)
 +	if client.Transport != a || reflect.ValueOf(client.CheckRedirect).Pointer() != reflect.ValueOf(RefuseRedirect).Pointer() {
 +		t.Fatal("client does not use the cached transport and the redirect refusal")
 +	}
@@ -1137,7 +1269,7 @@ index 00000000..41bc4fa3
 +	pool.AddCert(tlsTarget.Certificate())
 +	transport := NewTransport(NewDialer(Loopback, 0))
 +	transport.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
-+	client := &http.Client{Transport: transport, CheckRedirect: Client(Loopback, 0).CheckRedirect}
++	client := &http.Client{Transport: transport, CheckRedirect: RefuseRedirect}
 +	for _, c := range []struct {
 +		name, from, to string
 +	}{
@@ -1159,6 +1291,236 @@ index 00000000..41bc4fa3
 +	}
 +	if followed.Load() != 0 {
 +		t.Fatalf("%d redirects followed", followed.Load())
++	}
++}
++
++func waitFor(t *testing.T, what string, done func() bool) {
++	t.Helper()
++	deadline := time.Now().Add(5 * time.Second)
++	for !done() {
++		if time.Now().After(deadline) {
++			t.Fatalf("timed out waiting for %s", what)
++		}
++		time.Sleep(5 * time.Millisecond)
++	}
++}
++
++// countingListener counts the connections it accepts and the bytes they
++// deliver.
++type countingListener struct {
++	net.Listener
++	accepts, received *atomic.Int64
++}
++
++func (l countingListener) Accept() (net.Conn, error) {
++	conn, err := l.Listener.Accept()
++	if err != nil {
++		return nil, err
++	}
++	l.accepts.Add(1)
++	return countingConn{Conn: conn, received: l.received}, nil
++}
++
++type countingConn struct {
++	net.Conn
++	received *atomic.Int64
++}
++
++func (c countingConn) Read(p []byte) (int, error) {
++	n, err := c.Conn.Read(p)
++	c.received.Add(int64(n))
++	return n, err
++}
++
++// A connection belongs to the declaration it was dialled under: it writes
++// while that declaration is its provider's current one (republished as it
++// is, with the name in another case, another provider changed, restored)
++// and writes nothing once it is not (class changed, URL moved, the name
++// declared twice, the provider removed, nothing published), when no new
++// connection of it is dialled either.
++func TestDeclaredConnectionWritesOnlyWhileItsDeclarationIsCurrent(t *testing.T) {
++	var accepts, received atomic.Int64
++	listener, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		t.Fatal(err)
++	}
++	sink := countingListener{Listener: listener, accepts: &accepts, received: &received}
++	defer sink.Close()
++	go func() {
++		for {
++			conn, errAccept := sink.Accept()
++			if errAccept != nil {
++				return
++			}
++			go func() {
++				defer conn.Close()
++				_, _ = io.Copy(io.Discard, conn)
++			}()
++		}
++	}()
++	address := listener.Addr().String()
++	own := Declaration{Provider: "pn-own", Class: Loopback, BaseURL: "http://" + address + "/v1"}
++	other := Declaration{Provider: "pn-other", Class: Loopback, BaseURL: "http://127.0.0.1:9/v1"}
++	declared(t, own, other)
++	d := &Dialer{Class: Loopback, GatewayPorts: gatewayPorts(0), Declaration: &own}
++	conn, err := d.DialContext(context.Background(), "tcp", address)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer conn.Close()
++	sent := int64(0)
++	writes := func(step string) {
++		t.Helper()
++		if n, errWrite := conn.Write([]byte("abc")); n != 3 || errWrite != nil {
++			t.Fatalf("%s: n=%d err=%v", step, n, errWrite)
++		}
++		sent += 3
++		waitFor(t, step, func() bool { return received.Load() == sent })
++	}
++	refuses := func(step string) {
++		t.Helper()
++		n, errWrite := conn.Write([]byte("abc"))
++		var refused *RefusedError
++		if n != 0 || !errors.As(errWrite, &refused) ||
++			*refused != (RefusedError{Class: Loopback, Remote: "127.0.0.1", Reason: ReasonPolicyChanged}) {
++			t.Fatalf("%s: write n=%d err=%v", step, n, errWrite)
++		}
++		if _, errDial := d.DialContext(context.Background(), "tcp", address); !errors.As(errDial, &refused) ||
++			refused.Reason != ReasonPolicyChanged {
++			t.Fatalf("%s: dial err=%v", step, errDial)
++		}
++	}
++	writes("current")
++	Publish([]Declaration{other, own})
++	writes("republished as it is")
++	Publish([]Declaration{{Provider: "PN-Own", Class: Loopback, BaseURL: own.BaseURL}, other})
++	writes("the name in another case")
++	Publish([]Declaration{own, {Provider: other.Provider, Class: Tailnet, BaseURL: other.BaseURL}})
++	writes("another provider changed")
++	for _, c := range []struct {
++		step  string
++		table []Declaration
++	}{
++		{"class changed", []Declaration{{Provider: own.Provider, Class: Tailnet, BaseURL: own.BaseURL}, other}},
++		{"url moved", []Declaration{{Provider: own.Provider, Class: Loopback, BaseURL: own.BaseURL + "/moved"}}},
++		{"declared twice", []Declaration{own, other, own}},
++		{"provider removed", []Declaration{other}},
++	} {
++		Publish(c.table)
++		refuses(c.step)
++	}
++	Publish([]Declaration{own})
++	writes("restored")
++	declarations.Store(nil)
++	refuses("nothing published")
++	time.Sleep(50 * time.Millisecond)
++	if received.Load() != sent || accepts.Load() != 1 {
++		t.Fatalf("received %d bytes over %d connections, want %d over 1", received.Load(), accepts.Load(), sent)
++	}
++}
++
++// A request whose connection is held after it connects, while its
++// provider's declaration changes, sends nothing once released: over plain
++// HTTP its first write is the request, over TLS the client hello. Either
++// way the refusal comes back through the HTTP client as the fixed 502
++// refusal, reason policy-changed.
++func TestHeldConnectionOfAChangedDeclarationSendsNothing(t *testing.T) {
++	for _, secure := range []bool{false, true} {
++		t.Run(map[bool]string{false: "http", true: "https"}[secure], func(t *testing.T) {
++			var accepts, received, requests atomic.Int64
++			server := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
++				requests.Add(1)
++			}))
++			server.Config.ErrorLog = log.New(io.Discard, "", 0)
++			server.Listener = countingListener{Listener: server.Listener, accepts: &accepts, received: &received}
++			if secure {
++				server.StartTLS()
++			} else {
++				server.Start()
++			}
++			defer server.Close()
++			own := Declaration{Provider: "pn-held", Class: Loopback, BaseURL: server.URL + "/v1"}
++			declared(t, own)
++			connected, release := make(chan struct{}), make(chan struct{})
++			var hold sync.Once
++			d := &Dialer{Class: Loopback, GatewayPorts: gatewayPorts(0), Declaration: &own,
++				Connect: func(ctx context.Context, network, address string, control func(context.Context, string, string, syscall.RawConn) error) (net.Conn, error) {
++					conn, errConnect := defaultConnect(ctx, network, address, control)
++					hold.Do(func() {
++						close(connected)
++						<-release
++					})
++					return conn, errConnect
++				}}
++			transport := NewTransport(d)
++			defer transport.CloseIdleConnections()
++			if secure {
++				pool := x509.NewCertPool()
++				pool.AddCert(server.Certificate())
++				transport.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
++			}
++			done := make(chan error, 1)
++			go func() {
++				req, errRequest := http.NewRequest(http.MethodPost, server.URL+"/v1/chat/completions", strings.NewReader(`{}`))
++				if errRequest != nil {
++					done <- errRequest
++					return
++				}
++				req.Header.Set("Authorization", "Bearer pn-held-key")
++				resp, errDo := (&http.Client{Transport: transport, CheckRedirect: RefuseRedirect}).Do(req)
++				if resp != nil {
++					_ = resp.Body.Close()
++				}
++				done <- errDo
++			}()
++			<-connected
++			Publish([]Declaration{{Provider: own.Provider, Class: Tailnet, BaseURL: own.BaseURL}})
++			close(release)
++			var errDo error
++			select {
++			case errDo = <-done:
++			case <-time.After(10 * time.Second):
++				t.Fatal("the held request did not finish")
++			}
++			refused, ok := Canonical(errDo)
++			if !ok || *refused != (RefusedError{Class: Loopback, Remote: "127.0.0.1", Reason: ReasonPolicyChanged}) ||
++				refused.Error() != "upstream address refused: outside the provider's private network (loopback)" {
++				t.Fatalf("err = %v", errDo)
++			}
++			time.Sleep(50 * time.Millisecond)
++			if accepts.Load() != 1 || received.Load() != 0 || requests.Load() != 0 {
++				t.Fatalf("accepts %d, bytes received %d, requests %d", accepts.Load(), received.Load(), requests.Load())
++			}
++		})
++	}
++}
++
++// Publishing drops the cached transport of a declaration that is no longer
++// current, closing its idle connections, and keeps a current one's.
++func TestPublishDropsTheTransportsOfStaleDeclarations(t *testing.T) {
++	var closed atomic.Int64
++	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }))
++	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
++		if state == http.StateClosed {
++			closed.Add(1)
++		}
++	}
++	server.Start()
++	defer server.Close()
++	keep := Declaration{Provider: "pn-keep", Class: Loopback, BaseURL: server.URL + "/v1"}
++	gone := Declaration{Provider: "pn-gone", Class: Loopback, BaseURL: server.URL + "/v1"}
++	declared(t, keep, gone)
++	kept, dropped := Transport(keep, 0), Transport(gone, 0)
++	resp, err := Client(gone, 0).Get(server.URL)
++	if err != nil {
++		t.Fatal(err)
++	}
++	_, _ = io.Copy(io.Discard, resp.Body)
++	_ = resp.Body.Close()
++	Publish([]Declaration{keep})
++	waitFor(t, "the idle connection of the stale declaration to close", func() bool { return closed.Load() == 1 })
++	if Transport(keep, 0) != kept || Transport(gone, 0) == dropped {
++		t.Fatal("publish kept a stale transport or dropped a current one")
 +	}
 +}
 diff --git a/internal/privatenet/testdata/netclass-corpus.json b/internal/privatenet/testdata/netclass-corpus.json
@@ -1397,10 +1759,10 @@ index 63e647f1..f061693d 100644
  // closeOpenAICompatBody closes an upstream body; on the keyed route a close
 diff --git a/internal/runtime/executor/openai_compat_private_network.go b/internal/runtime/executor/openai_compat_private_network.go
 new file mode 100644
-index 00000000..3bfe9c73
+index 00000000..acb46352
 --- /dev/null
 +++ b/internal/runtime/executor/openai_compat_private_network.go
-@@ -0,0 +1,113 @@
+@@ -0,0 +1,170 @@
 +package executor
 +
 +import (
@@ -1425,12 +1787,68 @@ index 00000000..3bfe9c73
 +
 +// openAICompatDialPolicy is how one request of an auth is dialled.
 +type openAICompatDialPolicy struct {
-+	// guarded: through the private-network transport of class.
-+	guarded bool
-+	class   string
++	// guarded: through the private-network transport of declaration.
++	guarded     bool
++	class       string
++	declaration privatenet.Declaration
 +	// refused: every dial is refused (the auth comes from a previous
 +	// declaration of its provider).
 +	refused bool
++}
++
++// openAICompatDeclaration is the private-network declaration of entry, a
++// provider's single entry.
++func openAICompatDeclaration(entry *config.OpenAICompatibility) privatenet.Declaration {
++	return privatenet.Declaration{
++		Provider: strings.ToLower(strings.TrimSpace(entry.Name)),
++		Class:    strings.TrimSpace(entry.PrivateNetwork.Class),
++		BaseURL:  strings.TrimSpace(entry.BaseURL),
++	}
++}
++
++// PrivateNetworkDeclarations returns the declaration of every provider cfg
++// declares on a private network: a name with a single, enabled entry that
++// has a private-network block (the providers dialPolicy guards).
++func PrivateNetworkDeclarations(cfg *config.Config) []privatenet.Declaration {
++	if cfg == nil {
++		return nil
++	}
++	entries := map[string][]*config.OpenAICompatibility{}
++	var names []string
++	for i := range cfg.OpenAICompatibility {
++		entry := &cfg.OpenAICompatibility[i]
++		name := strings.ToLower(strings.TrimSpace(entry.Name))
++		if name == "" {
++			continue
++		}
++		if _, seen := entries[name]; !seen {
++			names = append(names, name)
++		}
++		entries[name] = append(entries[name], entry)
++	}
++	var declarations []privatenet.Declaration
++	for _, name := range names {
++		if group := entries[name]; len(group) == 1 && !group[0].Disabled && group[0].PrivateNetwork != nil {
++			declarations = append(declarations, openAICompatDeclaration(group[0]))
++		}
++	}
++	return declarations
++}
++
++// PublishPrivateNetworkDeclarations makes cfg's private-network declarations
++// the current ones. Call it with every configuration before its executors
++// and routes are published: a connection of a declaration that is no longer
++// current dials and writes nothing.
++func PublishPrivateNetworkDeclarations(cfg *config.Config) {
++	privatenet.Publish(PrivateNetworkDeclarations(cfg))
++}
++
++// PublishDeclarations makes the declarations of the executor's
++// configuration the current ones, as the service does with each
++// configuration before it binds its executors: for an executor built
++// outside the service.
++func (e *OpenAICompatExecutor) PublishDeclarations() {
++	PublishPrivateNetworkDeclarations(e.cfg)
 +}
 +
 +// dialPolicy decides the dial policy of auth from the executor's
@@ -1469,7 +1887,8 @@ index 00000000..3bfe9c73
 +	}
 +	if entryDeclared && len(entries) == 1 && !entries[0].Disabled && base != "" &&
 +		strings.TrimSpace(entries[0].BaseURL) == base {
-+		return openAICompatDialPolicy{guarded: true, class: strings.TrimSpace(entries[0].PrivateNetwork.Class)}
++		declaration := openAICompatDeclaration(entries[0])
++		return openAICompatDialPolicy{guarded: true, class: declaration.Class, declaration: declaration}
 +	}
 +	class := authClass
 +	for _, entry := range entries {
@@ -1516,10 +1935,10 @@ index 00000000..3bfe9c73
 +}
 diff --git a/internal/runtime/executor/openai_compat_private_network_test.go b/internal/runtime/executor/openai_compat_private_network_test.go
 new file mode 100644
-index 00000000..5ed44a89
+index 00000000..1a5be0ad
 --- /dev/null
 +++ b/internal/runtime/executor/openai_compat_private_network_test.go
-@@ -0,0 +1,366 @@
+@@ -0,0 +1,379 @@
 +package executor
 +
 +import (
@@ -1621,13 +2040,26 @@ index 00000000..5ed44a89
 +}
 +
 +// privateNetworkExecutor is the executor of a configuration whose entries
-+// are given; with none, the entry auth was synthesized from.
-+func privateNetworkExecutor(port int, auth *cliproxyauth.Auth, entries ...config.OpenAICompatibility) *OpenAICompatExecutor {
++// are given (with none, the entry auth was synthesized from), with that
++// configuration's declarations current, as the service publishes them
++// before it binds an executor.
++func privateNetworkExecutor(t *testing.T, port int, auth *cliproxyauth.Auth, entries ...config.OpenAICompatibility) *OpenAICompatExecutor {
++	t.Helper()
 +	if len(entries) == 0 {
 +		class, _ := openAICompatPrivateNetwork(auth)
 +		entries = []config.OpenAICompatibility{privateNetworkEntry(auth.Attributes["base_url"], class)}
 +	}
-+	return NewOpenAICompatExecutor("openai-compatibility", &config.Config{Port: port, OpenAICompatibility: entries})
++	cfg := &config.Config{Port: port, OpenAICompatibility: entries}
++	publishPrivateNetworkForTest(t, cfg)
++	return NewOpenAICompatExecutor("openai-compatibility", cfg)
++}
++
++// publishPrivateNetworkForTest makes cfg's declarations current for the
++// test and withdraws them after it.
++func publishPrivateNetworkForTest(t *testing.T, cfg *config.Config) {
++	t.Helper()
++	PublishPrivateNetworkDeclarations(cfg)
++	t.Cleanup(func() { privatenet.Publish(nil) })
 +}
 +
 +func drainPrivateNetworkStream(result *cliproxyexecutor.StreamResult, err error) error {
@@ -1703,7 +2135,7 @@ index 00000000..5ed44a89
 +		t.Run(site.name, func(t *testing.T) {
 +			upstream := newPrivateNetworkUpstream(t)
 +			auth := privateNetworkAuth(upstream.server.URL+"/v1", privatenet.Loopback, privateNetworkKey)
-+			if err := site.run(context.Background(), privateNetworkExecutor(18317, auth), auth); err != nil {
++			if err := site.run(context.Background(), privateNetworkExecutor(t, 18317, auth), auth); err != nil {
 +				t.Fatalf("err = %v", err)
 +			}
 +			if upstream.requests.Load() != 1 {
@@ -1724,7 +2156,7 @@ index 00000000..5ed44a89
 +				logs := capturePrivateNetworkLog(t)
 +				upstream := newPrivateNetworkUpstream(t)
 +				auth := privateNetworkAuth(upstream.server.URL+"/v1", privatenet.Tailnet, key)
-+				err := site.run(context.Background(), privateNetworkExecutor(18317, auth), auth)
++				err := site.run(context.Background(), privateNetworkExecutor(t, 18317, auth), auth)
 +				if err == nil || err.Error() != want {
 +					t.Fatalf("err = %v", err)
 +				}
@@ -1747,7 +2179,7 @@ index 00000000..5ed44a89
 +func TestPrivateNetworkRefusesTheGatewaysOwnPort(t *testing.T) {
 +	upstream := newPrivateNetworkUpstream(t)
 +	auth := privateNetworkAuth(upstream.server.URL+"/v1", privatenet.Loopback, privateNetworkKey)
-+	err := privateNetworkSites[0].run(context.Background(), privateNetworkExecutor(upstream.port(), auth), auth)
++	err := privateNetworkSites[0].run(context.Background(), privateNetworkExecutor(t, upstream.port(), auth), auth)
 +	refused, ok := privatenet.Canonical(err)
 +	if !ok || refused.Reason != privatenet.ReasonGatewayPort || upstream.accepts.Load() != 0 {
 +		t.Fatalf("err = %v accepts = %d", err, upstream.accepts.Load())
@@ -1776,7 +2208,7 @@ index 00000000..5ed44a89
 +			delete(auth.Attributes, "private_network")
 +		}
 +		auth.ProxyURL = proxy.URL
-+		e := privateNetworkExecutor(18317, auth)
++		e := privateNetworkExecutor(t, 18317, auth)
 +		e.cfg.ProxyURL = proxy.URL
 +		ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", http.RoundTripper(contextTransport))
 +		ctx = cliproxyexecutor.WithRequestProxyURL(ctx, proxy.URL)
@@ -1811,7 +2243,7 @@ index 00000000..5ed44a89
 +			http.Redirect(w, r, location, http.StatusTemporaryRedirect)
 +		}))
 +		auth := privateNetworkAuth(origin.URL+"/v1", privatenet.Loopback, "")
-+		err := privateNetworkSites[0].run(context.Background(), privateNetworkExecutor(18317, auth), auth)
++		err := privateNetworkSites[0].run(context.Background(), privateNetworkExecutor(t, 18317, auth), auth)
 +		origin.Close()
 +		if err == nil || err.Error() != "upstream redirect refused" {
 +			t.Fatalf("%s: err = %v", location, err)
@@ -1865,7 +2297,7 @@ index 00000000..5ed44a89
 +			if !c.entryRemoved {
 +				entries = append(entries, privateNetworkEntry(entryBase, c.entryClass))
 +			}
-+			e := privateNetworkExecutor(18317, auth, entries...)
++			e := privateNetworkExecutor(t, 18317, auth, entries...)
 +			// The ordinary client would go through this proxy and fail.
 +			e.cfg.ProxyURL = proxy.URL
 +			before := proxied.Load()
@@ -1887,7 +2319,7 @@ index 00000000..5ed44a89
 +	}
 +}
 diff --git a/internal/runtime/executor/openai_compat_redirect.go b/internal/runtime/executor/openai_compat_redirect.go
-index 6e1c8775..1fc3b40a 100644
+index 6e1c8775..e0b6b900 100644
 --- a/internal/runtime/executor/openai_compat_redirect.go
 +++ b/internal/runtime/executor/openai_compat_redirect.go
 @@ -5,6 +5,7 @@ import (
@@ -1898,7 +2330,7 @@ index 6e1c8775..1fc3b40a 100644
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/upstreamredirect"
  	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
-@@ -87,7 +88,23 @@ func openAICompatRequestRedirectMode(auth *cliproxyauth.Auth, req *http.Request)
+@@ -87,7 +88,26 @@ func openAICompatRequestRedirectMode(auth *cliproxyauth.Auth, req *http.Request)
  // newHTTPClient returns the compat HTTP client for the prepared request req,
  // with the redirect policy captured from auth and req, and that mode for the
  // post-Do check. Call it after every header of req is set and before Do.
@@ -1907,7 +2339,10 @@ index 6e1c8775..1fc3b40a 100644
 +// proxy-aware client: it gets the private-network transport of its class
 +// (no proxy from any source, HTTP/1.1, the guarded dialer) and follows no
 +// redirect. The declaration is the executor's configuration (dialPolicy);
-+// an auth of a previous declaration is refused before any connection.
++// an auth of a previous declaration is refused before any connection, and
++// the transport of the declaration dials and writes only while it is the
++// provider's current one (a request in flight when a reload changes it is
++// stopped before its next byte).
  func (e *OpenAICompatExecutor) newHTTPClient(ctx context.Context, auth *cliproxyauth.Auth, req *http.Request) (*http.Client, upstreamredirect.Mode) {
 +	if policy := e.dialPolicy(auth); policy.guarded {
 +		if policy.refused {
@@ -1917,7 +2352,7 @@ index 6e1c8775..1fc3b40a 100644
 +		if e.cfg != nil {
 +			gatewayPort = e.cfg.Port
 +		}
-+		return privatenet.Client(policy.class, gatewayPort), upstreamredirect.RefuseAll
++		return privatenet.Client(policy.declaration, gatewayPort), upstreamredirect.RefuseAll
 +	}
  	mode := openAICompatRequestRedirectMode(auth, req)
  	return upstreamredirect.Guard(helps.NewProxyAwareHTTPClient(ctx, e.cfg, auth, 0), mode), mode
@@ -2118,13 +2553,14 @@ index 00000000..5bdda60b
 +}
 diff --git a/sdk/cliproxy/private_network_reload_test.go b/sdk/cliproxy/private_network_reload_test.go
 new file mode 100644
-index 00000000..105d0785
+index 00000000..1dbf3d2f
 --- /dev/null
 +++ b/sdk/cliproxy/private_network_reload_test.go
-@@ -0,0 +1,204 @@
+@@ -0,0 +1,342 @@
 +package cliproxy
 +
 +import (
++	"bytes"
 +	"context"
 +	"encoding/json"
 +	"fmt"
@@ -2135,11 +2571,15 @@ index 00000000..105d0785
 +	"strings"
 +	"sync"
 +	"sync/atomic"
++	"syscall"
 +	"testing"
++	"time"
 +
 +	"github.com/router-for-me/CLIProxyAPI/v8/internal/api"
 +	internalconfig "github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/privatenet"
 +	internalregistry "github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
++	log "github.com/sirupsen/logrus"
 +)
 +
 +// privateNetworkReloadUpstream counts accepted connections and the paths of
@@ -2203,6 +2643,75 @@ index 00000000..105d0785
 +	return fmt.Sprintf("    private-network:\n      base-url: %q\n      class: %q\n", url, class)
 +}
 +
++// privateNetworkReloadBox is a service started from the rendered form with
++// block as pnbox's lines, and its API handler.
++type privateNetworkReloadBox struct {
++	service        *Service
++	handler        http.Handler
++	authDir, proxy string
++}
++
++func newPrivateNetworkReloadBox(t *testing.T, proxy, block string) *privateNetworkReloadBox {
++	t.Helper()
++	box := &privateNetworkReloadBox{authDir: t.TempDir(), proxy: proxy}
++	before := box.config(t, block, "charmer-render-before")
++	service, errBuild := NewBuilder().WithConfig(before).WithConfigPath(box.authDir + "/config.yaml").Build()
++	if errBuild != nil {
++		t.Fatal(errBuild)
++	}
++	server := api.NewServer(service.cfg, service.coreManager, service.accessManager, service.configPath, service.serverOptions...)
++	service.server = server
++	box.service, box.handler = service, server.Handler()
++	reg := internalregistry.GetGlobalRegistry()
++	t.Cleanup(func() {
++		for _, auth := range service.coreManager.List() {
++			if auth != nil {
++				reg.UnregisterClient(auth.ID)
++			}
++		}
++	})
++	if !service.applyConfigUpdateWithAuthSynthesis(context.Background(), before, true) {
++		t.Fatal("initial config not applied")
++	}
++	if !box.listed("charmer-render-before") || !box.listed("pn-reload-model") {
++		rec := httptest.NewRecorder()
++		box.handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
++		t.Fatalf("the initial render is not served: %d %.400s auths=%d", rec.Code, rec.Body.String(), len(service.coreManager.List()))
++	}
++	return box
++}
++
++func (b *privateNetworkReloadBox) config(t *testing.T, block, sentinel string) *internalconfig.Config {
++	t.Helper()
++	return privateNetworkReloadConfig(t, b.authDir, b.proxy, block, sentinel)
++}
++
++func (b *privateNetworkReloadBox) listed(alias string) bool {
++	rec := httptest.NewRecorder()
++	b.handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
++	var listing struct {
++		Data []struct {
++			ID string `json:"id"`
++		} `json:"data"`
++	}
++	_ = json.Unmarshal(rec.Body.Bytes(), &listing)
++	for _, row := range listing.Data {
++		if row.ID == alias {
++			return true
++		}
++	}
++	return false
++}
++
++func (b *privateNetworkReloadBox) post() *httptest.ResponseRecorder {
++	rec := httptest.NewRecorder()
++	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
++		strings.NewReader(`{"model":"pn-reload-model","messages":[{"role":"user","content":"hi"}]}`))
++	req.Header.Set("Content-Type", "application/json")
++	b.handler.ServeHTTP(rec, req)
++	return rec
++}
++
 +// A reload publishes the new routes (the sentinel) before the synthesized
 +// credentials follow: applyWatcherConfigUpdate is the watcher's callback,
 +// and the credential refresh that follows it is never run here, so the
@@ -2247,71 +2756,21 @@ index 00000000..105d0785
 +	} {
 +		t.Run(c.name, func(t *testing.T) {
 +			upstream := newPrivateNetworkReloadUpstream(t)
-+			authDir := t.TempDir()
 +			// Unless direct, the proxy is the only way an ordinary entry
 +			// reaches anything.
 +			proxyURL := proxy.URL
 +			if c.direct {
 +				proxyURL = ""
 +			}
-+			before := privateNetworkReloadConfig(t, authDir, proxyURL, c.before(upstream.server.URL), "charmer-render-before")
-+			service, errBuild := NewBuilder().WithConfig(before).WithConfigPath(authDir + "/config.yaml").Build()
-+			if errBuild != nil {
-+				t.Fatal(errBuild)
-+			}
-+			server := api.NewServer(service.cfg, service.coreManager, service.accessManager, service.configPath, service.serverOptions...)
-+			service.server = server
-+			handler := server.Handler()
-+			reg := internalregistry.GetGlobalRegistry()
-+			t.Cleanup(func() {
-+				for _, auth := range service.coreManager.List() {
-+					if auth != nil {
-+						reg.UnregisterClient(auth.ID)
-+					}
-+				}
-+			})
-+			ctx := context.Background()
-+			if !service.applyConfigUpdateWithAuthSynthesis(ctx, before, true) {
-+				t.Fatal("initial config not applied")
-+			}
-+			listed := func(alias string) bool {
-+				rec := httptest.NewRecorder()
-+				handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
-+				var listing struct {
-+					Data []struct {
-+						ID string `json:"id"`
-+					} `json:"data"`
-+				}
-+				_ = json.Unmarshal(rec.Body.Bytes(), &listing)
-+				for _, row := range listing.Data {
-+					if row.ID == alias {
-+						return true
-+					}
-+				}
-+				return false
-+			}
-+			request := func() int {
-+				rec := httptest.NewRecorder()
-+				req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
-+					strings.NewReader(`{"model":"pn-reload-model","messages":[{"role":"user","content":"hi"}]}`))
-+				req.Header.Set("Content-Type", "application/json")
-+				handler.ServeHTTP(rec, req)
-+				return rec.Code
-+			}
-+			if !listed("charmer-render-before") || !listed("pn-reload-model") {
-+				rec := httptest.NewRecorder()
-+				handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
-+				t.Fatalf("the initial render is not served: %d %.400s auths=%d", rec.Code, rec.Body.String(), len(service.coreManager.List()))
-+			}
++			box := newPrivateNetworkReloadBox(t, proxyURL, c.before(upstream.server.URL))
 +
 +			// The watcher's reload callback, without the credential refresh.
-+			after := privateNetworkReloadConfig(t, authDir, proxyURL, c.after(upstream.server.URL), "charmer-render-after")
-+			service.applyWatcherConfigUpdate(after)
-+			if !listed("charmer-render-after") {
++			box.service.applyWatcherConfigUpdate(box.config(t, c.after(upstream.server.URL), "charmer-render-after"))
++			if !box.listed("charmer-render-after") {
 +				t.Fatal("the reloaded render is not acknowledged")
 +			}
 +			accepts, seen := upstream.accepts.Load(), len(upstream.requests())
-+			status := request()
++			status := box.post().Code
 +			paths := upstream.requests()[seen:]
 +			if c.served != "" {
 +				if status != http.StatusOK || len(paths) != 1 || paths[0] != c.served {
@@ -2326,3 +2785,152 @@ index 00000000..105d0785
 +		})
 +	}
 +}
++
++// privateNetworkLog keeps what the logger writes during a test.
++type privateNetworkLog struct {
++	mu  sync.Mutex
++	buf bytes.Buffer
++}
++
++func (l *privateNetworkLog) Write(p []byte) (int, error) {
++	l.mu.Lock()
++	defer l.mu.Unlock()
++	return l.buf.Write(p)
++}
++
++func (l *privateNetworkLog) String() string {
++	l.mu.Lock()
++	defer l.mu.Unlock()
++	return l.buf.String()
++}
++
++func capturePrivateNetworkLog(t *testing.T) *privateNetworkLog {
++	t.Helper()
++	logged := &privateNetworkLog{}
++	previous := log.StandardLogger().Out
++	log.SetOutput(io.MultiWriter(previous, logged))
++	t.Cleanup(func() { log.SetOutput(previous) })
++	return logged
++}
++
++// A request already connecting when a reload changes its provider's
++// declaration sends nothing once it may write. Its connection is held right
++// after it connects (the dial seam); the reload is applied in full (routes
++// and credentials) and its sentinel served; then the connection is released.
++// The attempt in flight is refused with the fixed 502 refusal of the
++// declaration it was dialled under, reason policy-changed, and no byte of it
++// reaches the provider. When the URL moved, the reloaded credential is
++// another one and the request is retried with it, under the new declaration,
++// at the new URL only. A reload that leaves the provider's declaration as it
++// was stops nothing.
++func TestPrivateNetworkRequestInFlightAcrossAReload(t *testing.T) {
++	for _, c := range []struct {
++		name  string
++		after func(base string) string
++		// served: the request reaches the provider at this path only.
++		served string
++		// refused: the attempt in flight was refused.
++		refused bool
++	}{
++		{name: "class changed", refused: true, after: func(b string) string { return privateNetworkBlock(b+"/v1", "tailnet") }},
++		{name: "url moved", refused: true, served: "/moved/v1/chat/completions",
++			after: func(b string) string { return privateNetworkBlock(b+"/moved/v1", "loopback") }},
++		{name: "network removed", refused: true, after: func(b string) string { return fmt.Sprintf("    base-url: %q\n", b+"/v1") }},
++		{name: "entry removed", refused: true, after: func(string) string { return "" }},
++		{name: "unchanged", served: "/v1/chat/completions",
++			after: func(b string) string { return privateNetworkBlock(b+"/v1", "loopback") }},
++	} {
++		t.Run(c.name, func(t *testing.T) {
++			upstream := newPrivateNetworkReloadUpstream(t)
++			logged := capturePrivateNetworkLog(t)
++			box := newPrivateNetworkReloadBox(t, "", privateNetworkBlock(upstream.server.URL+"/v1", "loopback"))
++			connected, release := make(chan struct{}), make(chan struct{})
++			var hold sync.Once
++			t.Cleanup(privatenet.SetTestConnect(func(ctx context.Context, network, address string, control func(context.Context, string, string, syscall.RawConn) error) (net.Conn, error) {
++				conn, err := (&net.Dialer{ControlContext: control}).DialContext(ctx, network, address)
++				hold.Do(func() {
++					close(connected)
++					<-release
++				})
++				return conn, err
++			}))
++			replied := make(chan *httptest.ResponseRecorder, 1)
++			go func() { replied <- box.post() }()
++			select {
++			case <-connected:
++			case <-time.After(10 * time.Second):
++				t.Fatal("the request never connected")
++			}
++			reloaded := make(chan bool, 1)
++			go func() {
++				reloaded <- box.service.applyConfigUpdateWithAuthSynthesis(context.Background(),
++					box.config(t, c.after(upstream.server.URL), "charmer-render-after"), true)
++			}()
++			select {
++			case ok := <-reloaded:
++				if !ok || !box.listed("charmer-render-after") {
++					t.Fatal("the reload is not served")
++				}
++			case <-time.After(10 * time.Second):
++				close(release)
++				t.Fatal("the reload waited for the request in flight")
++			}
++			close(release)
++			var rec *httptest.ResponseRecorder
++			select {
++			case rec = <-replied:
++			case <-time.After(10 * time.Second):
++				t.Fatal("the released request did not finish")
++			}
++			paths := upstream.requests()
++			const refused = "upstream address refused: outside the provider's private network (loopback)"
++			if c.served != "" {
++				if rec.Code != http.StatusOK || len(paths) != 1 || paths[0] != c.served {
++					t.Fatalf("status %d paths %v, want served at %s", rec.Code, paths, c.served)
++				}
++			} else if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), refused) || len(paths) != 0 {
++				t.Fatalf("status %d body %.300s paths %v: the request was sent under the previous declaration",
++					rec.Code, rec.Body.String(), paths)
++			}
++			const line = "private-network: refused provider=pnbox class=loopback remote=127.0.0.1 reason=policy-changed"
++			if strings.Contains(logged.String(), line) != c.refused {
++				t.Fatalf("refusal line %q logged: %t, want %t", line, !c.refused, c.refused)
++			}
++		})
++	}
++}
+diff --git a/sdk/cliproxy/service_config.go b/sdk/cliproxy/service_config.go
+index 672548db..e889009d 100644
+--- a/sdk/cliproxy/service_config.go
++++ b/sdk/cliproxy/service_config.go
+@@ -6,6 +6,7 @@ import (
+ 	"time"
+ 
+ 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor"
+ 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
+ 	"github.com/router-for-me/CLIProxyAPI/v8/internal/watcher/synthesizer"
+ 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+@@ -207,6 +208,9 @@ func (s *Service) applyConfigRuntime(ctx context.Context, commit configCommit, s
+ 	if errContext := ctx.Err(); errContext != nil {
+ 		return false
+ 	}
++	// Private-network declarations first: before any executor or route of
++	// this configuration, a connection of a changed declaration stops.
++	executor.PublishPrivateNetworkDeclarations(cfg)
+ 
+ 	if !s.applyManagerConfig(ctx, commit) {
+ 		return false
+diff --git a/sdk/cliproxy/service_lifecycle.go b/sdk/cliproxy/service_lifecycle.go
+index 70dc8d02..720e70b3 100644
+--- a/sdk/cliproxy/service_lifecycle.go
++++ b/sdk/cliproxy/service_lifecycle.go
+@@ -86,6 +86,8 @@ func (s *Service) Run(ctx context.Context) error {
+ 		s.applyKVStoreConfig(cfg)
+ 	}
+ 
++	// Private-network declarations before the first executor or route.
++	executor.PublishPrivateNetworkDeclarations(cfg)
+ 	s.applyRetryConfig(cfg)
+ 	s.configureCooldownStateStore(cfg)
+ 

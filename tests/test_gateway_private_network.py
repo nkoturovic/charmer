@@ -1,7 +1,7 @@
 """Providers declared on a private network, through the candidate gateway.
 
 The dial guard of ``cli-proxy-api-private-network-dial.patch`` against the
-real binary, rows T1-T6. Every upstream is a fake on a filesystem socket that
+real binary, rows T1-T8. Every upstream is a fake on a filesystem socket that
 the gateway reaches through a loopback bridge inside its own network
 namespace; nothing is resolved and no packet leaves the namespace. The config
 comes from validated declarations through the renderer and is read back with
@@ -40,10 +40,13 @@ CORPUS = REPO_ROOT / "tests/fixtures/netclass-corpus.json"
 CORPUS_COPY = "internal/privatenet/testdata/netclass-corpus.json"
 
 SECRET = "PNBOX_API_KEY"
+# One secret per origin: the keyed HTTPS provider of T8 has its own.
+TLS_SECRET = "PNKTLS_API_KEY"
 # The provider key: never in a gateway log line (T6). Its prefix is one the
 # harness diagnostics redact.
 KEY_VALUE = "keyedtest-key-pn-sentinel-4c1d"
 REFUSED = "upstream address refused: outside the provider's private network (tailnet)"
+LOOPBACK_REFUSED = "upstream address refused: outside the provider's private network (loopback)"
 REDIRECT_REFUSED = "upstream redirect refused"
 # The watcher's line when a load (and its credentials' refresh) has finished.
 LOAD_COMPLETE = "full client load complete"
@@ -53,6 +56,8 @@ LOOP, LAN, TAIL = "custom-pnbox-chat", "custom-pnlan-chat", "custom-pntail-chat"
 SAME, KSAME, PORT, HTTPS, TLS = ("custom-pnsame-chat", "custom-pnksame-chat", "custom-pnport-chat",
                                  "custom-pnhttps-chat", "custom-pntls-chat")
 PLAIN = "custom-pnplain-chat"
+# The keyed HTTPS provider whose handshake the gate can hold (T8).
+KTLS = "custom-pnktls-chat"
 FOLLOWED = "/followed/"
 
 
@@ -66,8 +71,8 @@ def lan_declaration(base_url: str, key: str, network: str | None = "loopback") -
         "context": {"declared_tokens": 32768, "source": "operator"}}}}
 
 
-def keyed_declaration(base_url: str, key: str) -> dict:
-    return keyed.keyed_document(base_url=base_url, secret=SECRET, key=key, wire="pn-wire", efforts=("high",),
+def keyed_declaration(base_url: str, key: str, secret: str = SECRET) -> dict:
+    return keyed.keyed_document(base_url=base_url, secret=secret, key=key, wire="pn-wire", efforts=("high",),
                                 default="high", display="Private keyed box", network="loopback")
 
 
@@ -88,7 +93,7 @@ def refinalize(document: dict) -> dict:
     return render.finalize_document(bare)
 
 
-def render_document(*, egress: int, gateway: int, tls: int, other: int, home: Path) -> dict:
+def render_document(*, egress: int, gateway: int, tls: int, gate: int, other: int, home: Path) -> dict:
     """The rendered document, read back with the restricted parser, plus the
     one entry the launcher refuses: ``pntail``, the tailnet class at a
     loopback address (a copy of the keyed loopback entry)."""
@@ -107,6 +112,7 @@ def render_document(*, egress: int, gateway: int, tls: int, other: int, home: Pa
         "pnport": lan_declaration(f"{http}/pnport/v1", PORT),
         "pnhttps": lan_declaration(f"{http}/pnhttps/v1", HTTPS),
         "pntls": lan_declaration(f"https://127.0.0.1:{tls}/pntls/v1", TLS),
+        "pnktls": keyed_declaration(f"https://127.0.0.1:{gate}/pnktls/v1", KTLS, TLS_SECRET),
         "pnplain": lan_declaration(f"{http}/pnplain/v1", PLAIN, network=None),
     }
     plan, _ledger = keyed.keyed_plan(files, docs=docs)
@@ -115,7 +121,8 @@ def render_document(*, egress: int, gateway: int, tls: int, other: int, home: Pa
                              + "; ".join(problem.text() for problem in plan.layer.problems))
     document, _available, unavailable, _info = render.build_config_document(
         plan.docs["gateway"], plan.docs["providers"]["providers"], plan.docs["models-v2"]["models"], home=home,
-        gateway_token=harness.FIXTURE_GATEWAY_TOKEN, resolve_secret={SECRET: KEY_VALUE}.get, continuity={},
+        gateway_token=harness.FIXTURE_GATEWAY_TOKEN, resolve_secret={SECRET: KEY_VALUE, TLS_SECRET: KEY_VALUE}.get,
+        continuity={},
         captures=plan.captures, provider_headers=plan.headers, oauth_overlay=plan.overlay)
     if unavailable:
         raise AssertionError("unexpected unavailable rendered provider")
@@ -197,6 +204,99 @@ class ProxySink:
         self.thread.join(timeout=2)
 
 
+class HandshakeGate:
+    """A relay in front of the TLS fake. Armed, it holds each connection
+    after the client's first bytes (its TLS hello) until released, then
+    relays both ways and counts the bytes the client sends after the
+    release. Disarmed, it relays at once."""
+
+    def __init__(self, path: Path, target: Path):
+        self.target = target
+        self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.server.bind(str(path))
+        os.chmod(path, 0o600)
+        self.server.listen(16)
+        self.lock = threading.Lock()
+        self.after_release = 0
+        self.held = threading.Event()
+        self.release = threading.Event()
+        self.release.set()
+        self.closed = threading.Event()
+        self.thread = threading.Thread(target=self.serve, daemon=True)
+        self.thread.start()
+
+    def arm(self):
+        with self.lock:
+            self.after_release = 0
+        self.held.clear()
+        self.release.clear()
+
+    def sent_after_release(self) -> int:
+        with self.lock:
+            return self.after_release
+
+    def serve(self):
+        while not self.closed.is_set():
+            try:
+                client, _ = self.server.accept()
+            except OSError:
+                return
+            threading.Thread(target=self.relay, args=(client,), daemon=True).start()
+
+    def relay(self, client):
+        upstream = None
+        try:
+            hello = client.recv(65536)
+            if not hello:
+                return
+            self.held.set()
+            if not self.release.wait(30):
+                return
+            upstream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            upstream.connect(str(self.target))
+            upstream.sendall(hello)
+            back = threading.Thread(target=self.pipe, args=(upstream, client, False), daemon=True)
+            back.start()
+            self.pipe(client, upstream, True)
+            back.join(timeout=5)
+        except OSError:
+            pass
+        finally:
+            for end in (client, upstream):
+                if end is not None:
+                    end.close()
+
+    def pipe(self, source, sink, counted):
+        while True:
+            try:
+                data = source.recv(65536)
+            except OSError:
+                break
+            if not data:
+                break
+            if counted:
+                with self.lock:
+                    self.after_release += len(data)
+            try:
+                sink.sendall(data)
+            except OSError:
+                break
+        try:
+            sink.shutdown(socket.SHUT_WR)
+        except OSError:
+            pass
+
+    def close(self):
+        self.closed.set()
+        self.release.set()
+        try:
+            self.server.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        self.server.close()
+        self.thread.join(timeout=2)
+
+
 def prerequisites() -> str:
     """A required proof fails on a missing prerequisite, never skips."""
     if not os.environ.get(harness.BINARY_ENV):
@@ -261,9 +361,9 @@ class _PrivateNetworkFixture(unittest.TestCase):
             holder = {}
 
             def document(_bundle, egress, port, home):
-                cls.tls_port, cls.other_port, cls.proxy_port = extra_ports(3, (egress, port))
+                cls.tls_port, cls.other_port, cls.proxy_port, cls.gate_port = extra_ports(4, (egress, port))
                 cls.egress, cls.port = egress, port
-                cls.document = render_document(egress=egress, gateway=port, tls=cls.tls_port,
+                cls.document = render_document(egress=egress, gateway=port, tls=cls.tls_port, gate=cls.gate_port,
                                                other=cls.other_port, home=home)
                 providers, models = cls.INERT
                 cls.document["openai-compatibility"][:0] = [
@@ -283,8 +383,9 @@ class _PrivateNetworkFixture(unittest.TestCase):
                 holder["trust"], holder["proxy"] = str(trust), proxy
                 cls.other = CountingUpstream(cls.root / "other.sock")
                 cls.tls = CountingUpstream(cls.root / "tls.sock", respond=cls.respond_tls, context=context)
+                cls.gate = HandshakeGate(cls.root / "gate.sock", cls.root / "tls.sock")
                 cls.proxy = ProxySink(cls.root / "proxy.sock")
-                cls.fakes += [cls.other, cls.tls, cls.proxy]
+                cls.fakes += [cls.other, cls.tls, cls.gate, cls.proxy]
                 return cls.document, {}, {}
 
             original = probe.start_isolated_process
@@ -299,6 +400,7 @@ class _PrivateNetworkFixture(unittest.TestCase):
                                  "https_proxy": proxy, "all_proxy": proxy}
                 kwargs["bridges"] = [*kwargs["bridges"],
                                      probe.PortBridge(cls.tls_port, cls.root / "tls.sock", "egress"),
+                                     probe.PortBridge(cls.gate_port, cls.root / "gate.sock", "egress"),
                                      probe.PortBridge(cls.other_port, cls.root / "other.sock", "egress"),
                                      probe.PortBridge(cls.proxy_port, cls.root / "proxy.sock", "egress")]
                 return original(argv, **kwargs)
@@ -393,7 +495,7 @@ class _PrivateNetworkFixture(unittest.TestCase):
 class PrivateNetworkGatewayTests(_PrivateNetworkFixture):
     def test_rendered_entries_carry_the_private_network_block(self):
         sections = compat(served_plan.parse_restricted_yaml(self.gateway.config.read_text()))
-        for name in ("pnbox", "pnksame", "pnlan", "pnsame", "pnport", "pnhttps", "pntls"):
+        for name in ("pnbox", "pnksame", "pnlan", "pnsame", "pnport", "pnhttps", "pntls", "pnktls"):
             with self.subTest(provider=name):
                 block = sections[name][render.PRIVATE_NETWORK_KEY]
                 self.assertNotIn("base-url", sections[name])
@@ -404,7 +506,7 @@ class PrivateNetworkGatewayTests(_PrivateNetworkFixture):
         self.assertNotIn(render.PRIVATE_NETWORK_KEY, sections["pnplain"])
         self.assertEqual(sections["pnplain"]["base-url"], f"http://127.0.0.1:{self.egress}/pnplain/v1")
         listing = {row["id"] for row in self.gateway.served_listing().json()["data"]}
-        self.assertLessEqual({LOOP, LAN, TAIL, SAME, KSAME, PORT, HTTPS, TLS, PLAIN}, listing)
+        self.assertLessEqual({LOOP, LAN, TAIL, SAME, KSAME, PORT, HTTPS, TLS, KTLS, PLAIN}, listing)
 
     def test_t1_keyed_loopback_is_served_with_the_bearer(self):
         reply = self.gateway.request(LOOP)
@@ -494,6 +596,68 @@ class PrivateNetworkGatewayTests(_PrivateNetworkFixture):
         self.assertNotIn(KEY_VALUE, log)
         self.assertNotIn(KEY_VALUE[-12:], log)
         record("T6", success=True, refusal=True, reload=True)
+
+    def held(self, change):
+        """Request ``KTLS`` with its TLS handshake held at the provider after
+        the client's hello, publish the changed document (its sentinel served
+        and its credentials followed), then release the handshake. Returns
+        the reply, the provider's hits and the bytes the client sent after
+        the release."""
+        changed = copy.deepcopy(self.document)
+        change(changed)
+        seen = len(self.tls.hits)
+        self.gate.arm()
+        outcome = {}
+
+        def send():
+            try:
+                outcome["reply"] = self.gateway.request(KTLS)
+            except BaseException as exc:  # reported below, in the test's thread
+                outcome["error"] = exc
+
+        worker = threading.Thread(target=send, daemon=True)
+        worker.start()
+        try:
+            if not self.gate.held.wait(10):
+                raise AssertionError(self.gateway.diagnostic("the client hello never reached the provider"))
+            self.reload(refinalize(changed))
+        finally:
+            self.gate.release.set()
+        worker.join(timeout=45)
+        if "error" in outcome:
+            raise outcome["error"]
+        if "reply" not in outcome:
+            raise AssertionError(self.gateway.diagnostic("the held request did not finish"))
+        hits = [hit for hit in self.tls.hits[seen:] if hit.path.startswith("/pnktls/")]
+        return outcome["reply"], hits, self.gate.sent_after_release()
+
+    def test_t8_a_request_in_flight_is_stopped_when_its_declaration_changes(self):
+        """T8: a keyed loopback request whose TLS handshake is held at the
+        provider while a reload changes the provider's class to tailnet sends
+        nothing once released (no handshake record, no HTTP byte, no key) and
+        fails with the refusal of the declaration it was dialled under,
+        reason policy-changed. Control: a reload that changes another
+        provider stops nothing."""
+        original = copy.deepcopy(self.document)
+        try:
+            reply, hits, sent = self.held(
+                lambda d: compat(d)["pnktls"][render.PRIVATE_NETWORK_KEY].update({"class": "tailnet"}))
+            self.assertEqual(reply.status, 502, self.gateway.diagnostic(f"status {reply.status}"))
+            self.assertIn(LOOPBACK_REFUSED, reply.raw.decode(errors="replace"))
+            self.assertEqual(hits, [])
+            self.assertEqual(sent, 0)
+            self.assertIn("private-network: refused provider=pnktls class=loopback remote=127.0.0.1 "
+                          "reason=policy-changed", self.log())
+            self.reload(original)
+            reply, hits, sent = self.held(
+                lambda d: compat(d)["pnlan"][render.PRIVATE_NETWORK_KEY].update({"class": "lan"}))
+            self.assertEqual(reply.status, 200, self.gateway.diagnostic(f"status {reply.status}"))
+            self.assertEqual([hit.path for hit in hits], ["/pnktls/v1/chat/completions"])
+            self.assertEqual(hits[0].header_values.get("authorization"), "Bearer " + KEY_VALUE)
+            self.assertGreater(sent, 0)
+        finally:
+            self.reload(original)
+        record("T8", changed="refused", unchanged="served")
 
 
 class PrivateNetworkReloadRaceTests(_PrivateNetworkFixture):
