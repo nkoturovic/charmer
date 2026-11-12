@@ -645,7 +645,9 @@ class CompiledStatusLineTests(V4Case):
         self.assertEqual(managed.subagent_status_line_layers(environ, self.project), managed.StatusLineLayers(True))
 
 
-PREVIOUS_RELEASE_ENV = "CHARMER_TEST_PREVIOUS_RELEASE"
+# The 2.1.0 rollback lane has its own variable: CHARMER_TEST_PREVIOUS_RELEASE
+# names the 2.4.0 tree the split-resume and scope-doctor lanes need.
+PREVIOUS_RELEASE_ENV = "CHARMER_TEST_RELEASE_2_1_0"
 PREVIOUS_RELEASE = "2.1.0"
 
 
@@ -666,7 +668,7 @@ class RollbackToPreviousReleaseTests(V4Case):
     armed, the fixture's own endpoint on a free ephemeral port the system
     assigns (never the packaged one), and no route to the real user
     session's service manager or bus. Opt-in:
-    ``CHARMER_TEST_PREVIOUS_RELEASE`` names a source tree of that release
+    ``CHARMER_TEST_RELEASE_2_1_0`` names a source tree of that release
     (``git archive v2.1.0``); without it the class skips."""
 
     def setUp(self) -> None:
