@@ -40,7 +40,7 @@ from charmer import strict_json
 from charmer import termtext
 from charmer import tls
 from charmer import views
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from datetime import timezone
 from pathlib import Path
@@ -56,7 +56,7 @@ from typing import TYPE_CHECKING
 from typing import Mapping
 
 if TYPE_CHECKING:
-    from charmer.transition import ExpectedPlan
+    from charmer.transition import ExpectedPlan, RuntimeParts
     from typing import Any
     from typing import Callable
 
@@ -2748,6 +2748,33 @@ def _catalog_agent_drift(
     return files
 
 
+def _recorded_resolution_plan(
+    runtime: runtime_mod.Runtime, record: dict[str, Any], live: Path, parts: RuntimeParts,
+) -> ExpectedPlan | None:
+    """Re-render known catalog moves under the record's own launch resolution."""
+
+    displaced = {}
+    if parts.docs.get(operator_mod.DISPLACED_KEY):
+        snapshot = runtime.operator_snapshot()
+        displaced = snapshot.layer.displaced
+    docs = scope_mod.recorded_catalog_resolution(record, parts.docs, displaced)
+    if docs is None:
+        return None
+    transition = runtime_mod._transition_module()
+    return transition.expected_plan(
+        record, docs=docs, prompt_bodies=parts.prompt_bodies,
+        state_root=runtime.session_store.root, hook_command=parts.hook_command,
+        token_helper_command=parts.token_helper_command, live=live,
+        worktree_available=parts.worktree_available(record["cwd"]) if parts.worktree_available else None,
+        environ=parts.environ, managed_root=parts.managed_root, feedback_drafts=parts.feedback_drafts)
+
+
+def _released_policy_drift(live: Path, plan: scope_mod.ScopePlan, drifted: list[str]) -> bool:
+    return not drifted or any(check(live, plan, drifted) for check in (
+        scope_mod.skill_policy_drift, scope_mod.fork_policy_drift,
+        scope_mod.status_line_drift, scope_mod.default_mode_drift))
+
+
 def _check_scope_integrity(
     runtime: runtime_mod.Runtime, record: dict[str, Any], *,
     plans: dict[str, ExpectedPlan | str] | None = None, earlier_hooks: bool = False,
@@ -2764,6 +2791,8 @@ def _check_scope_integrity(
     earlier = managed.read_settings(live / "settings.json") if live.is_dir() else None
     earlier_hooks = earlier_hooks or bool(earlier and _compiled_by_earlier_release(earlier, runtime.environ))
     transition = runtime_mod._transition_module()
+    recorded_ep = None
+    parts = None
     try:
         ep = plans.get(mid) if plans is not None else None
         if ep is None:
@@ -2781,6 +2810,9 @@ def _check_scope_integrity(
                 managed_root=parts.managed_root,
                 feedback_drafts=parts.feedback_drafts,
             )
+        if not isinstance(ep, str) and not earlier_hooks:
+            parts = parts or runtime.converge_parts()
+            recorded_ep = _recorded_resolution_plan(runtime, record, live, parts)
     except (
         transition.TransitionError,
         profile_mod.ProfileError,
@@ -2827,7 +2859,36 @@ def _check_scope_integrity(
         return [], [gateway_facts.tagged(line, area="Sessions", action=action, group=group,
                                          summary=summary, subjects=(m8,))], []
     if ep.plan is None:
-        return [], [f"session {m8}: {ep.reason}"], []
+        attention = [f"session {m8}: {ep.reason}"]
+        if recorded_ep is not None:
+            # A moved selector still defers repair, but does not excuse unknown
+            # edits to its launch-time rendering or to any other scope file.
+            drifted = ["launch-time files cannot be proved from the recorded fence"]
+            if recorded_ep.plan is not None and recorded_ep.launch_files_kept:
+                try:
+                    drifted = scope_mod.live_drift(live, recorded_ep.plan)
+                    if _released_policy_drift(live, recorded_ep.plan, drifted):
+                        return [], attention, []
+                except (OSError, state.StateError):
+                    drifted = ["scope unreadable"]
+            text = (f"session {m8}: scope differs from its recorded launch resolution "
+                    f"({'; '.join(drifted)}); repair is deferred for the catalog move — "
+                    f"resume to rebuild it: charmer -r {mid}")
+            problem = gateway_facts.Finding(
+                text, code="scope-repair", public="scope changes are unproven; catalog-move repair is deferred; resume to rebuild",
+                remedy=f"charmer -r {mid}")
+            return [gateway_facts.tagged(problem, area="Sessions", subjects=(m8,),
+                                        group=("session", "catalog-scope-resume"))], attention, []
+        return [], attention, []
+    if recorded_ep is not None and recorded_ep.plan is not None and recorded_ep.launch_files_kept:
+        try:
+            diagnostics = {name: recorded_ep.plan.other_files[name]
+                           for name in (scope_mod.LINEUP_MD, scope_mod.LINEUP_GEN)}
+            if all(state.read_private(live / name) == data for name, data in diagnostics.items()):
+                ep = replace(ep, plan=replace(ep.plan, other_files={**ep.plan.other_files, **diagnostics}),
+                             diagnostics_kept=True)
+        except (OSError, state.StateError):
+            pass  # the structural walk below reports unreadable or unsafe files
     problems: list[str] = []
     attention: list[str] = []
     info: list[str] = []
@@ -2866,7 +2927,7 @@ def _check_scope_integrity(
     if disk is None:
         problems.append(repair(f"session {m8}: scope unreadable; charmer doctor --repair {mid}"))
     elif drifted:
-        agent_files = _catalog_agent_drift(runtime, record, live, drifted)
+        agent_files = [] if recorded_ep is not None else _catalog_agent_drift(runtime, record, live, drifted)
         if scope_mod.skill_policy_drift(live, ep.plan, drifted):
             # The managed skill policy of another
             # release (with or without the skill deny): lazy, Attention, with the repair path.
@@ -3063,8 +3124,8 @@ def _doctor_scope_report(
             info.append(f"session {m8}: legacy scope (not checked until its next launch)")
             continue
         scope_problems, scope_attention, scope_info = _check_scope_integrity(runtime, record, plans=plans)
-        if scope_problems:
-            scope_mismatch += 1
+        if any(getattr(line, "group", None) != ("session", "catalog-scope-resume") for line in scope_problems):
+            scope_mismatch += 1  # do not offer repair-all for a selector move it must defer
         problems.extend(scope_problems)
         attention.extend(scope_attention)
         info.extend(scope_info)
