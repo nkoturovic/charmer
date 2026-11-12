@@ -668,7 +668,8 @@ class SettingsScreenTests(_ScreenCase):
             for action in ("settings", "preference", "ceiling", "default", "environment"):
                 with self.subTest(errno=number, action=action):
                     screen = self.screen()
-                    exc = OSError(number, "fixture write failure", str(self.tmp / "root" / "settings.json"))
+                    # A fixed path: a long temporary root would make the message open whole and take the ESC.
+                    exc = OSError(number, "fixture write failure", "/fixture/settings.json")
                     expected = state.failure_text(exc, self.runtime.environ)
                     with contextlib.ExitStack() as stack:
                         if action == "settings":

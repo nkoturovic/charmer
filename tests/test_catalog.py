@@ -369,7 +369,8 @@ class SeedLoadTests(unittest.TestCase):
         self.assertEqual(line["output"], {"declared_tokens": 128000, "source": "docs",
                          "source_ref": "https://platform.claude.com/docs/en/models/fable-5-2/overview"})
         self.assertEqual([key for key in bundle.lines if key.startswith("fable")], ["fable"])
-        self.assertEqual(len(bundle.retired), 20)
+        # The Fable entries only: the isolation probe adds a retired key of its own.
+        self.assertEqual(sorted(key for key in bundle.retired if key.startswith("fable")), ["fable51", "fable@5"])
         retired = bundle.retired["fable51"]
         self.assertEqual(retired["generation"], "5.1")
         self.assertEqual(retired["since_catalog"], 33)

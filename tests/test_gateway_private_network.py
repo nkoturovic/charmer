@@ -30,6 +30,7 @@ from pathlib import Path
 from unittest import mock
 
 import _gateway_harness as harness
+from _unix_socket import bind_unix_socket
 import test_openai_compat_keyed as keyed
 from _layout import REPO_ROOT
 from charmer import catalog, operator, probe, render, served_plan, state
@@ -178,7 +179,7 @@ class ProxySink:
     def __init__(self, path: Path):
         self.count = 0
         self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.server.bind(str(path))
+        bind_unix_socket(self.server, path)
         os.chmod(path, 0o600)
         self.server.listen(16)
         self.closed = threading.Event()
@@ -213,7 +214,7 @@ class HandshakeGate:
     def __init__(self, path: Path, target: Path):
         self.target = target
         self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.server.bind(str(path))
+        bind_unix_socket(self.server, path)
         os.chmod(path, 0o600)
         self.server.listen(16)
         self.lock = threading.Lock()
