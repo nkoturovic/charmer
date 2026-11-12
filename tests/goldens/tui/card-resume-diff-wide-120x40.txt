@@ -1,6 +1,7 @@
 
   charmer — profile: balanced · follows profile · Resume 11111111 · lineup gen 2
   ──────────────────────────────────────────────────────────────────────────────
+  Before this resume: profile balanced changed… — /cm follow applies it (agents now; nothing waits for the next resume)
   lead      Opus 5.5 · effort ultracode · 1M class   workflows: native
   context   window 800K (lead and agents) · compacts at ~702K (90 %)
   lineup    8 agents · durable scope · Explore→cm-explorer · GP off
@@ -21,7 +22,6 @@
   diff        implementer-light    GPT-5.6 Sol · high → GPT-5.6 Sol · xhigh
 
   Status  Ready
-
 
 
 

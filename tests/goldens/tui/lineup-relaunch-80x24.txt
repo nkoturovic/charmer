@@ -14,11 +14,11 @@
         native agents: explore replace → native
         native agents: general_purpose off → on
         lead providers       any → anthropic
-  mode  RELAUNCH — exit the session; resume applies it
-  why   native agents: explore replace → native
-  why   native agents: general_purpose off → on
-  why   lead providers any → anthropic
-  next  recorded as a pending change; it applies at the session's next resume
+  mode  LIVE for the agents now; the rest is pending for the next resume
+  later native agents: explore replace → native
+  later native agents: general_purpose off → on
+  later lead providers any → anthropic
+  next  run /reload-plugins for the agents; the rest applies at the next resume
 
 
   Enter apply · Tab target · ← → choose · Space pick · ? help · Esc cancel
