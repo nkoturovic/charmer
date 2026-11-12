@@ -40,6 +40,7 @@ from charmer import endpoint
 
 from .lineup_files import HOOK_PROTOCOL
 
+import copy
 import errno
 import os
 import re
@@ -2442,6 +2443,96 @@ def live_drift(live: Path, plan: ScopePlan) -> list[str]:
     for relpath in sorted(set(expected) - seen):
         problems.append(f"missing file {relpath}")
     return problems
+
+
+def recorded_catalog_resolution(
+    record: Mapping[str, Any], docs: Mapping[str, Any], displaced: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Comparison-only catalog for recorded slots that the installed catalog moved.
+
+    Restore only a validated displaced definition or a trusted retired selector
+    leading to the installed successor. Never derive an entry from lineup.md,
+    and never use this comparison view to launch or render gateway routes.
+    The caller must still prove the launch fence and compare every scope byte.
+    """
+
+    lcat = profile.LineupCatalog.from_docs(docs)
+    lead = dict(record["scope_lead"])
+    applied_lead = record["applied"]["lead"]
+    if (lead["key"], lead["selector"]) == (applied_lead["key"], applied_lead["selector"]):
+        lead["generation"] = applied_lead["generation"]
+    bindings = [lead, *record["applied"]["agents"].values()]
+    restored: dict[str, Any] = {}
+    metadata: dict[str, Any] = {}
+
+    def base(selector: str) -> str:
+        return selector.removesuffix(profile.SUFFIX_1M)
+
+    for binding in bindings:
+        key, selector = binding["key"], binding["selector"]
+        try:
+            resolution = lcat.resolve_key(key)
+        except catalog_mod.CatalogError:
+            return None
+        current = lcat.lines.get(resolution.key)
+        if current is None:
+            return None  # removed with no known successor: the existing choice/deferral path
+        current_selectors = {base(value) for _effort, value, _contract in catalog_mod.line_selectors(dict(current))}
+        if (resolution.key == key and base(selector) in current_selectors
+                and binding.get("generation", current["generation"]) == current["generation"]):
+            continue
+        if key in displaced and resolution.key != key:
+            original = displaced[key]
+            historical = lcat.retired.get(key, {})
+            if (historical.get("provider"), historical.get("last_wire")) != (
+                    original.provider_id, original.core_entry["wire_model"]):
+                return None
+            entry = copy.deepcopy(original.core_entry)
+            metadata[key] = {"origin": original.origin, "legacy_key": original.legacy_key,
+                             "provider": original.provider_id, "selector_mode": original.selector_mode,
+                             "family": original.family}
+        else:
+            candidates = []
+            for old_key, historical in lcat.retired.items():
+                old_selectors = historical.get("selectors", {})
+                if (historical.get("provider") != current["provider"]
+                        or base(selector) not in {base(value) for value in old_selectors}
+                        or (binding.get("generation") is not None
+                            and historical.get("generation", binding["generation"]) != binding["generation"])):
+                    continue
+                if lcat.resolve_key(old_key).key == resolution.key:
+                    candidates.append(historical)
+            if len(candidates) != 1:
+                return None
+            historical = candidates[0]
+            # A native line's historical selector has the same effort grammar.
+            # Other historical shapes are not guessed from the successor.
+            if not isinstance(current.get("efforts"), list):
+                return None
+            matching = [value for value in historical["selectors"] if base(value) == base(selector)]
+            if len(matching) != 1:
+                return None
+            entry = copy.deepcopy(current)
+            entry.update(wire_model=historical["last_wire"], display=historical["display"],
+                         generation=historical.get("generation", binding.get("generation", current["generation"])),
+                         selector=matching[0], capabilities=historical["capabilities"], roles=historical["roles"])
+            entry["context"]["provider_tokens"] = historical["context_tokens"]
+        selectors = {base(value) for _effort, value, _contract in catalog_mod.line_selectors(entry)}
+        if (base(selector) not in selectors
+                or binding.get("generation", entry["generation"]) != entry["generation"]
+                or (key in restored and restored[key] != entry)):
+            return None
+        restored[key] = entry
+    if not restored:
+        return None
+    result = copy.deepcopy(docs)
+    models = result["models-v2"] if "models-v2" in result else result["models"]
+    models["models"].update(restored)
+    result["models"] = result["models-v2"] = models
+    result[profile.OPERATOR_LINES_KEY] = {**result.get(profile.OPERATOR_LINES_KEY, {}), **metadata}
+    for key in restored:
+        result["retired"]["retired"].pop(key, None)
+    return result
 
 
 _SKILL_POLICY_DRIFT_LINES = frozenset(
