@@ -333,6 +333,8 @@ A line you declared yourself that a later catalog ships (for example a
 `custom-fable-5-2` line once `fable` selects Fable 5.2) yields to the
 shipped line: the shipped line serves the model, and doctor and the models
 listing show one row with the remedy, `charmer models rm <line> --successor <line>`.
+Afterwards `charmer doctor --repair-all` brings the scopes of ended
+sessions recorded on your line up to date.
 
 ## Context windows
 

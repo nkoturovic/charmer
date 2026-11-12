@@ -111,8 +111,9 @@ session keeps its route until it is resumed. If you declared Fable 5.2
 yourself (for example as `custom-fable-5-2`), the shipped line now serves
 it and yours yields, with one Attention row and its remedy. When the
 live-record check allows it, `charmer models rm custom-fable-5-2 --successor fable`
-removes your line, and sessions recorded on it resume on `fable` directly
-([models guide](guides/models.md)).
+removes your line, and sessions recorded on it resume on `fable` directly;
+then `charmer doctor --repair-all` brings the scopes of ended sessions
+recorded on it up to date ([models guide](guides/models.md)).
 
 #### Before going back to 2.4.0
 
