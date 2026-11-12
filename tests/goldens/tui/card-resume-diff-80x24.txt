@@ -1,7 +1,7 @@
 
   charmer — profile: balanced · follows profile · Resume 11111111 · lineup gen…
   ─────────────────────────────────────────────────────────────────────────────
-  Before this resume: profile balanced changed since this session applied it: …
+  Before this resume: profile changed — V details
   lead      Opus 5.5 · effort ultracode · 1M class   workflows: native
   context   window 800K (lead and agents) · compacts at ~702K (90 %)
   lineup    8 agents · durable scope · Explore→cm-explorer · GP off

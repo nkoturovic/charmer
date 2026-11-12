@@ -868,7 +868,18 @@ def card_model(
         rows.append(CardRow("description", "", description, "dim", 9, col=10))
     rows.append(CardRow("rule", "", "", "dim", 0, col=2))
     for line in session_status:
-        rows.append(CardRow("session-status", "", f"Before this resume: {line}", "normal", 1, col=2))
+        if line.startswith("pinned:"):
+            summary = "pinned (profile edits do not reach it)"
+        elif line.startswith("pending change:"):
+            summary = "pending change (next resume)"
+        elif "changed since this session applied it:" in line:
+            summary = "profile changed"
+        else:
+            summary = "profile needs attention"
+        _head, separator, remedy = line.rpartition(" — ")
+        shorter = (f"Before resume: {summary} — {remedy}",) if separator else ()
+        rows.append(CardRow("session-status", "", f"Before this resume: {line}", "normal", 1, col=2,
+                            short_forms=(*shorter, f"Before this resume: {summary} — V details")))
     if lineup is not None:
         binding = lineup.lead.binding
         windows = dict(profile.lineup_windows(lineup))
