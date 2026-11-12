@@ -97,6 +97,9 @@ LAN_TABLE = (
     ("http://100.100.100.200/v1", "metadata and link-local addresses are forbidden"),
     ("http://169.254.169.254/v1", "metadata and link-local addresses are forbidden"),
     ("http://[fe80::1%25eth0]/v1", "metadata and link-local addresses are forbidden"),
+    # Cloud metadata on unique local IPv6 addresses (inside fc00::/7).
+    *((f"http://[{host}]:8000/v1", "metadata and link-local addresses are forbidden")
+      for host in ("fd20:ce::254", "fd00:c1::a9fe:a9fe", "fd00:a9fe:a9fe::1", "fd00:42::42", "fd00:ec2::23")),
     ("http://0.0.0.0/v1", "unspecified, broadcast and multicast addresses are forbidden"),
     ("http://224.0.0.1/v1", "unspecified, broadcast and multicast addresses are forbidden"),
     ("http://metadata.google.internal/v1", "metadata hosts are forbidden"),
@@ -160,6 +163,9 @@ NETWORK_TABLE = (
      "100.100.0.7 is not a provider address (100.100.0.0/24: reserved by the overlay for its own services)"),
     (("http://192.168.1.10:8317/v1", True, False, "loopback"), "the charmer gateway port is not a provider"),
     (("http://169.254.169.254/v1", True, False, "lan"), "metadata and link-local addresses are forbidden"),
+    # Cloud metadata on unique local IPv6 addresses (inside fc00::/7).
+    *(((f"http://[{host}]:8000/v1", False, True, "lan"), "metadata and link-local addresses are forbidden")
+      for host in ("fd20:ce::254", "fd00:c1::a9fe:a9fe", "fd00:a9fe:a9fe::1", "fd00:42::42", "fd00:ec2::23")),
     (("http://box.lan.:8010/v1", True, False, "lan"), "host is not a plain lower-case DNS name"),
     (("http://127.1/v1", True, False, "loopback"), "ambiguous numeric host spelling"),
     (("ftp://box.example.test/v1", False, True, "lan"), "scheme ftp is not allowed"),
@@ -493,6 +499,19 @@ class NetworkCommandTests(NetworkCommandCase):
                       "tailnet — nothing written", err)
         self.assertNotIn("Approve this route", err)
         self.assertEqual(self.state_bytes(), before)
+
+    def test_a_cloud_metadata_address_on_a_unique_local_prefix_is_refused_at_declaration(self) -> None:
+        argv = ["providers", "add", LAN_ID, "--kind", "openai-compatible-lan", "--base-url",
+                "http://[fd20:ce::254]:8000/v1", "--auth", "none", "--family", "boxfam"]
+        for network in ("lan", None):
+            with self.subTest(network=network):
+                before = self.state_bytes()
+                code, out, err = self.command(argv, network=network)
+                self.assertEqual(code, 1, out + err)
+                self.assertIn("provider.base_url: base_url refused: metadata and link-local addresses are forbidden",
+                              err)
+                self.assertEqual(self.lookups, [])
+                self.assertEqual(self.state_bytes(), before)
 
     def test_no_answer_is_said_and_the_approval_proceeds(self) -> None:
         self.answers = ()
