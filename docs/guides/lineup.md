@@ -201,6 +201,7 @@ and one metadata-only line goes to `~/.local/state/charmer/hook-errors.log`.
 | a session's lineup, pending change and windows | card → S → V: a session row | `charmer lineup --session <runtime-id> show` | `/cm show` | asks nothing |
 | the profiles a session can switch to | card → S → T → ← →: the lineup dialog | `charmer lineup --session <runtime-id> profiles` | `/cm profiles` | asks nothing |
 | follow another profile (live or at the next resume) | card → S → T: a current-format session; card → S → T → Enter: a previewed change | `charmer lineup --session <runtime-id> profile <name>` | `/cm profile <name>` | asks nothing |
+| take the saved profile's edits into an already-following session | card → S → T → Enter: a session already following its profile | `charmer lineup --session <runtime-id> follow` | `/cm follow` | asks nothing |
 | bind one agent | card → S → T → Tab to agents → Space: the lineup dialog | `charmer lineup --session <runtime-id> set <agent>=<model>[:<effort>]` | `/cm set <agent>=<model>[:<effort>]` | asks nothing |
 | unbind one agent | card → S → T → Tab to agents → unbind: the lineup dialog | `charmer lineup --session <runtime-id> unset <agent>` | `/cm unset <agent>` | asks nothing |
 | change to a lead with no agents | card → S → T → Tab to direct: the lineup dialog | `charmer lineup --session <runtime-id> direct [<model>[:<effort>]]` | `/cm direct [<model>[:<effort>]]` | asks nothing |
@@ -209,6 +210,6 @@ and one metadata-only line goes to `~/.local/state/charmer/hook-errors.log`.
 | keep the current lineup and discard a pending change (Follow off) | card → S → T → Keep current lineup — discard pending: a pending change; card → S → F: a session that follows its profile | `charmer lineup --session <runtime-id> pin` | `/cm pin` | asks nothing |
 | follow the session's profile again, after a preview | card → S → F: a pinned session | `charmer lineup --session <runtime-id> follow` | `/cm follow` | asks nothing |
 | move the roles on one provider to a fallback lineup | card → S → T → Fallback → provider: a provider with a fallback profile | `charmer lineup --session <runtime-id> fallback <provider> [--preview]` | `/cm fallback <provider> [--preview]` | asks nothing |
-| apply a saved profile to its running sessions now or later | profile editor → Ctrl-S → apply now / later: running followers | `charmer profile edit <name>` | not a `/cm` request | asks nothing |
+| apply a saved profile to its running sessions now or later | profile editor → Ctrl-S → Enter / L: running followers; profile editor → save → L: the save is already committed; profile editor → save → Esc: the save is already committed | `charmer profile edit <name>`; `charmer profile edit <name> --apply`; `charmer profile edit <name> --later` | not a `/cm` request | asks nothing |
 
 <!-- end of generated: lineup-tasks -->

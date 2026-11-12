@@ -227,7 +227,7 @@ charmer profile show [<name>]
 
 #### charmer profile new
 
-Create a profile ($EDITOR, or --from SRC).
+Create a profile ($EDITOR, or --from PROFILE).
 
 ```text
 charmer profile new <name> [--from <profile>] [--keep-fallback]
@@ -236,20 +236,38 @@ charmer profile new <name> [--from <profile>] [--keep-fallback]
 | Argument | What it does |
 | --- | --- |
 | `<name>` | profile name |
-| `--from <profile>` | copy SRC (non-interactive) |
-| `--keep-fallback` | with --from: the copy stays a fallback profile for SRC's provider |
+| `--from <profile>` | copy PROFILE (non-interactive) |
+| `--keep-fallback` | with --from: the copy stays a fallback profile for PROFILE's provider |
 
 #### charmer profile edit
 
 Edit a profile in $VISUAL/$EDITOR.
 
 ```text
-charmer profile edit <name>
+charmer profile edit <name> [--apply | --later]
 ```
 
 | Argument | What it does |
 | --- | --- |
 | `<name>` | profile name |
+| `--apply` | apply the saved change to eligible running followers without asking |
+| `--later` | keep running lineups for now (the default without a terminal) |
+
+#### charmer profile set
+
+Edit saved lead or agent bindings in one command.
+
+```text
+charmer profile set <name> <assignment>… [--preview] [--apply | --later]
+```
+
+| Argument | What it does |
+| --- | --- |
+| `<name>` | profile name |
+| `<assignment>…` | lead=MODEL[:EFFORT] or ROLE=MODEL[:EFFORT]; omitted effort uses the model default |
+| `--preview` | show the edit without writing anything |
+| `--apply` | apply the saved change to eligible running followers without asking |
+| `--later` | keep running lineups for now (the default without a terminal) |
 
 #### charmer profile rm
 
@@ -296,13 +314,15 @@ charmer profile duplicate <name> <new> [--keep-fallback]
 Restore a shipped profile to its shipped version (your version is kept as a copy).
 
 ```text
-charmer profile reseed <name> [--yes]
+charmer profile reseed <name> [--yes] [--apply | --later]
 ```
 
 | Argument | What it does |
 | --- | --- |
 | `<name>` | profile name |
 | `--yes` | skip the y/N confirmation |
+| `--apply` | apply the saved change to eligible running followers without asking |
+| `--later` | keep running lineups for now (the default without a terminal) |
 
 #### charmer profile default
 
@@ -890,7 +910,7 @@ charmer lineup [--session <runtime-id>] [--relaunch] [--its-exited] <request>
 | `--session <runtime-id>` | runtime session id (/cm passes it) |
 | `--relaunch` | relaunch instead of a live apply |
 | `--its-exited` | the session has exited (no confirmation) |
-| `<request>` | lineup request: show, profiles, profile, set, unset, direct, pin, follow, fallback, review, quota |
+| `<request>` | lineup request: show, profiles, profile, set, unset, direct, pin, follow, fallback, review, quota, fork |
 
 The requests are `/cm`'s ([inside a session](#inside-a-session)); inside a session the runtime id comes from the environment.
 
@@ -1125,6 +1145,7 @@ charmer uninstall [--dry-run] [--keep-setup] [--keep-credentials] [--yes] [--for
 | `/cm fallback <provider> [--preview]` | move the roles bound to a provider to a fallback lineup | yes |
 | `/cm review [high-stakes] [<range>]` | ask for a review from another model family | no |
 | `/cm quota` | the quota of this session's accounts | no |
+| `/cm fork` | print the command that forks this session into a new one | no |
 
 `/cm` passes everything after it as one request; `charmer lineup --session <runtime-id> <request>` runs the same request from a terminal.
 
