@@ -906,7 +906,11 @@ class SessionsLineupTests(_SessionsCase):
 
     def test_mixed_profile_change_previews_split_and_applies(self) -> None:
         record = self.record()
-        name = self.relaunch_seed()
+        document = self.runtime.profiles.load(self.live_seed())
+        document.pop("seed", None)
+        name = document["name"] = "safe-mixed"
+        document["native_agents"]["plan"] = "off" if document["native_agents"]["plan"] == "native" else "native"
+        self.runtime.profiles.save(document)
         dialog = self.dialog()
         self.to(dialog, name)
         self.assertEqual(dialog.mode, "SPLIT")

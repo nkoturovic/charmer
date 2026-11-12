@@ -150,6 +150,19 @@ class SplitProfileChangesTests(LineupCase):
             self.assertEqual(self.scope_files()[path], before[path])
         self.assertEqual(self.prepare_resume(self.mid).record["applied"]["lead"]["key"], "grok46")
 
+    def test_partial_apply_with_a_new_warning_keeps_everything_pending(self):
+        before = self.scope_files()
+        original = self.store.load(self.mid)
+        code, text, error = self.request("profile direct")
+        self.assertEqual((code, error), (0, ""))
+        after = self.store.load(self.mid)
+        self.assertEqual(after["lineup_generation"], original["lineup_generation"])
+        self.assertEqual(after["applied"], original["applied"])
+        self.assertEqual(self.scope_files(), before)
+        self.assertEqual(after["pending"]["profile"], "direct")
+        self.assertIn("relaunch needed", text)
+        self.assertNotIn("LIVE for the agents", text)
+
     def test_agent_outside_fence_keeps_everything_pending(self):
         self._target(outside_agent=True)
         disk = strict_json.loads((self.live(self.mid) / scope.SETTINGS_RELPATH).read_bytes())

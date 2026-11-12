@@ -1201,7 +1201,9 @@ def split_candidate(record: Mapping[str, Any], target: Target, lineup: profile.R
 
     if (target.kind == "profile" and classification.session_only
             and _change_rows(lcat, record["applied"]["agents"], lineup.applied_bindings()["agents"])):
-        return _agents_only_target(record, target, lcat, eff, bindings, live_dir)
+        candidate = _agents_only_target(record, target, lcat, eff, bindings, live_dir)
+        if candidate is not None and all(warning in lineup.warnings for warning in candidate.warnings):
+            return candidate
     return None
 
 
