@@ -57,8 +57,13 @@ on 2026-11-12:
 * https://docs.aws.amazon.com/eks/latest/userguide/pod-id-agent-setup.html:
   the EKS Pod Identity Agent listens on ``169.254.170.23`` and
   ``fd00:ec2::23``.
+* cloud-init pull request 6893 and issue 6892 (both open; read on
+  2026-11-12): Alibaba Cloud's metadata at ``fd00:100::100:200`` on IPv6-only
+  ECS instances, with logs from such an instance. Alibaba's own metadata
+  documentation does not list the address.
 
-Their IPv4 addresses are link-local, already ``never``.
+Their IPv4 addresses are link-local, or ``100.100.100.200`` (Alibaba), all
+already ``never``.
 """
 
 from __future__ import annotations
@@ -117,6 +122,7 @@ METADATA = (
     _rule("fd00:a9fe:a9fe::1/128", NEVER, "a cloud metadata address"),
     _rule("fd00:42::42/128", NEVER, "a cloud metadata address"),
     _rule("fd00:ec2::23/128", NEVER, "a cloud metadata address"),
+    _rule("fd00:100::100:200/128", NEVER, "a cloud metadata address"),
 )
 # The overlay's own service and reserved addresses (see the module text).
 OVERLAY_RESERVED = (

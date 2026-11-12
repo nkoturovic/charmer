@@ -99,7 +99,8 @@ LAN_TABLE = (
     ("http://[fe80::1%25eth0]/v1", "metadata and link-local addresses are forbidden"),
     # Cloud metadata on unique local IPv6 addresses (inside fc00::/7).
     *((f"http://[{host}]:8000/v1", "metadata and link-local addresses are forbidden")
-      for host in ("fd20:ce::254", "fd00:c1::a9fe:a9fe", "fd00:a9fe:a9fe::1", "fd00:42::42", "fd00:ec2::23")),
+      for host in ("fd20:ce::254", "fd00:c1::a9fe:a9fe", "fd00:a9fe:a9fe::1", "fd00:42::42", "fd00:ec2::23",
+                   "fd00:100::100:200")),
     ("http://0.0.0.0/v1", "unspecified, broadcast and multicast addresses are forbidden"),
     ("http://224.0.0.1/v1", "unspecified, broadcast and multicast addresses are forbidden"),
     ("http://metadata.google.internal/v1", "metadata hosts are forbidden"),
@@ -165,7 +166,8 @@ NETWORK_TABLE = (
     (("http://169.254.169.254/v1", True, False, "lan"), "metadata and link-local addresses are forbidden"),
     # Cloud metadata on unique local IPv6 addresses (inside fc00::/7).
     *(((f"http://[{host}]:8000/v1", False, True, "lan"), "metadata and link-local addresses are forbidden")
-      for host in ("fd20:ce::254", "fd00:c1::a9fe:a9fe", "fd00:a9fe:a9fe::1", "fd00:42::42", "fd00:ec2::23")),
+      for host in ("fd20:ce::254", "fd00:c1::a9fe:a9fe", "fd00:a9fe:a9fe::1", "fd00:42::42", "fd00:ec2::23",
+                   "fd00:100::100:200")),
     (("http://box.lan.:8010/v1", True, False, "lan"), "host is not a plain lower-case DNS name"),
     (("http://127.1/v1", True, False, "loopback"), "ambiguous numeric host spelling"),
     (("ftp://box.example.test/v1", False, True, "lan"), "scheme ftp is not allowed"),

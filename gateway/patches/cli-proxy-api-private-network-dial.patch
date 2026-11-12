@@ -206,10 +206,10 @@ index 00000000..ee803c33
 +}
 diff --git a/internal/privatenet/privatenet.go b/internal/privatenet/privatenet.go
 new file mode 100644
-index 00000000..a5f1d74c
+index 00000000..7c4ef532
 --- /dev/null
 +++ b/internal/privatenet/privatenet.go
-@@ -0,0 +1,441 @@
+@@ -0,0 +1,442 @@
 +// Package privatenet is the dial guard for OpenAI-compatible providers that
 +// are declared on a private network (the "private-network" block of an
 +// openai-compatibility entry: a base URL and one class, loopback, lan or
@@ -288,12 +288,13 @@ index 00000000..a5f1d74c
 +	{netip.MustParsePrefix("fd00:ec2::254/128"), Never},
 +	// Cloud metadata services on unique local IPv6 addresses (inside
 +	// fc00::/7): Google Cloud, Oracle Cloud, Linode, Scaleway, EKS Pod
-+	// Identity.
++	// Identity, Alibaba Cloud.
 +	{netip.MustParsePrefix("fd20:ce::254/128"), Never},
 +	{netip.MustParsePrefix("fd00:c1::a9fe:a9fe/128"), Never},
 +	{netip.MustParsePrefix("fd00:a9fe:a9fe::1/128"), Never},
 +	{netip.MustParsePrefix("fd00:42::42/128"), Never},
 +	{netip.MustParsePrefix("fd00:ec2::23/128"), Never},
++	{netip.MustParsePrefix("fd00:100::100:200/128"), Never},
 +	{netip.MustParsePrefix("127.0.0.0/8"), Loopback},
 +	{netip.MustParsePrefix("::1/128"), Loopback},
 +	{netip.MustParsePrefix("0.0.0.0/8"), Never},
@@ -653,7 +654,7 @@ index 00000000..a5f1d74c
 +}
 diff --git a/internal/privatenet/privatenet_test.go b/internal/privatenet/privatenet_test.go
 new file mode 100644
-index 00000000..dd327e7f
+index 00000000..41bc4fa3
 --- /dev/null
 +++ b/internal/privatenet/privatenet_test.go
 @@ -0,0 +1,503 @@
@@ -901,7 +902,7 @@ index 00000000..dd327e7f
 +// A lan name that resolves to a cloud metadata service on a unique local
 +// IPv6 address (inside fc00::/7) dials nothing.
 +func TestDialerNeverDialsCloudMetadataOnUniqueLocalAddresses(t *testing.T) {
-+	for _, metadata := range []string{"fd20:ce::254", "fd00:c1::a9fe:a9fe", "fd00:a9fe:a9fe::1", "fd00:42::42", "fd00:ec2::23"} {
++	for _, metadata := range []string{"fd20:ce::254", "fd00:c1::a9fe:a9fe", "fd00:a9fe:a9fe::1", "fd00:42::42", "fd00:ec2::23", "fd00:100::100:200"} {
 +		rec := &dialRecord{}
 +		d := &Dialer{Class: LAN, GatewayPorts: gatewayPorts(0), Lookup: rec.lookup(metadata), Connect: rec.connect(0, "fd12::2")}
 +		conn, err := d.DialContext(context.Background(), "tcp", "llm.lan.example:80")
@@ -1162,10 +1163,10 @@ index 00000000..dd327e7f
 +}
 diff --git a/internal/privatenet/testdata/netclass-corpus.json b/internal/privatenet/testdata/netclass-corpus.json
 new file mode 100644
-index 00000000..25d12a7f
+index 00000000..013fbe97
 --- /dev/null
 +++ b/internal/privatenet/testdata/netclass-corpus.json
-@@ -0,0 +1,147 @@
+@@ -0,0 +1,150 @@
 +{
 +  "version": 1,
 +  "cases": [
@@ -1281,6 +1282,9 @@ index 00000000..25d12a7f
 +    {"address": "fd00:42::41", "class": "lan"},
 +    {"address": "fd00:42::42", "class": "never"},
 +    {"address": "fd00:42::43", "class": "lan"},
++    {"address": "fd00:100::100:1ff", "class": "lan"},
++    {"address": "fd00:100::100:200", "class": "never"},
++    {"address": "fd00:100::100:201", "class": "lan"},
 +    {"address": "fe80::", "class": "never"},
 +    {"address": "febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff", "class": "never"},
 +    {"address": "fe7f:ffff:ffff:ffff:ffff:ffff:ffff:ffff", "class": "public"},

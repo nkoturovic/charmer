@@ -94,7 +94,7 @@ class TableTests(unittest.TestCase):
                   if rule.prefix.version == 6 and rule.prefix.subnet_of(unique_local)]
         self.assertEqual([rule.prefix.with_prefixlen for rule in inside], [
             "fd00:ec2::254/128", "fd20:ce::254/128", "fd00:c1::a9fe:a9fe/128", "fd00:a9fe:a9fe::1/128",
-            "fd00:42::42/128", "fd00:ec2::23/128",
+            "fd00:42::42/128", "fd00:ec2::23/128", "fd00:100::100:200/128",
         ])
         for rule in inside:
             with self.subTest(rule=rule.text()):

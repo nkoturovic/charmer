@@ -197,7 +197,7 @@
     },
     {
       "basename": "cli-proxy-api-private-network-dial.patch",
-      "sha256": "c7d77904982ec28597e7cd92e7bedbb20aebb53c0bcd96355f2f5453e1199f5b",
+      "sha256": "0a96d42f7a038f68c47ee55fd9bd3b36b789819d26ca1ff486500a0e5279ffd3",
       "admitted": true
     }
   ],
