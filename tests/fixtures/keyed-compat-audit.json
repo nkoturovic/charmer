@@ -12,7 +12,7 @@
           "client_sha256": "bfb3703ad5380242328459bc62ada4bde8ae7ba57c6e1eeadb9c00e08874c478",
           "errors": 0,
           "failures": 0,
-          "head": "9155c5b8de2c493b9dd3d4a995ab8d6742592332",
+          "head": "dc9c7d016cebcd68f86913914bcbb0cb35b40178",
           "inventory": {
             "J1": {
               "count": 9,
@@ -79,7 +79,7 @@
           },
           "journey_tests": 9,
           "keyed_client_budget_seconds": 900,
-          "keyed_client_seconds": 18.047,
+          "keyed_client_seconds": 16.568,
           "keyed_client_tests": 10,
           "keyed_identity": {
             "client_contract_sha256": "9fb6c56ea034fda7e187057883ab5796f38477dac2f72d5e6c6a1f8c2210325e",
@@ -131,11 +131,11 @@
               "src/charmer/discovery.py": "dcee867df7f0fba1b91cfa3574cbab779413134cd4faf0e22230783801a0fa75",
               "src/charmer/netclass.py": "6278417483b1f6b8b097bcbee93a086c3c012ed8df568ab752199bb647a27eee",
               "src/charmer/operator.py": "9eab9d7214b8e37a0f7a22a2d79bff184897b6d422424e863e5cae1800c2cd8a",
-              "src/charmer/profile.py": "ee3d108ef215e55f59b11578bd44626e8eae64399858aba41a037ece59d39db3",
+              "src/charmer/profile.py": "d00fa3ac96e6ae3823949c07589b91a345feb46facebc095afb2319481931740",
               "src/charmer/proxy.py": "0726e6a450b857d36f2b8e426802edc2d9d92acc7074371e7a42b9346ae32577",
               "src/charmer/qualify.py": "0df154501c552f188057d0fc62547a9929ebb59b93fc47279ae2b709f112f437",
               "src/charmer/render.py": "cdf34a341b54958f6aa4e22f294c769f210b2281a543671943d60ee281b26d43",
-              "src/charmer/scope.py": "60f0b12daff4aa86ad38e689590dd96a88c41e5dc896c02d32f97d85b7420cf7",
+              "src/charmer/scope.py": "a22f671036db8adff30adbfaad6a807e04b9864da06508be498b2a6ba1f76ca9",
               "src/charmer/served_plan.py": "24ba98e3d813a803d90a807f84942fde8077237dfa0d51c8928cb0e82e39feb8"
             }
           },
@@ -168,7 +168,7 @@
             },
             {
               "path": "src/charmer/profile.py",
-              "sha256": "ee3d108ef215e55f59b11578bd44626e8eae64399858aba41a037ece59d39db3"
+              "sha256": "d00fa3ac96e6ae3823949c07589b91a345feb46facebc095afb2319481931740"
             },
             {
               "path": "src/charmer/compiler.py",
@@ -176,7 +176,7 @@
             },
             {
               "path": "src/charmer/scope.py",
-              "sha256": "60f0b12daff4aa86ad38e689590dd96a88c41e5dc896c02d32f97d85b7420cf7"
+              "sha256": "a22f671036db8adff30adbfaad6a807e04b9864da06508be498b2a6ba1f76ca9"
             },
             {
               "path": "src/charmer/cli/commands/models.py",
@@ -223,7 +223,7 @@
           "skipped": 0,
           "status": "passed"
         },
-        "sha256": "ab9e93a4f706adb2b29f05314bae4e471c5f0f92a975cab8e1f542d93bf6a760"
+        "sha256": "a6837f6070131cd6e2662b8fc4d99a79f1e011b0a1955795173f465c8f8b205a"
       },
       "tests.keyed_journeys.json": {
         "document": {
@@ -240,54 +240,54 @@
           "tables": {
             "J1": [
               {
-                "head": "9155c5b8de2c493b9dd3d4a995ab8d6742592332",
+                "head": "dc9c7d016cebcd68f86913914bcbb0cb35b40178",
                 "row": "tests.test_onboarding_isolation.KeyedJourneyTests.test_keyed_cli_changes_and_failed_qualification_remain_selectable_with_warnings",
                 "status": "passed"
               },
               {
-                "head": "9155c5b8de2c493b9dd3d4a995ab8d6742592332",
+                "head": "dc9c7d016cebcd68f86913914bcbb0cb35b40178",
                 "row": "tests.test_onboarding_isolation.KeyedJourneyTests.test_keyed_cli_declare_approve_apply_admit_qualify_bind",
                 "status": "passed"
               },
               {
-                "head": "9155c5b8de2c493b9dd3d4a995ab8d6742592332",
+                "head": "dc9c7d016cebcd68f86913914bcbb0cb35b40178",
                 "row": "tests.test_packaging.PackageSourceTests.test_package_payload_excludes_operator_credentials_and_grants",
                 "status": "passed"
               },
               {
-                "head": "9155c5b8de2c493b9dd3d4a995ab8d6742592332",
+                "head": "dc9c7d016cebcd68f86913914bcbb0cb35b40178",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_closed_target_refuses_audit",
                 "status": "passed"
               },
               {
-                "head": "9155c5b8de2c493b9dd3d4a995ab8d6742592332",
+                "head": "dc9c7d016cebcd68f86913914bcbb0cb35b40178",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_open_target_requires_local_route_and_key_not_admission",
                 "status": "passed"
               },
               {
-                "head": "9155c5b8de2c493b9dd3d4a995ab8d6742592332",
+                "head": "dc9c7d016cebcd68f86913914bcbb0cb35b40178",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_rechecks_headers_origins_collisions",
                 "status": "passed"
               },
               {
-                "head": "9155c5b8de2c493b9dd3d4a995ab8d6742592332",
+                "head": "dc9c7d016cebcd68f86913914bcbb0cb35b40178",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_uses_existing_single_commit_barrier",
                 "status": "passed"
               },
               {
-                "head": "9155c5b8de2c493b9dd3d4a995ab8d6742592332",
+                "head": "dc9c7d016cebcd68f86913914bcbb0cb35b40178",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_json_export_has_logical_refs_and_no_store_reads",
                 "status": "passed"
               },
               {
-                "head": "9155c5b8de2c493b9dd3d4a995ab8d6742592332",
+                "head": "dc9c7d016cebcd68f86913914bcbb0cb35b40178",
                 "row": "tests.test_tui_pty.KeyedJourneyPTYTests.test_keyed_tui_optional_admission_qualification_and_binding",
                 "status": "passed"
               }
             ]
           }
         },
-        "sha256": "c83f20eae0575654b9c38e9ef3f00a096490abad64b5da9e8454f3a808c40f52"
+        "sha256": "150ecb8baa0311f8767e8954d06749aceb824fee36817fd89610b2176a057668"
       },
       "tests.test_gateway_keyed_compat.json": {
         "document": {
@@ -345,11 +345,11 @@
               "src/charmer/discovery.py": "dcee867df7f0fba1b91cfa3574cbab779413134cd4faf0e22230783801a0fa75",
               "src/charmer/netclass.py": "6278417483b1f6b8b097bcbee93a086c3c012ed8df568ab752199bb647a27eee",
               "src/charmer/operator.py": "9eab9d7214b8e37a0f7a22a2d79bff184897b6d422424e863e5cae1800c2cd8a",
-              "src/charmer/profile.py": "ee3d108ef215e55f59b11578bd44626e8eae64399858aba41a037ece59d39db3",
+              "src/charmer/profile.py": "d00fa3ac96e6ae3823949c07589b91a345feb46facebc095afb2319481931740",
               "src/charmer/proxy.py": "0726e6a450b857d36f2b8e426802edc2d9d92acc7074371e7a42b9346ae32577",
               "src/charmer/qualify.py": "0df154501c552f188057d0fc62547a9929ebb59b93fc47279ae2b709f112f437",
               "src/charmer/render.py": "cdf34a341b54958f6aa4e22f294c769f210b2281a543671943d60ee281b26d43",
-              "src/charmer/scope.py": "60f0b12daff4aa86ad38e689590dd96a88c41e5dc896c02d32f97d85b7420cf7",
+              "src/charmer/scope.py": "a22f671036db8adff30adbfaad6a807e04b9864da06508be498b2a6ba1f76ca9",
               "src/charmer/served_plan.py": "24ba98e3d813a803d90a807f84942fde8077237dfa0d51c8928cb0e82e39feb8"
             }
           },
@@ -504,7 +504,7 @@
             ]
           }
         },
-        "sha256": "7687e81e38fea21b5672b7aa74f83f24beeaa5c26a50a478f50e5aa086447379"
+        "sha256": "2989961f83bdee5dbce26700c4351574f8d2d11308c4ed571904f3388bffa516"
       },
       "tests.test_keyed_compat_client.json": {
         "document": {
@@ -562,11 +562,11 @@
               "src/charmer/discovery.py": "dcee867df7f0fba1b91cfa3574cbab779413134cd4faf0e22230783801a0fa75",
               "src/charmer/netclass.py": "6278417483b1f6b8b097bcbee93a086c3c012ed8df568ab752199bb647a27eee",
               "src/charmer/operator.py": "9eab9d7214b8e37a0f7a22a2d79bff184897b6d422424e863e5cae1800c2cd8a",
-              "src/charmer/profile.py": "ee3d108ef215e55f59b11578bd44626e8eae64399858aba41a037ece59d39db3",
+              "src/charmer/profile.py": "d00fa3ac96e6ae3823949c07589b91a345feb46facebc095afb2319481931740",
               "src/charmer/proxy.py": "0726e6a450b857d36f2b8e426802edc2d9d92acc7074371e7a42b9346ae32577",
               "src/charmer/qualify.py": "0df154501c552f188057d0fc62547a9929ebb59b93fc47279ae2b709f112f437",
               "src/charmer/render.py": "cdf34a341b54958f6aa4e22f294c769f210b2281a543671943d60ee281b26d43",
-              "src/charmer/scope.py": "60f0b12daff4aa86ad38e689590dd96a88c41e5dc896c02d32f97d85b7420cf7",
+              "src/charmer/scope.py": "a22f671036db8adff30adbfaad6a807e04b9864da06508be498b2a6ba1f76ca9",
               "src/charmer/served_plan.py": "24ba98e3d813a803d90a807f84942fde8077237dfa0d51c8928cb0e82e39feb8"
             }
           },
@@ -670,7 +670,7 @@
             ]
           }
         },
-        "sha256": "603f9c50d8ca8d240308ec2212d2e058e2f275b95f4de7dac4f1b61945635e76"
+        "sha256": "9d23d4a5146bd6a9f3c0b1ad0d6d73d0dd7390b22f4e68ac147a823c3a613a48"
       }
     },
     "validated_exit": 0
@@ -928,7 +928,7 @@
   "source_report": {
     "document": {
       "evidence_dir": "tests/fixtures",
-      "head": "9155c5b8de2c493b9dd3d4a995ab8d6742592332",
+      "head": "dc9c7d016cebcd68f86913914bcbb0cb35b40178",
       "relevant_sources": [
         {
           "path": "src/charmer/catalog.py",
@@ -956,7 +956,7 @@
         },
         {
           "path": "src/charmer/profile.py",
-          "sha256": "ee3d108ef215e55f59b11578bd44626e8eae64399858aba41a037ece59d39db3"
+          "sha256": "d00fa3ac96e6ae3823949c07589b91a345feb46facebc095afb2319481931740"
         },
         {
           "path": "src/charmer/compiler.py",
@@ -964,7 +964,7 @@
         },
         {
           "path": "src/charmer/scope.py",
-          "sha256": "60f0b12daff4aa86ad38e689590dd96a88c41e5dc896c02d32f97d85b7420cf7"
+          "sha256": "a22f671036db8adff30adbfaad6a807e04b9864da06508be498b2a6ba1f76ca9"
         },
         {
           "path": "src/charmer/cli/commands/models.py",
@@ -1008,7 +1008,7 @@
         }
       ]
     },
-    "sha256": "61a958ef20d633ae003188a44e44c7d3105767c45f54a3114f76a0e2284c6bb2"
+    "sha256": "d2c9801e338eb0d37a2c57105e4495b50bc9b1e9474a684f05e51641235a18ce"
   },
   "version": 1
 }
