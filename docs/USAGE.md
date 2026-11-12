@@ -62,8 +62,8 @@ Any one provider is enough for a working setup; connect only the ones you want.
   [ChatGPT account](providers/chatgpt-account.md) sign-ins, for personal use.
 - Your own endpoint, or a vendor's from a preset:
   [Anthropic-compatible](providers/anthropic-compatible.md) (recommended),
-  [OpenAI-compatible](providers/openai-compatible.md), or a
-  [server on your network](providers/lan.md).
+  [OpenAI-compatible](providers/openai-compatible.md), a [server on your network](providers/lan.md)
+  or [one with a key on your private network](guides/self-hosted.md).
 
 ## Profiles and models
 
