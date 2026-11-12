@@ -229,6 +229,33 @@ class NoticeMessageTests(_SeamCase):
         self.assertIn("start " + original, hooks.seen_path(self.store.root, self.rid).read_text())
         self.assertIn("carry this notice", self.prompt().get("systemMessage", ""))
 
+    def test_message_posted_between_reset_and_runtime_reconcile_moves_with_authority(self):
+        from charmer.cli import session_events
+
+        original = self.gen(3)
+        self.start("startup")
+        self.post("charmer: earlier notice")
+        self.gen(4)
+        observed = "47474747-4747-4747-8747-474747474747"
+        reconcile = session_events._reconcile_session_start
+
+        def interleave(*args, **kwargs):
+            self.post("charmer: late notice")
+            return reconcile(*args, **kwargs)
+
+        with mock.patch.object(session_events, "_reconcile_session_start", side_effect=interleave):
+            code, _text, err = self.run_main(self.argv("start"), {
+                "hook_event_name": "SessionStart", "source": "clear", "session_id": observed,
+                "cwd": str(self.project)}, runtime=self.runtime)
+        self.assertEqual(code, 0, err)
+        self.rid = observed
+        marker, _raw = hooks.read_marker(self.store.root, observed)
+        self.assertEqual(marker.start, original)
+        message = self.prompt().get("systemMessage", "")
+        self.assertEqual(message.count("late notice"), 1)
+        self.assertEqual(message.count("earlier notice"), 1)
+        self.assertEqual(self.prompt(), {})
+
     def test_native_fork_does_not_inherit_the_parent_process_marker(self):
         self.start("startup")
         self.post("charmer: parent-only notice")

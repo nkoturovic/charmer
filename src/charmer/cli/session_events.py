@@ -364,6 +364,9 @@ def _reconcile_session_start(
         normalize=_normalize_model_evidence(
             runtime, source=source, agent_context=agent_context
         ),
+        on_runtime_change=(
+            lambda previous, current: hooks.carry_runtime_notice(runtime.session_store.root, previous, current)
+        ) if source in ("compact", "clear") else None,
     )
     return _session_start_messages(record, observed, source, stable_id)
 

@@ -339,12 +339,22 @@ def _clip_message(text: str, budget: int) -> str:
     return text if len(raw) <= budget else raw[:max(0, budget - 3)].decode("utf-8", "ignore") + "…"
 
 
-def _merge_messages(message: str, previous: str) -> str:
-    lines = previous.splitlines()
+def _message_parts(text: str) -> tuple[list[str], int]:
+    lines = text.splitlines()
     dropped = 0
     if lines and re.fullmatch(r"\+[0-9]{1,9} more", lines[-1]):
         dropped = int(lines.pop().split()[0][1:])
-    lines.insert(0, _clip_message("".join(ch if ch.isprintable() else " " for ch in message), _MESSAGE_MAX))
+    return lines, dropped
+
+
+def _merge_messages(message: str, previous: str, *, queued: bool = False) -> str:
+    lines, dropped = _message_parts(previous)
+    if queued:
+        incoming, already_dropped = _message_parts(message)
+        lines = incoming + lines
+        dropped += already_dropped
+    else:
+        lines.insert(0, _clip_message("".join(ch if ch.isprintable() else " " for ch in message), _MESSAGE_MAX))
     while True:
         suffix = [f"+{min(dropped, 999999999)} more"] if dropped else []
         joined = "\n".join([*lines, *suffix])
@@ -364,6 +374,17 @@ def post_message(state_root: Path | str, runtime_id: str, message: str) -> None:
     marker, _raw = read_marker(state_root, runtime_id)
     _write_marker(state_root, runtime_id,
                   NoticeMarker(marker.seen, marker.start, _merge_messages(message, marker.message)))
+
+
+def carry_runtime_notice(state_root: Path | str, previous_id: str, runtime_id: str) -> None:
+    """Carry queued text under the same lifecycle lock that accepts the new authority."""
+
+    previous, _raw = read_marker(state_root, previous_id)
+    marker, _raw = read_marker(state_root, runtime_id)
+    if previous.message:
+        _write_marker(state_root, runtime_id, NoticeMarker(
+            marker.seen, marker.start or previous.start,
+            _merge_messages(previous.message, marker.message, queued=True)))
 
 
 def _marker_lock(state_root: Path | str, managed_id: str) -> state.FileLock:
@@ -409,14 +430,15 @@ def start_marker(state_root: Path | str, managed_id: str, runtime_id: str, *,
         marker, raw = read_marker(state_root, runtime_id)
         if in_process and not new_process and raw is None:
             # An in-process clear/compact can acquire a new runtime id.
-            # Carry provenance and queued text from its previous authority;
-            # retain the old marker for aliases and rollback readers.
+            # Carry provenance only. Queued text moves under the later
+            # reconcile lock, so a message posted between locks is not stranded.
             try:
                 record = sessions.SessionStore(state_root, sessions.default_schema()).load(managed_id)
                 previous = record.get("runtime_session_id")
                 if (previous and previous != runtime_id
                         and record.get("launch_epoch", 0) == (launch_epoch or 0)):
-                    marker, _previous_raw = read_marker(state_root, previous)
+                    previous_marker, _previous_raw = read_marker(state_root, previous)
+                    marker = NoticeMarker(start=previous_marker.start)
             except (sessions.SessionError, OSError):
                 pass
         start = read_gen(scope_path(state_root, managed_id)) if new_process else marker.start

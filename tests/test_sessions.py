@@ -660,6 +660,69 @@ class LockAcquisitionFailureTests(SessionTestCase):
                 lock.release()
 
 
+class RuntimeNoticeCallbackTests(SessionTestCase):
+    def reconcile(self, **kwargs):
+        self.assertIn("on_runtime_change", sessions.SessionStore.reconcile_runtime.__code__.co_varnames)
+        return self.store.reconcile_runtime(FIXED_ID, observed_runtime_id=OTHER_ID, **kwargs)
+
+    def test_accepted_callback_runs_after_save_with_both_locks_held(self):
+        _v3.save_any(self.store, _record(self.snapshot))
+        calls = []
+
+        def callback(old, new):
+            calls.append((old, new))
+            self.assertEqual(self.store.load(FIXED_ID)["runtime_session_id"], OTHER_ID)
+            for lock in (self.store.lifecycle_lock(FIXED_ID), self.store.runtime_index_lock()):
+                try:
+                    self.assertFalse(lock.acquire(blocking=False))
+                finally:
+                    lock.release()
+
+        self.reconcile(source="clear", on_runtime_change=callback)
+        self.assertEqual(calls, [(FIXED_ID, OTHER_ID)])
+        self.reconcile(source="clear", on_runtime_change=callback)
+        self.assertEqual(len(calls), 1)
+
+    def test_stale_alias_and_native_fork_observations_never_call_back(self):
+        for kind in ("stale", "alias", "fork"):
+            with self.subTest(kind=kind):
+                record = _record(self.snapshot)
+                record["launch_epoch"] = 2
+                if kind == "alias":
+                    record["runtime_aliases"] = [{"session_id": OTHER_ID, "source": "clear",
+                                                   "observed_at": "2026-07-21T00:00:00Z"}]
+                _v3.save_any(self.store, record)
+                callback = mock.Mock()
+                self.reconcile(source="fork" if kind == "fork" else "clear",
+                               launch_epoch=1 if kind == "stale" else 2, on_runtime_change=callback)
+                callback.assert_not_called()
+
+    def test_other_owned_runtime_never_calls_back(self):
+        _v3.save_any(self.store, _record(self.snapshot))
+        _v3.save_any(self.store, _record(self.snapshot, session_id=OTHER_ID))
+        callback = mock.Mock()
+        with self.assertRaisesRegex(sessions.SessionError, "already owned"):
+            self.reconcile(source="clear", on_runtime_change=callback)
+        callback.assert_not_called()
+
+    def test_callback_failure_is_noted_without_undoing_reconcile(self):
+        _v3.save_any(self.store, _record(self.snapshot))
+        with self.assertLogs("charmer.sessions", level="WARNING") as captured:
+            self.reconcile(source="clear", on_runtime_change=mock.Mock(side_effect=OSError("fixture notice failure")))
+        self.assertIn("fixture notice failure", " ".join(captured.output))
+        self.assertEqual(self.store.load(FIXED_ID)["runtime_session_id"], OTHER_ID)
+
+    def test_default_and_noop_callback_have_identical_record_bytes(self):
+        original = _record(self.snapshot)
+        _v3.save_any(self.store, original)
+        self.store.reconcile_runtime(FIXED_ID, observed_runtime_id=OTHER_ID, source="clear",
+                                     now="2026-07-22T00:00:00Z")
+        expected = self.store.read_record_bytes(FIXED_ID)
+        _v3.save_any(self.store, original)
+        self.reconcile(source="clear", now="2026-07-22T00:00:00Z", on_runtime_change=lambda *_args: None)
+        self.assertEqual(self.store.read_record_bytes(FIXED_ID), expected)
+
+
 class IdentityReconciliationTests(SessionTestCase):
     def test_runtime_drift_becomes_authoritative_and_old_id_is_alias(self) -> None:
         _v3.save_any(self.store, _record(self.snapshot))
