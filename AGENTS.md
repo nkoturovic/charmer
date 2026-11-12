@@ -1512,9 +1512,10 @@ uses your own HOME and environment.
   and length (hex keys never reach an absolute bits/char bar); everything
   else is a candidate. A candidate a person found to be no credential is
   listed in `REVIEWED_CANDIDATES` by its exact blob, line and shape with the
-  finding; it is reported as reviewed and does not fail the scan (a blob id
-  names its content, so an entry clears nothing else). The same shapes and
-  verdicts gate the tree
+  finding; the history scan reports it as reviewed and does not fail on it
+  (a blob id names its content, so an entry clears nothing else; two
+  candidates on one line and shape both stay candidates). The same shapes
+  and synthetic/candidate verdicts gate the tree, where no entry applies
   (`test_hygiene.SecretScanTests.test_tree_carries_no_candidate_credential`,
   every file whatever its suffix). Identifiers are also counted in tree/blob
   paths and ref names. The public identifiers are generic

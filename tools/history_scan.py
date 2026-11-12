@@ -988,8 +988,10 @@ def _note_identifiers(result: ScanResult, data: bytes, path: str, commit: str | 
 
 # Candidates a person has looked at and found to be no credential: the exact
 # blob, line and shape, with the finding. A blob id names its content, so an
-# entry clears that one hit and nothing else. A reviewed hit is reported with
-# its location and never fails the scan.
+# entry clears that one hit and nothing else (a second candidate on the same
+# line and shape keeps both candidates). A reviewed hit is reported with its
+# location and never fails the scan. Only history scans read this table; the
+# tree gate does not.
 REVIEWED_CANDIDATES: Mapping[tuple[str, int, str], str] = {
     ("494a6070e060310f82f1c4d36f0d8f7e266839c4", 84, "secret-assignment"):
         "a test's marker string (words and a six-digit hex suffix) in tests/test_client_mod_policy.py; "
@@ -1040,9 +1042,12 @@ def scan(repo: Path, revision_range: str | None = None, private: PrivateInput | 
         patch_source_eligible = bool(
             commit_rooted and commit and path and introductions > 0 and blob_paths and path in blob_paths
             and all(alias.endswith(".patch") and "�" not in alias for alias in blob_paths))
-        for shape, line, length, bits, verdict, reason in credential_hits(
-                data, patch_source_eligible=patch_source_eligible):
-            if verdict == "candidate" and (object_id, line, shape) in REVIEWED_CANDIDATES:
+        hits = list(credential_hits(data, patch_source_eligible=patch_source_eligible))
+        # An entry clears one candidate: two on its line and shape stay candidates.
+        keys = collections.Counter((line, shape) for shape, line, *_rest, verdict, _reason in hits
+                                   if verdict == "candidate")
+        for shape, line, length, bits, verdict, reason in hits:
+            if verdict == "candidate" and keys[line, shape] == 1 and (object_id, line, shape) in REVIEWED_CANDIDATES:
                 verdict, reason = "reviewed", REVIEWED_CANDIDATES[object_id, line, shape]
             result.credentials.append(CredentialHit(shape, verdict, reason, object_id, line, length, bits,
                                                      "blob", commit, path, introductions))

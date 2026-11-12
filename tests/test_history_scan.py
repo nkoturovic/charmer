@@ -971,6 +971,23 @@ class HistoryScanGitTests(unittest.TestCase):
         self.assertEqual(code, 0, text)
         self.assertEqual(json.loads((out / "summary.json").read_text())["credentials"]["reviewed"], 2)
 
+    def test_an_entry_never_clears_two_candidates_on_its_line(self) -> None:
+        first, second = _real_looking_key(), _real_looking_key()
+        self.commit({"auth.json": f'{{"token": "{first[3:]}", "password": "{second[3:]}"}}\n'}, "add")
+        blob = self.git("rev-parse", "HEAD:auth.json")
+        code, text, out = self.run_scan()
+        shapes = [(hit["shape"], hit["line"]) for hit in json.loads((out / "credentials.json").read_text())
+                  if hit["verdict"] == "candidate"]
+        self.assertEqual(len(shapes), 2, text)
+        self.assertEqual(len(set(shapes)), 1, shapes)  # one line, one shape
+        shape, line = shapes[0]
+        with mock.patch.dict(history_scan.REVIEWED_CANDIDATES, {(blob, line, shape): "one finding"}, clear=True):
+            code, text, out = self.run_scan()
+        self.assertEqual(code, 1, text)
+        verdicts = [hit["verdict"] for hit in json.loads((out / "credentials.json").read_text())]
+        self.assertEqual(verdicts.count("candidate"), 2, verdicts)
+        self.assertNotIn("reviewed", verdicts)
+
     def test_reviewed_entries_name_a_full_blob_id_a_line_a_known_shape_and_a_finding(self) -> None:
         shapes = {shape.name for shape in history_scan.SHAPES}
         for (blob, line, shape), finding in history_scan.REVIEWED_CANDIDATES.items():
