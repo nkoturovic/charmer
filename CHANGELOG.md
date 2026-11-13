@@ -6,7 +6,7 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [2.5.0] — 2026-11-12
+## [2.5.0] — 2026-11-13
 
 ### Upgrade notes
 
