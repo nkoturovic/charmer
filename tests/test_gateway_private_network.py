@@ -253,8 +253,8 @@ class HandshakeGate:
             self.held.set()
             if not self.release.wait(30):
                 return
-            upstream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            upstream.connect(str(self.target))
+            # Long-path safe: the fixture root sits below the runner's temporary directory.
+            upstream = probe.unix_connect(self.target, timeout=None)
             upstream.sendall(hello)
             back = threading.Thread(target=self.pipe, args=(upstream, client, False), daemon=True)
             back.start()
