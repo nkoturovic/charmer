@@ -283,13 +283,18 @@ def run_codex_diagnostic(name, *, package="service", fixture=None):
 # (tools/test.py --claude) and the omission proof run them; the sandboxed
 # gateway check has no client.
 PINNED_CLIENT_ROW_MODULES = ("tests.test_openai_key_route_client",)
+# Patch rows whose fixture TLS upstream runs the host's openssl from
+# /usr/bin:/bin, which the sandboxed gateway check lacks: the host suite and
+# the omission proof run them.
+HOST_OPENSSL_ROW_MODULES = ("tests.test_gateway_fable",)
 
 
 def gateway_check_selections():
     # A leased patch discriminator may live outside the ordinary modules.
     # Run those rows too, without importing all unrelated packaging checks.
     return (*GATEWAY_CHECK_MODULES, "tests.test_gateway_keyed_compat.KeyedGatewayCoreTests", *(row for rows in PATCH_ROWS.values() for row in rows
-             if not any(row.startswith(module + ".") for module in (*GATEWAY_CHECK_MODULES, *PINNED_CLIENT_ROW_MODULES))))
+             if not any(row.startswith(module + ".") for module in (*GATEWAY_CHECK_MODULES, *PINNED_CLIENT_ROW_MODULES,
+                                                                   *HOST_OPENSSL_ROW_MODULES))))
 
 
 # Declared application dependencies, companion metadata to PATCH_ROWS:

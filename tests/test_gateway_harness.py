@@ -56,6 +56,17 @@ class PatchCoverageTests(unittest.TestCase):
         self.assertFalse(set(client_rows) & set(selections))
         self.assertFalse(set(harness.PINNED_CLIENT_ROW_MODULES) & set(harness.GATEWAY_CHECK_MODULES))
 
+    def test_host_openssl_rows_run_outside_the_sandboxed_check(self):
+        # The sandboxed gateway check has no /usr/bin/openssl; the host suite
+        # and the omission proof run these rows.
+        selections = harness.gateway_check_selections()
+        host_rows = [row for rows in harness.PATCH_ROWS.values() for row in rows
+                     if row.startswith(tuple(module + "." for module in harness.HOST_OPENSSL_ROW_MODULES))]
+        self.assertTrue(host_rows)
+        self.assertFalse(set(host_rows) & set(selections))
+        self.assertLessEqual({module.removeprefix("tests.") for module in harness.HOST_OPENSSL_ROW_MODULES},
+                             harness.GATEWAY_CHECK_EXCLUSIONS)
+
     def test_control_rows_resolve_and_are_never_their_patch_rows(self):
         import check_gateway_patch_revert as tool
 
