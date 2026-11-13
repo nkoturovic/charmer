@@ -4208,7 +4208,7 @@ class VulnerabilityWatchTests(unittest.TestCase):
         self.assertEqual([{key: review[key] for key in ("id", "aliases", "modified", "version", "re_review")}
                           for review in reviews], [{
             "id": "CVE-2026-124249", "aliases": [],
-            "modified": "2026-11-11T10:47:25.104930807Z", "version": version, "re_review": "2026-12-01",
+            "modified": "2026-11-13T02:30:33.123266090Z", "version": version, "re_review": "2026-12-01",
         }])
         self.assertIn("http.cookiejar", reviews[0]["reason"])
         self.assertIn("HTTPCookieProcessor", reviews[0]["reason"])

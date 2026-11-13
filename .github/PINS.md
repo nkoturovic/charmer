@@ -402,9 +402,12 @@ Python dependency. This is bounded source-level non-use, not a claim that
 the vulnerable code is absent or safe for arbitrary interpreter use.
 
 `vulnerability-watch-reviewed.json` records exactly id `CVE-2026-124249`,
-aliases `[]`, revision `2026-11-11T10:47:25.104930807Z`, version `3.15.2`
+aliases `[]`, revision `2026-11-13T02:30:33.123266090Z`, version `3.15.2`
 and re-review date `2026-12-01`. The nanoseconds are part of that exact
-revision. Re-review also occurs at the release candidate, on a changed
+revision. OSV re-published the advisory at that time; it describes the same
+`http.cookiejar` defect, with 3.15.2 among the affected versions. The release-candidate
+re-review on 2026-11-13 repeated the source check above (163 product Python
+files, the same five opener sites) with the same finding. Re-review also occurs at the release candidate, on a changed
 advisory/runtime, or if cookie processing, unpickling, external dependencies
 or dynamic loading are added. Watch run
 [43037446186](https://github.com/nkoturovic/charmer/actions/runs/43037446186)
