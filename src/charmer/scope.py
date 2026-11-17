@@ -2445,6 +2445,34 @@ def live_drift(live: Path, plan: ScopePlan) -> list[str]:
     return problems
 
 
+def _historical_gateway_efforts(efforts: Any, selectors: Any) -> dict[str, Any] | None:
+    """A gateway-effort line's earlier ``efforts`` table: each historical
+    selector at the effort whose declared proxy contract it carries.
+
+    Only a one-to-one match counts (every declared contract has exactly one
+    historical selector and every historical selector one declared effort);
+    anything else is None, never a table guessed from the successor's
+    selectors.
+    """
+
+    if not isinstance(efforts, Mapping) or not isinstance(selectors, Mapping) or not efforts:
+        return None
+    by_contract: dict[str, str] = {}
+    for selector, contract in selectors.items():
+        if not isinstance(selector, str) or not isinstance(contract, str) or contract in by_contract:
+            return None
+        by_contract[contract] = selector
+    declared = {}
+    for effort, spec in efforts.items():
+        contract = spec.get("proxy_contract") if isinstance(spec, Mapping) else None
+        if not isinstance(contract, str) or contract in declared.values():
+            return None
+        declared[effort] = contract
+    if set(declared.values()) != set(by_contract):
+        return None
+    return {effort: {**efforts[effort], "selector": by_contract[contract]} for effort, contract in declared.items()}
+
+
 def recorded_catalog_resolution(
     record: Mapping[str, Any], docs: Mapping[str, Any], displaced: Mapping[str, Any],
 ) -> dict[str, Any] | None:
@@ -2505,17 +2533,21 @@ def recorded_catalog_resolution(
             if len(candidates) != 1:
                 return None
             historical = candidates[0]
-            # A native line's historical selector has the same effort grammar.
-            # Other historical shapes are not guessed from the successor.
-            if not isinstance(current.get("efforts"), list):
-                return None
-            matching = [value for value in historical["selectors"] if base(value) == base(selector)]
-            if len(matching) != 1:
-                return None
             entry = copy.deepcopy(current)
+            if isinstance(current.get("efforts"), list):
+                # A native line's historical selector has the same effort grammar.
+                matching = [value for value in historical["selectors"] if base(value) == base(selector)]
+                if len(matching) != 1:
+                    return None
+                entry["selector"] = matching[0]
+            else:
+                efforts = _historical_gateway_efforts(current.get("efforts"), historical.get("selectors"))
+                if efforts is None:
+                    return None
+                entry["efforts"] = efforts
             entry.update(wire_model=historical["last_wire"], display=historical["display"],
                          generation=historical.get("generation", binding.get("generation", current["generation"])),
-                         selector=matching[0], capabilities=historical["capabilities"], roles=historical["roles"])
+                         capabilities=historical["capabilities"], roles=historical["roles"])
             entry["context"]["provider_tokens"] = historical["context_tokens"]
         selectors = {base(value) for _effort, value, _contract in catalog_mod.line_selectors(entry)}
         if (base(selector) not in selectors

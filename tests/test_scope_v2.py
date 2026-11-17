@@ -2141,5 +2141,54 @@ class LineupDefaultEnvSessionTests(V4Case):
         self.assertNotEqual(launched, resumed)
 
 
+class GatewayEffortMoveTests(unittest.TestCase):
+    """A recorded binding on a gateway-effort line the installed catalog moved
+    to its next generation: the comparison catalog restores the earlier
+    per-effort selectors from the retired entry, matched by proxy contract."""
+
+    def setUp(self) -> None:
+        self.docs = copy.deepcopy(catalog.load_catalog(FIXTURE_ROOT).docs)
+        line = self.docs["models"]["models"]["sol"]
+        self.before = copy.deepcopy(line)
+        self.retired = {
+            "capabilities": line["capabilities"], "context_tokens": line["context"]["provider_tokens"],
+            "display": line["display"], "generation": line["generation"], "last_wire": line["wire_model"],
+            "provider": line["provider"], "reason": "fixture generation move", "roles": line["roles"],
+            "selectors": {spec["selector"]: spec["proxy_contract"] for spec in line["efforts"].values()},
+            "since_catalog": 1, "successor": "sol"}
+        self.docs["retired"]["retired"]["sol@prev"] = self.retired
+        line.update(generation="next", wire_model="gpt-next-sol", display="GPT-next Sol")
+        for effort, spec in line["efforts"].items():
+            spec["selector"] = f"gpt-multi-sol-next-{effort}[1m]"
+
+    def record(self, effort: str = "high") -> dict[str, Any]:
+        binding = {"key": "sol", "selector": self.before["efforts"][effort]["selector"],
+                   "generation": self.before["generation"]}
+        return {"scope_lead": dict(binding), "applied": {"lead": dict(binding), "agents": {}}}
+
+    def test_the_earlier_efforts_come_back_by_contract(self) -> None:
+        for effort in self.before["efforts"]:
+            with self.subTest(effort=effort):
+                restored = scope.recorded_catalog_resolution(self.record(effort), self.docs, {})
+                self.assertIsNotNone(restored)
+                line = restored["models"]["models"]["sol"]
+                self.assertEqual(line["efforts"], self.before["efforts"])
+                self.assertEqual((line["wire_model"], line["generation"], line["display"]),
+                                 (self.before["wire_model"], self.before["generation"], self.before["display"]))
+
+    def test_a_mapping_that_is_not_one_to_one_is_refused(self) -> None:
+        contracts = sorted(self.retired["selectors"].values())
+        selectors = sorted(self.retired["selectors"])
+        for name, history in (
+            ("unknown contract", {**self.retired["selectors"], selectors[0]: "reasoning-effort-fixture"}),
+            ("one contract twice", {selectors[0]: contracts[0], selectors[1]: contracts[0]}),
+            ("an effort without history", {selectors[0]: self.retired["selectors"][selectors[0]]}),
+            ("history without its effort", {**self.retired["selectors"], "gpt-multi-sol-extra[1m]": "reasoning-effort-max"}),
+        ):
+            with self.subTest(name=name):
+                self.docs["retired"]["retired"]["sol@prev"] = {**self.retired, "selectors": history}
+                self.assertIsNone(scope.recorded_catalog_resolution(self.record(), self.docs, {}))
+
+
 if __name__ == "__main__":
     unittest.main()
