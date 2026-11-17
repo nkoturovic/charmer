@@ -3,27 +3,27 @@
   "upstream": {
     "name": "CLIProxyAPI",
     "repository": "https://github.com/router-for-me/CLIProxyAPI",
-    "tag": "v8.0.67",
-    "version": "8.0.67",
-    "commit": "8bba7a77c6bcbfd993516d26606bfecaa4ff49d0",
+    "tag": "v8.0.76",
+    "version": "8.0.76",
+    "commit": "7df56074b252384d878ec4fca840552c6fb5236e",
     "license": "MIT",
     "module": "github.com/router-for-me/CLIProxyAPI/v8",
     "main_package": "./cmd/server",
     "binary": "cli-proxy-api"
   },
   "source": {
-    "archive_url": "https://github.com/router-for-me/CLIProxyAPI/archive/8bba7a77c6bcbfd993516d26606bfecaa4ff49d0.tar.gz",
-    "archive_file": "CLIProxyAPI-8bba7a77c6bcbfd993516d26606bfecaa4ff49d0.tar.gz",
-    "archive_sha256": "813caa36cbd4d0ec30fc9bc08bcf81d3756e86e51b76b252f1241c9a02309fa0",
-    "tree_sha256": "b5d5b0841753df5a71fb0bd860d00a396d5c107d028d0107059f3e6e67c8dbda",
+    "archive_url": "https://github.com/router-for-me/CLIProxyAPI/archive/7df56074b252384d878ec4fca840552c6fb5236e.tar.gz",
+    "archive_file": "CLIProxyAPI-7df56074b252384d878ec4fca840552c6fb5236e.tar.gz",
+    "archive_sha256": "4dc68704c4fc8c572bd6513c0a18338a8feb853510d68c3c74153453d8ef9361",
+    "tree_sha256": "fb6c76c2e6b010508e43e34d66cf384fd22d175724b01ecafddde5bafd9f189c",
     "nix_hash": "sha256-njk9i5JbHvJ3lTB7Bn0wTxFtmcJ5MEokgdOHNhzDPPY="
   },
   "vendor": {
-    "tree_sha256": "6330e01116c088c4d72e3a51557bc6c1a77e8b6f536532c7161f6cb03f362773",
+    "tree_sha256": "e5af2e9237b46d2a715ca4a690cf3cae1081c627067fb92437d09db6ab9f505f",
     "nix_hash": "sha256-Axnzm6yjN68P25Zvf0cc1+Bh7A9ic6+OVH20VQWYdLA=",
     "modules_patch": {
       "basename": "cli-proxy-api-module-requirements.patch",
-      "sha256": "59fe6b36e3542947cdb7265c21ac07312916ff2c1208f3a54296d578db5975f2"
+      "sha256": "dbd4a879c15361a7a65b77cf63666ba19b94e6d9b7c1fb0676566e66920d1415"
     }
   },
   "toolchain": {
@@ -57,72 +57,72 @@
     },
     {
       "basename": "cli-proxy-api-kimi-claude-compat.patch",
-      "sha256": "2d4f9b1fedc2b191ed2f7fb42437537f1ea592b170f4fe1f0f82b7fbee440bc1",
+      "sha256": "a67aa15f4375ba8c901104f65a2a93d8c5f99cff0bb83f55adff28f4b00e3725",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-non-claude-cache-retention.patch",
-      "sha256": "067dc33b0187d763b720a287e01c3d72e244714ae388097723080b5149cbc5e9",
+      "sha256": "8147069b9fc0b7366b9a969fe145d74bbf51d9f62bef178bbf3c520ed7d2a77e",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-management-readonly-allowlist.patch",
-      "sha256": "7bf1e6965a20c69d9ade6b47b6e007570d7a0e8a41d17750423420fda924b743",
+      "sha256": "c2abad9bf34250baa4149e751c492e2b8db689b319d531ba3841f911d9bf1bca",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-watcher-parentdir.patch",
-      "sha256": "e7817eede617d5cb287a69ef007d04a507d512fe5b2985f89dd7054c90786b77",
+      "sha256": "14fd530f8e61d981b1332e2025a1ebd97ec9bfd6ecca7cb7a89ab7cf4acafbcd",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-serve-after-initial-auth-load.patch",
-      "sha256": "f35a59f1704410ad73fb19da6291ad0d905debf02b4268e6390d5aec2d9e4ed4",
+      "sha256": "76a5a3973c84095d15853979f64ea01c71f1335cb1ca49d7ea2ed47f867f66af",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-management-env-only.patch",
-      "sha256": "3b9a0c11b00d861c54dde25e8bef394603b881432b3cb9aab3afb526bea7c74c",
+      "sha256": "9e49aa16a0bbe947e8e2d096600949ff8626a7d1344cb7a2dc60d55a79e6035d",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-credential-save-report.patch",
-      "sha256": "b0a303e3903dc905c0f59e522f08f8b3fd6abd61932939b2d6f36a9f69927b7f",
+      "sha256": "9e5fb97358acc9ec875f74db020862a8fc68aad3ed4868781e54eb0967c511ec",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-credentialed-redirects.patch",
-      "sha256": "a10f59a46c4d7d9fee5033f5781aee2729ae3bda2c99f2d529523590ce93be8f",
+      "sha256": "c17aefb8e7a557529207e2e2d18a966d4076670ff3a15cbdf7a88ae0e6e3637e",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-openai-compat-keyed-safety.patch",
-      "sha256": "b3a03baee2d87454a29190d660059ab670120ac1d97c08e15f2551793afafd95",
+      "sha256": "2c6e65f5c7e3e983c1c35496e0870871b87c473fbc45cc653f0ff6279d8434cc",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-auth-snapshot-locking.patch",
-      "sha256": "875e7d398cfe79a537f39fa4778e9e74f0a3599c7fe4f0cd1299e4f281053712",
+      "sha256": "01eab3d01f7ba225f1f19f7c9294f8f715d111817b10f7499540bb30a3720803",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-server-config-snapshot.patch",
-      "sha256": "58bc1434a85f5e439344a4dcbe331b1864c2259cb024615176329d8658635343",
+      "sha256": "43981438416ffeb352b9e238b14b0ac4f93e9acb3f5ebafa59887d9f92a11708",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-claude-metadata-locking.patch",
-      "sha256": "f6490bfa8e2be77136d7f319895cfaf5731448da64c1d39997ce09e030c32312",
+      "sha256": "2bf6064bb37a21510e10dbc4c8616bd456bba9a4740e5d6cd935da191f231173",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-oauth-model-overlay.patch",
-      "sha256": "8dcf8777a76bdc9fd958c53a42e991cb5655045eec6de406e25ed6db0af02a88",
+      "sha256": "44a44a269de2a96c557a5ff4f54757c050742520561cc092e17ba82c63151edc",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-no-antigravity-egress.patch",
-      "sha256": "fe3bce1ebf16dfe3738d060f0a7c5dfa9b6d2837fc12242d2bf30ce392afa105",
+      "sha256": "3bd9f0d9202631f00e2d3282a15b04449e2739bd6aba753691138a411621d79e",
       "admitted": true
     },
     {
@@ -137,12 +137,12 @@
     },
     {
       "basename": "cli-proxy-api-codex-api-key-safety.patch",
-      "sha256": "ebf2d173e00350a310421c42fe37e61b5bfbf4806a4d47c111fb6f46a07a85a1",
+      "sha256": "8c8be6d47dba40650e759c6a39d5188ce2d8cc09f6eca5459ba7edae03920a17",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-refresh-shutdown-join.patch",
-      "sha256": "04a370f1a0988bafd8172e9d59958e1f8862452ee0a5eee000e250d9a5fab068",
+      "sha256": "0567933cad44527af383ee729b769bd729ddbccdc099efea09c87bcdad26bcb1",
       "admitted": true
     },
     {
@@ -157,17 +157,17 @@
     },
     {
       "basename": "cli-proxy-api-output-cap.patch",
-      "sha256": "aee70e81d033f842dbdf6d538b1c4f6638fbe965986c5c7e2d73b493fab9d81d",
+      "sha256": "8fd6424f34519393cf3f36fcc5f7bb031d7baa3a3e2fbc9e84904d071a32dc44",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-context-error-normalization.patch",
-      "sha256": "ef6b852fcd79a90d1cf1e492a20a9020246de161511004e0f4eef01177a5e2e3",
+      "sha256": "52bd115907ebc3e4063623d57100f07a66914cc263e8ef1f3bba674b96b38438",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-log-reduction.patch",
-      "sha256": "e67332f3f289802cadecb6b94f4ff69331a6d70d4610c7ff8c892d8c72f89358",
+      "sha256": "376f51724e0b86f2a6bdcb142744d22b0e1be1f3de8023c8ecdb70f605d4e767",
       "admitted": true
     },
     {
@@ -182,22 +182,22 @@
     },
     {
       "basename": "cli-proxy-api-terminal-rejection-reload.patch",
-      "sha256": "d3a318e6c96b8e7f285f3ac228b599777a6b276848e704b3eca4dd16e0ba9f06",
+      "sha256": "2bfc965a738dd490472ba87a8e831f186d339a136083a43f191af0143c096c88",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-codex-refresh-without-journal.patch",
-      "sha256": "0a112a12b1ef5f7116aca2aee337efa19902faa608da2346e96e4bd72026a3fd",
+      "sha256": "1de4b677ffa9510ee971f12a101831a74bc2c11e5c05318fd93df39e01b584ae",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-native-advisor-beta-order.patch",
-      "sha256": "d4e9fc3ea76787cde7553c25a753e6888402bbac4d865788160a37303757f3fa",
+      "sha256": "e266694e10fc43de9104fb3d5b8413aa4215887fa0266e05ed66c056b6aa41f8",
       "admitted": true
     },
     {
       "basename": "cli-proxy-api-private-network-dial.patch",
-      "sha256": "801fc1c0885f73c9d78394034d85e7e04967b7a5fde2a05bd58284f838aabb6d",
+      "sha256": "533513e33beb9b7065957f8534fffb4e9aa2b53157b4185b8534f10dceeb7e50",
       "admitted": true
     }
   ],
@@ -217,9 +217,9 @@
       "-w",
       "-buildid=",
       "-X",
-      "main.Version=8.0.67",
+      "main.Version=8.0.76",
       "-X",
-      "main.Commit=8bba7a77c6bcbfd993516d26606bfecaa4ff49d0",
+      "main.Commit=7df56074b252384d878ec4fca840552c6fb5236e",
       "-X",
       "main.BuildDate=1970-01-01T00:00:00Z"
     ],
@@ -314,7 +314,7 @@
       "packages": [
         "./internal/api/..."
       ],
-      "skip": "^(TestRedisProtocol_SUBSCRIBE_UsageSendsSupportRefresh|TestRedisProtocol_SUBSCRIBE_ErrorsReceivesErrorEvents|TestRedisProtocol_AUTH_And_PopContracts|TestOAuthCallbackRouteSkipsManagementKeyMiddleware|TestManagementUsageRequiresManagementAuthAndPopsArray|TestManagementPluginsRouteRegistered|TestManagementResponseExposesPluginSupportHeaderForCORS|TestConfigV8ETagExposedForCORS|TestIssue5190ModelDetailLifecycle|TestIssue5190ModelDetailUsesVisibleCatalog|TestIssue5190ModelDetailHomeVisibility|TestAuditHomeCodexSearchBusyReturnsTrustedRetryAfter|TestAuditHomeCodexSearchBodyCloseBeforeRelease|TestHomeCodexAlphaSearchReportsUnauthorizedBeforeEarlyReturn|TestHomeCodexAlphaSearchEndsSelectionAcrossDirectHTTPPaths|TestCodexLiveRoutesRequireAuthAndAreRegistered|TestRealtimeStandardRoutesAndClientSecretAuth|TestCodexAlphaSearchForwardsRequest|TestCodexAlphaSearchUsesPluginProviderTargetModel|TestCodexAlphaSearchFallsBackWhenPluginDoesNotHandleRoute|TestCodexAlphaSearchRejectsUnsupportedPluginRouteTarget|TestCodexAlphaSearchSanitizesResponsesOnlyFields|TestCodexAlphaSearchCredentialPolicy|TestCodexAlphaSearchOptInAPIKeyUsesConfiguredEndpoint|TestCodexAlphaSearchOptInAPIKeyStripsCredentialPrefix|TestCodexAlphaSearchOptInAPIKeyResolvesModelAlias|TestCodexAlphaSearchOptInAPIKeyWithoutBaseURLFailsClosed|TestCodexAlphaSearchPassesGinContextToAuthSelection|TestCodexAlphaSearchUsesRequestIDForSessionAffinity|TestVideosRoutesKeepXAINativeAndExposeOpenAIPrefix|TestInteractionsRouteRegistered|TestRedisProtocol_MalformedAndOverflowFramesDoNotCrashServer|TestCodexAlphaSearchSIWCWithRealExecutor|TestSIWCManagementRouteAccessControl|TestCodexCallbackRejectsSIWCState|TestSIWCStatusEndpoint|TestCaptureRequestInfoDoesNotDecodeASingleSegmentBomb)$",
+      "skip": "^(TestRedisProtocol_SUBSCRIBE_UsageSendsSupportRefresh|TestRedisProtocol_SUBSCRIBE_ErrorsReceivesErrorEvents|TestRedisProtocol_AUTH_And_PopContracts|TestOAuthCallbackRouteSkipsManagementKeyMiddleware|TestManagementUsageRequiresManagementAuthAndPopsArray|TestManagementPluginsRouteRegistered|TestManagementResponseExposesPluginSupportHeaderForCORS|TestConfigV8ETagExposedForCORS|TestIssue5190ModelDetailLifecycle|TestIssue5190ModelDetailUsesVisibleCatalog|TestIssue5190ModelDetailHomeVisibility|TestAuditHomeCodexSearchBusyReturnsTrustedRetryAfter|TestAuditHomeCodexSearchBodyCloseBeforeRelease|TestHomeCodexAlphaSearchReportsUnauthorizedBeforeEarlyReturn|TestHomeCodexAlphaSearchEndsSelectionAcrossDirectHTTPPaths|TestCodexLiveRoutesRequireAuthAndAreRegistered|TestRealtimeStandardRoutesAndClientSecretAuth|TestCodexAlphaSearchForwardsRequest|TestCodexAlphaSearchUsesPluginProviderTargetModel|TestCodexAlphaSearchFallsBackWhenPluginDoesNotHandleRoute|TestCodexAlphaSearchRejectsUnsupportedPluginRouteTarget|TestCodexAlphaSearchSanitizesResponsesOnlyFields|TestCodexAlphaSearchCredentialPolicy|TestCodexAlphaSearchOptInAPIKeyUsesConfiguredEndpoint|TestCodexAlphaSearchOptInAPIKeyStripsCredentialPrefix|TestCodexAlphaSearchOptInAPIKeyResolvesModelAlias|TestCodexAlphaSearchOptInAPIKeyWithoutBaseURLFailsClosed|TestCodexAlphaSearchPassesGinContextToAuthSelection|TestCodexAlphaSearchUsesRequestIDForSessionAffinity|TestVideosRoutesKeepXAINativeAndExposeOpenAIPrefix|TestInteractionsRouteRegistered|TestRedisProtocol_MalformedAndOverflowFramesDoNotCrashServer|TestCodexAlphaSearchSIWCWithRealExecutor|TestSIWCManagementRouteAccessControl|TestCodexCallbackRejectsSIWCState|TestSIWCStatusEndpoint|TestCaptureRequestInfoDoesNotDecodeASingleSegmentBomb|TestMuseCodeClientEndpointsRelayToMetaOrigin|TestMuseCodeModelsUsesFullCPACatalogWithoutUpstreamRelay|TestMuseCodeModelsSupportsHomeModeOAuthSettingsHotReloadAndPluginInterceptor|TestMuseCodeRoutesEnforceAuthSafeModeAndDisallowedPaths|TestServerWebsocketTunnel_EndToEndAndTenantIsolation|TestServerWebsocketTunnel_NonGetMethodsReturn405AndPreserveCORSOptions|TestServerWebsocketTunnel_RejectsWhenAPIKeysEmptyOrSafeMode|TestServerWebsocketTunnel_ServiceUnavailableResponseBodies|TestServerWebsocketTunnel_HotReloadRevokesRemovedKeyOnly|TestServerWebsocketTunnel_ServerStopClosesConnections|TestServerWebsocketTunnel_TLSWithoutALPNClosesRawTransport|TestManagementV8PluginsExposesRuntimePriorityOnlyOnV8|TestAuthenticateManagementKey_ReusesVerifiedSecretWithinOneHourTTL|TestAuthenticateManagementKey_NeverCachesFailuresAndPreservesIPBan|TestAuthenticateManagementKey_InvalidatesCacheOnSecretChangeAndRemoval|TestAuthenticateManagementKey_CoalescesConcurrentColdCacheLookups|TestMiddleware_AuthenticatesRealBcryptHashAndInvalidatesOnConfigV8Update)$",
       "platforms": "portable",
       "race": false,
       "count": null,
@@ -417,9 +417,10 @@
       "name": "management-env-only",
       "packages": [
         "./internal/config",
-        "./internal/api"
+        "./internal/api",
+        "./internal/api/handlers/management"
       ],
-      "run": "^(TestManagementEnvOnly_LoadConfigDropsSecretKeyWithoutWriteBack|TestManagementEnvOnly_ReloadAndPayloadLoadsDropSecretKey|TestManagementEnvOnly_BothSpellingsIgnoredFileUntouched|TestManagementEnvOnly_V8MigrationKeepsSecuritySettings|TestManagementEnvOnly_InitialConfigSecretDoesNotEnableManagement|TestManagementEnvOnly_ServerIgnoresConfigSecretAtStart|TestManagementEnvOnly_HotReloadedConfigSecretDoesNotEnableManagement|TestManagementEnvOnly_ReloadIgnoresConfigSecret|TestManagementEnvOnly_EnvSecretIsTheOnlyKey|TestManagementEnvOnly_AuthenticateManagementKeyIgnoresConfigSecret|TestManagementEnvOnly_EnvOnlyManagementUnchanged|TestManagementEnvOnly_LocalPasswordNeverAuthenticates|TestManagementEnvOnly_AuthenticateManagementKeyIgnoresLocalPassword|TestManagementEnvOnly_LocalPasswordStillGuardsKeepAlive)$",
+      "run": "^(TestManagementEnvOnly_LoadConfigDropsSecretKeyWithoutWriteBack|TestManagementEnvOnly_ReloadAndPayloadLoadsDropSecretKey|TestManagementEnvOnly_BothSpellingsIgnoredFileUntouched|TestManagementEnvOnly_V8MigrationKeepsSecuritySettings|TestManagementEnvOnly_InitialConfigSecretDoesNotEnableManagement|TestManagementEnvOnly_ServerIgnoresConfigSecretAtStart|TestManagementEnvOnly_HotReloadedConfigSecretDoesNotEnableManagement|TestManagementEnvOnly_ReloadIgnoresConfigSecret|TestManagementEnvOnly_EnvSecretIsTheOnlyKey|TestManagementEnvOnly_AuthenticateManagementKeyIgnoresConfigSecret|TestManagementEnvOnly_EnvOnlyManagementUnchanged|TestManagementEnvOnly_LocalPasswordNeverAuthenticates|TestManagementEnvOnly_AuthenticateManagementKeyIgnoresLocalPassword|TestManagementEnvOnly_LocalPasswordStillGuardsKeepAlive|TestManagementEnvOnly_VerifiedHashCacheNeverAdmitsConfigSecret)$",
       "platforms": "portable",
       "race": false,
       "count": null,
@@ -437,7 +438,8 @@
         "TestManagementEnvOnly_EnvOnlyManagementUnchanged",
         "TestManagementEnvOnly_LocalPasswordNeverAuthenticates",
         "TestManagementEnvOnly_AuthenticateManagementKeyIgnoresLocalPassword",
-        "TestManagementEnvOnly_LocalPasswordStillGuardsKeepAlive"
+        "TestManagementEnvOnly_LocalPasswordStillGuardsKeepAlive",
+        "TestManagementEnvOnly_VerifiedHashCacheNeverAdmitsConfigSecret"
       ]
     },
     {
@@ -483,7 +485,7 @@
       "race": false,
       "count": null,
       "expected_tests": [],
-      "skip": "^(TestRefreshTokensWithRetry_TerminalGrantErrorsOnlyAttemptOnce|TestRefreshOutcomeSurvivesLaterCallAndNewClient|TestRefreshJournalSurvivesProcessRestart|TestRefreshReceiptFollowsLaterRotation|TestRefreshRedirectCannotReplayGrant|TestRefreshHTTPFailureDoesNotProveReplaySafe|TestExpiredSameGrantReceiptRequiresRecovery|TestRelayQualificationAmbiguousRefreshMustNotReplay)$"
+      "skip": "^(TestRefreshTokensWithRetry_TerminalGrantErrorsOnlyAttemptOnce|TestRefreshOutcomeSurvivesLaterCallAndNewClient|TestRefreshJournalSurvivesProcessRestart|TestRefreshReceiptFollowsLaterRotation|TestRefreshRedirectCannotReplayGrant|TestRefreshHTTPFailureDoesNotProveReplaySafe|TestExpiredSameGrantReceiptRequiresRecovery|TestRelayQualificationAmbiguousRefreshMustNotReplay|TestRefreshTokensReleasesClaimAfterPreSendFailures)$"
     },
     {
       "name": "race-sdk-cliproxy-auth",
@@ -1147,7 +1149,6 @@
       "packages": [
         "./internal/util"
       ],
-      "skip": "^(TestInPlaceByteWritesAreReviewed)$",
       "platforms": "portable",
       "race": false,
       "count": null,

@@ -1,8 +1,8 @@
 diff --git a/internal/config/config_normalization.go b/internal/config/config_normalization.go
-index 40addc36..0f936439 100644
+index 5be8ad3d..51dc5304 100644
 --- a/internal/config/config_normalization.go
 +++ b/internal/config/config_normalization.go
-@@ -1,10 +1,12 @@
+@@ -1,11 +1,13 @@
  package config
  
  import (
@@ -11,11 +11,12 @@ index 40addc36..0f936439 100644
  	"strconv"
  	"strings"
  
+ 	"github.com/MoeForge/moego/regexp"
 +	"github.com/router-for-me/CLIProxyAPI/v8/internal/privatenet"
  	sdkpluginstore "github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginstore"
  	log "github.com/sirupsen/logrus"
  )
-@@ -297,6 +299,12 @@ func (cfg *Config) SanitizeOpenAICompatibility() {
+@@ -298,6 +300,12 @@ func (cfg *Config) SanitizeOpenAICompatibility() {
  		e.Prefix = normalizeModelPrefix(e.Prefix)
  		e.BaseURL = strings.TrimSpace(e.BaseURL)
  		e.Headers = NormalizeHeaders(e.Headers)
@@ -28,7 +29,7 @@ index 40addc36..0f936439 100644
  		if e.BaseURL == "" {
  			// Skip providers with no base-url; treated as removed
  			continue
-@@ -306,6 +314,30 @@ func (cfg *Config) SanitizeOpenAICompatibility() {
+@@ -307,6 +315,30 @@ func (cfg *Config) SanitizeOpenAICompatibility() {
  	cfg.OpenAICompatibility = out
  }
  
@@ -60,10 +61,10 @@ index 40addc36..0f936439 100644
  // It trims whitespace and preserves order for remaining entries.
  func (cfg *Config) SanitizeCodexKeys() {
 diff --git a/internal/config/config_types.go b/internal/config/config_types.go
-index 1e0b8777..2fd7e7cc 100644
+index 85cc508a..e429c0f0 100644
 --- a/internal/config/config_types.go
 +++ b/internal/config/config_types.go
-@@ -1104,6 +1104,16 @@ type OpenAICompatibility struct {
+@@ -1131,6 +1131,16 @@ type OpenAICompatibility struct {
  	// BaseURL is the base URL for the external OpenAI-compatible API endpoint.
  	BaseURL string `yaml:"base-url" json:"base-url"`
  
@@ -80,7 +81,7 @@ index 1e0b8777..2fd7e7cc 100644
  	// APIKeyEntries defines API keys with optional per-key proxy configuration.
  	APIKeyEntries []OpenAICompatibilityAPIKey `yaml:"api-key-entries,omitempty" json:"api-key-entries,omitempty"`
  
-@@ -1132,6 +1142,13 @@ type OpenAICompatibility struct {
+@@ -1159,6 +1169,13 @@ type OpenAICompatibility struct {
  	RequestScopedErrors []RequestScopedErrorRule `yaml:"request-scoped-errors,omitempty" json:"request-scoped-errors,omitempty"`
  }
  
@@ -1680,7 +1681,7 @@ index 00000000..013fbe97
 +  ]
 +}
 diff --git a/internal/runtime/executor/openai_compat_executor.go b/internal/runtime/executor/openai_compat_executor.go
-index dedf9d46..d7762628 100644
+index a2edc3c2..dc9c964b 100644
 --- a/internal/runtime/executor/openai_compat_executor.go
 +++ b/internal/runtime/executor/openai_compat_executor.go
 @@ -98,7 +98,7 @@ func (e *OpenAICompatExecutor) HttpRequest(ctx context.Context, auth *cliproxyau
@@ -2900,7 +2901,7 @@ index 00000000..1dbf3d2f
 +	}
 +}
 diff --git a/sdk/cliproxy/service_config.go b/sdk/cliproxy/service_config.go
-index 672548db..e889009d 100644
+index 880f2603..b43bac27 100644
 --- a/sdk/cliproxy/service_config.go
 +++ b/sdk/cliproxy/service_config.go
 @@ -6,6 +6,7 @@ import (

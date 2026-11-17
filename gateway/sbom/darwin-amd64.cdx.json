@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:a60a0bb6-83ca-5b89-aa13-f754177fed0f",
+  "serialNumber": "urn:uuid:20550678-b5b0-523e-90c9-9630b76ed69f",
   "version": 1,
   "metadata": {
     "tools": {
@@ -18,8 +18,8 @@
       "type": "application",
       "bom-ref": "cli-proxy-api",
       "name": "cli-proxy-api",
-      "version": "8.0.67",
-      "description": "CLIProxyAPI 8.0.67 with charmer's patches (darwin-amd64)",
+      "version": "8.0.76",
+      "description": "CLIProxyAPI 8.0.76 with charmer's patches (darwin-amd64)",
       "licenses": [
         {
           "license": {
@@ -31,10 +31,10 @@
         "ancestors": [
           {
             "type": "application",
-            "bom-ref": "pkg:golang/github.com/router-for-me/CLIProxyAPI/v8@v8.0.67",
+            "bom-ref": "pkg:golang/github.com/router-for-me/CLIProxyAPI/v8@v8.0.76",
             "name": "CLIProxyAPI",
-            "version": "8.0.67",
-            "purl": "pkg:golang/github.com/router-for-me/CLIProxyAPI/v8@v8.0.67",
+            "version": "8.0.76",
+            "purl": "pkg:golang/github.com/router-for-me/CLIProxyAPI/v8@v8.0.76",
             "licenses": [
               {
                 "license": {
@@ -49,11 +49,11 @@
               },
               {
                 "type": "distribution",
-                "url": "https://github.com/router-for-me/CLIProxyAPI/archive/8bba7a77c6bcbfd993516d26606bfecaa4ff49d0.tar.gz",
+                "url": "https://github.com/router-for-me/CLIProxyAPI/archive/7df56074b252384d878ec4fca840552c6fb5236e.tar.gz",
                 "hashes": [
                   {
                     "alg": "SHA-256",
-                    "content": "813caa36cbd4d0ec30fc9bc08bcf81d3756e86e51b76b252f1241c9a02309fa0"
+                    "content": "4dc68704c4fc8c572bd6513c0a18338a8feb853510d68c3c74153453d8ef9361"
                   }
                 ]
               }
@@ -62,8 +62,8 @@
         ],
         "commits": [
           {
-            "uid": "8bba7a77c6bcbfd993516d26606bfecaa4ff49d0",
-            "url": "https://github.com/router-for-me/CLIProxyAPI/commit/8bba7a77c6bcbfd993516d26606bfecaa4ff49d0"
+            "uid": "7df56074b252384d878ec4fca840552c6fb5236e",
+            "url": "https://github.com/router-for-me/CLIProxyAPI/commit/7df56074b252384d878ec4fca840552c6fb5236e"
           }
         ],
         "patches": [
@@ -277,19 +277,19 @@
         },
         {
           "name": "charmer:gateway:ldflags",
-          "value": "-s -w -buildid= -X main.Version=8.0.67 -X main.Commit=8bba7a77c6bcbfd993516d26606bfecaa4ff49d0 -X main.BuildDate=1970-01-01T00:00:00Z"
+          "value": "-s -w -buildid= -X main.Version=8.0.76 -X main.Commit=7df56074b252384d878ec4fca840552c6fb5236e -X main.BuildDate=1970-01-01T00:00:00Z"
         },
         {
           "name": "charmer:gateway:source-tree-sha256",
-          "value": "b5d5b0841753df5a71fb0bd860d00a396d5c107d028d0107059f3e6e67c8dbda"
+          "value": "fb6c76c2e6b010508e43e34d66cf384fd22d175724b01ecafddde5bafd9f189c"
         },
         {
           "name": "charmer:gateway:vendor-tree-sha256",
-          "value": "6330e01116c088c4d72e3a51557bc6c1a77e8b6f536532c7161f6cb03f362773"
+          "value": "e5af2e9237b46d2a715ca4a690cf3cae1081c627067fb92437d09db6ab9f505f"
         },
         {
           "name": "charmer:gateway:post-apply-tree-sha256",
-          "value": "1d9cdfe41ec2032ac206b9bbff58a3c5877fd6f3ddfad66d069e5c9c595ebabf"
+          "value": "67f9c8440b98a811c61968a8634ae190aa036090d583772d78655bdb84d5701e"
         },
         {
           "name": "charmer:gateway:build-godebug",
@@ -301,59 +301,59 @@
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-kimi-claude-compat.patch@2d4f9b1fedc2b191ed2f7fb42437537f1ea592b170f4fe1f0f82b7fbee440bc1"
+          "value": "cli-proxy-api-kimi-claude-compat.patch@a67aa15f4375ba8c901104f65a2a93d8c5f99cff0bb83f55adff28f4b00e3725"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-non-claude-cache-retention.patch@067dc33b0187d763b720a287e01c3d72e244714ae388097723080b5149cbc5e9"
+          "value": "cli-proxy-api-non-claude-cache-retention.patch@8147069b9fc0b7366b9a969fe145d74bbf51d9f62bef178bbf3c520ed7d2a77e"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-management-readonly-allowlist.patch@7bf1e6965a20c69d9ade6b47b6e007570d7a0e8a41d17750423420fda924b743"
+          "value": "cli-proxy-api-management-readonly-allowlist.patch@c2abad9bf34250baa4149e751c492e2b8db689b319d531ba3841f911d9bf1bca"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-watcher-parentdir.patch@e7817eede617d5cb287a69ef007d04a507d512fe5b2985f89dd7054c90786b77"
+          "value": "cli-proxy-api-watcher-parentdir.patch@14fd530f8e61d981b1332e2025a1ebd97ec9bfd6ecca7cb7a89ab7cf4acafbcd"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-serve-after-initial-auth-load.patch@f35a59f1704410ad73fb19da6291ad0d905debf02b4268e6390d5aec2d9e4ed4"
+          "value": "cli-proxy-api-serve-after-initial-auth-load.patch@76a5a3973c84095d15853979f64ea01c71f1335cb1ca49d7ea2ed47f867f66af"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-management-env-only.patch@3b9a0c11b00d861c54dde25e8bef394603b881432b3cb9aab3afb526bea7c74c"
+          "value": "cli-proxy-api-management-env-only.patch@9e49aa16a0bbe947e8e2d096600949ff8626a7d1344cb7a2dc60d55a79e6035d"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-credential-save-report.patch@b0a303e3903dc905c0f59e522f08f8b3fd6abd61932939b2d6f36a9f69927b7f"
+          "value": "cli-proxy-api-credential-save-report.patch@9e5fb97358acc9ec875f74db020862a8fc68aad3ed4868781e54eb0967c511ec"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-credentialed-redirects.patch@a10f59a46c4d7d9fee5033f5781aee2729ae3bda2c99f2d529523590ce93be8f"
+          "value": "cli-proxy-api-credentialed-redirects.patch@c17aefb8e7a557529207e2e2d18a966d4076670ff3a15cbdf7a88ae0e6e3637e"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-openai-compat-keyed-safety.patch@b3a03baee2d87454a29190d660059ab670120ac1d97c08e15f2551793afafd95"
+          "value": "cli-proxy-api-openai-compat-keyed-safety.patch@2c6e65f5c7e3e983c1c35496e0870871b87c473fbc45cc653f0ff6279d8434cc"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-auth-snapshot-locking.patch@875e7d398cfe79a537f39fa4778e9e74f0a3599c7fe4f0cd1299e4f281053712"
+          "value": "cli-proxy-api-auth-snapshot-locking.patch@01eab3d01f7ba225f1f19f7c9294f8f715d111817b10f7499540bb30a3720803"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-server-config-snapshot.patch@58bc1434a85f5e439344a4dcbe331b1864c2259cb024615176329d8658635343"
+          "value": "cli-proxy-api-server-config-snapshot.patch@43981438416ffeb352b9e238b14b0ac4f93e9acb3f5ebafa59887d9f92a11708"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-claude-metadata-locking.patch@f6490bfa8e2be77136d7f319895cfaf5731448da64c1d39997ce09e030c32312"
+          "value": "cli-proxy-api-claude-metadata-locking.patch@2bf6064bb37a21510e10dbc4c8616bd456bba9a4740e5d6cd935da191f231173"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-oauth-model-overlay.patch@8dcf8777a76bdc9fd958c53a42e991cb5655045eec6de406e25ed6db0af02a88"
+          "value": "cli-proxy-api-oauth-model-overlay.patch@44a44a269de2a96c557a5ff4f54757c050742520561cc092e17ba82c63151edc"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-no-antigravity-egress.patch@fe3bce1ebf16dfe3738d060f0a7c5dfa9b6d2837fc12242d2bf30ce392afa105"
+          "value": "cli-proxy-api-no-antigravity-egress.patch@3bd9f0d9202631f00e2d3282a15b04449e2739bd6aba753691138a411621d79e"
         },
         {
           "name": "charmer:gateway:patch",
@@ -365,11 +365,11 @@
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-codex-api-key-safety.patch@ebf2d173e00350a310421c42fe37e61b5bfbf4806a4d47c111fb6f46a07a85a1"
+          "value": "cli-proxy-api-codex-api-key-safety.patch@8c8be6d47dba40650e759c6a39d5188ce2d8cc09f6eca5459ba7edae03920a17"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-refresh-shutdown-join.patch@04a370f1a0988bafd8172e9d59958e1f8862452ee0a5eee000e250d9a5fab068"
+          "value": "cli-proxy-api-refresh-shutdown-join.patch@0567933cad44527af383ee729b769bd729ddbccdc099efea09c87bcdad26bcb1"
         },
         {
           "name": "charmer:gateway:patch",
@@ -381,15 +381,15 @@
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-output-cap.patch@aee70e81d033f842dbdf6d538b1c4f6638fbe965986c5c7e2d73b493fab9d81d"
+          "value": "cli-proxy-api-output-cap.patch@8fd6424f34519393cf3f36fcc5f7bb031d7baa3a3e2fbc9e84904d071a32dc44"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-context-error-normalization.patch@ef6b852fcd79a90d1cf1e492a20a9020246de161511004e0f4eef01177a5e2e3"
+          "value": "cli-proxy-api-context-error-normalization.patch@52bd115907ebc3e4063623d57100f07a66914cc263e8ef1f3bba674b96b38438"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-log-reduction.patch@e67332f3f289802cadecb6b94f4ff69331a6d70d4610c7ff8c892d8c72f89358"
+          "value": "cli-proxy-api-log-reduction.patch@376f51724e0b86f2a6bdcb142744d22b0e1be1f3de8023c8ecdb70f605d4e767"
         },
         {
           "name": "charmer:gateway:patch",
@@ -401,19 +401,19 @@
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-terminal-rejection-reload.patch@d3a318e6c96b8e7f285f3ac228b599777a6b276848e704b3eca4dd16e0ba9f06"
+          "value": "cli-proxy-api-terminal-rejection-reload.patch@2bfc965a738dd490472ba87a8e831f186d339a136083a43f191af0143c096c88"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-codex-refresh-without-journal.patch@0a112a12b1ef5f7116aca2aee337efa19902faa608da2346e96e4bd72026a3fd"
+          "value": "cli-proxy-api-codex-refresh-without-journal.patch@1de4b677ffa9510ee971f12a101831a74bc2c11e5c05318fd93df39e01b584ae"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-native-advisor-beta-order.patch@d4e9fc3ea76787cde7553c25a753e6888402bbac4d865788160a37303757f3fa"
+          "value": "cli-proxy-api-native-advisor-beta-order.patch@e266694e10fc43de9104fb3d5b8413aa4215887fa0266e05ed66c056b6aa41f8"
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-private-network-dial.patch@801fc1c0885f73c9d78394034d85e7e04967b7a5fde2a05bd58284f838aabb6d"
+          "value": "cli-proxy-api-private-network-dial.patch@533513e33beb9b7065957f8534fffb4e9aa2b53157b4185b8534f10dceeb7e50"
         }
       ]
     }
@@ -441,14 +441,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:golang/github.com/router-for-me/moego@v0.1.2",
-      "name": "github.com/router-for-me/moego",
-      "version": "v0.1.2",
-      "purl": "pkg:golang/github.com/router-for-me/moego@v0.1.2",
+      "bom-ref": "pkg:golang/github.com/MoeForge/moego@v0.1.0-alpha.4",
+      "name": "github.com/MoeForge/moego",
+      "version": "v0.1.0-alpha.4",
+      "purl": "pkg:golang/github.com/MoeForge/moego@v0.1.0-alpha.4",
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "304d220e488564aecde0c0e3d82fd732f0d3edebaf4d521631810677e55019fd"
+          "content": "2ef4bf997dc79a4f6ea7b6ae4d4370deff7d245948375652387849fd10efed99"
         }
       ],
       "licenses": [
@@ -456,12 +456,6 @@
           "license": {
             "id": "MIT"
           }
-        }
-      ],
-      "properties": [
-        {
-          "name": "charmer:gateway:replaces",
-          "value": "pkg:golang/github.com/MoeForge/moego@v0.1.0-alpha.1"
         }
       ]
     },
@@ -825,14 +819,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:golang/github.com/fsnotify/fsnotify@v1.9.0",
+      "bom-ref": "pkg:golang/github.com/fsnotify/fsnotify@v1.10.1",
       "name": "github.com/fsnotify/fsnotify",
-      "version": "v1.9.0",
-      "purl": "pkg:golang/github.com/fsnotify/fsnotify@v1.9.0",
+      "version": "v1.10.1",
+      "purl": "pkg:golang/github.com/fsnotify/fsnotify@v1.10.1",
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "d8c97e3893736d8093cecc6dbfcbca4850fd3db2639a1605d7893f8ca0bb4bd9"
+          "content": "6f4fd4cc07fdc91e6b85fdd13e6f607f77a104fa5fd2864a223b692abc79f47a"
         }
       ],
       "licenses": [
@@ -2161,14 +2155,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:golang/golang.org/x/crypto@v0.58.0",
+      "bom-ref": "pkg:golang/golang.org/x/crypto@v0.59.0",
       "name": "golang.org/x/crypto",
-      "version": "v0.58.0",
-      "purl": "pkg:golang/golang.org/x/crypto@v0.58.0",
+      "version": "v0.59.0",
+      "purl": "pkg:golang/golang.org/x/crypto@v0.59.0",
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "08e9182ebe24ee70c8e2be90b4c30bd807f3788b30587009b612d2e8afccff9e"
+          "content": "c52da386a61bccdae9be458fd984c37f84c9c01cb7ca4474de2f2f143c4473b7"
         }
       ],
       "licenses": [
@@ -2181,14 +2175,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:golang/golang.org/x/net@v0.62.0",
+      "bom-ref": "pkg:golang/golang.org/x/net@v0.63.0",
       "name": "golang.org/x/net",
-      "version": "v0.62.0",
-      "purl": "pkg:golang/golang.org/x/net@v0.62.0",
+      "version": "v0.63.0",
+      "purl": "pkg:golang/golang.org/x/net@v0.63.0",
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "d7c10b6a57cce7e5cd470cccda762a5ec650f41c92d6e863d8efd4efee63a916"
+          "content": "1c2a1398d87d1290f53e92bc80134563881c4d8e0df8a4043bcca57c82aa149d"
         }
       ],
       "licenses": [
@@ -2201,14 +2195,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:golang/golang.org/x/oauth2@v0.30.0",
+      "bom-ref": "pkg:golang/golang.org/x/oauth2@v0.38.0",
       "name": "golang.org/x/oauth2",
-      "version": "v0.30.0",
-      "purl": "pkg:golang/golang.org/x/oauth2@v0.30.0",
+      "version": "v0.38.0",
+      "purl": "pkg:golang/golang.org/x/oauth2@v0.38.0",
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "7670e6ec99a1338e4d36977c1430de2e12ba170a9b39fe0c2c233dcdbd413872"
+          "content": "b96ed741b72ed5ea22412eee309bcb3a33cc974e1b4db998d557913f1bdbb292"
         }
       ],
       "licenses": [
@@ -2281,14 +2275,14 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:golang/golang.org/x/time@v0.14.0",
+      "bom-ref": "pkg:golang/golang.org/x/time@v0.16.0",
       "name": "golang.org/x/time",
-      "version": "v0.14.0",
-      "purl": "pkg:golang/golang.org/x/time@v0.14.0",
+      "version": "v0.16.0",
+      "purl": "pkg:golang/golang.org/x/time@v0.16.0",
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "311c7851a2eb0e8b5429474222accf0b8f2dd58f6100d14a211a4dc7e4def0f2"
+          "content": "bcc6faa6db337103247308914c0b8d354e748289bafbe43fea063684333a5431"
         }
       ],
       "licenses": [
@@ -2398,7 +2392,7 @@
       "ref": "cli-proxy-api",
       "dependsOn": [
         "pkg:golang/cloud.google.com/go/compute/metadata@v0.3.0",
-        "pkg:golang/github.com/router-for-me/moego@v0.1.2",
+        "pkg:golang/github.com/MoeForge/moego@v0.1.0-alpha.4",
         "pkg:golang/github.com/ProtonMail/go-crypto@v1.5.2",
         "pkg:golang/github.com/andybalholm/brotli@v1.3.0",
         "pkg:golang/github.com/atotto/clipboard@v0.1.4",
@@ -2417,7 +2411,7 @@
         "pkg:golang/github.com/cloudflare/circl@v1.6.3",
         "pkg:golang/github.com/dlclark/regexp2/v2@v2.5.1",
         "pkg:golang/github.com/emirpasic/gods@v1.18.1",
-        "pkg:golang/github.com/fsnotify/fsnotify@v1.9.0",
+        "pkg:golang/github.com/fsnotify/fsnotify@v1.10.1",
         "pkg:golang/github.com/gabriel-vasile/mimetype@v1.4.3",
         "pkg:golang/github.com/gin-contrib/sse@v0.1.0",
         "pkg:golang/github.com/gin-gonic/gin@v1.10.1",
@@ -2484,13 +2478,13 @@
         "pkg:golang/github.com/xo/terminfo@v0.0.0-20220910002029-abceb7e1c41e",
         "pkg:golang/go.etcd.io/bbolt@v1.5.0",
         "pkg:golang/go.uber.org/atomic@v1.11.0",
-        "pkg:golang/golang.org/x/crypto@v0.58.0",
-        "pkg:golang/golang.org/x/net@v0.62.0",
-        "pkg:golang/golang.org/x/oauth2@v0.30.0",
+        "pkg:golang/golang.org/x/crypto@v0.59.0",
+        "pkg:golang/golang.org/x/net@v0.63.0",
+        "pkg:golang/golang.org/x/oauth2@v0.38.0",
         "pkg:golang/golang.org/x/sync@v0.25.0",
         "pkg:golang/golang.org/x/sys@v0.50.0",
         "pkg:golang/golang.org/x/text@v0.44.0",
-        "pkg:golang/golang.org/x/time@v0.14.0",
+        "pkg:golang/golang.org/x/time@v0.16.0",
         "pkg:golang/google.golang.org/protobuf@v1.34.1",
         "pkg:golang/gopkg.in/ini.v1@v1.67.0",
         "pkg:golang/gopkg.in/natefinch/lumberjack.v2@v2.2.1",

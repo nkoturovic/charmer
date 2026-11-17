@@ -1,5 +1,5 @@
 diff --git a/internal/runtime/executor/codex_websockets_duplex.go b/internal/runtime/executor/codex_websockets_duplex.go
-index 29cd1569..1b88b005 100644
+index 8f49f3fa..0cbbd893 100644
 --- a/internal/runtime/executor/codex_websockets_duplex.go
 +++ b/internal/runtime/executor/codex_websockets_duplex.go
 @@ -57,7 +57,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
@@ -11,7 +11,7 @@ index 29cd1569..1b88b005 100644
  	type writerFailure struct {
  		err                    error
  		preserveClassification bool
-@@ -642,7 +642,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
+@@ -607,7 +607,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
  				fail(mapCodexWebsocketWriteError(sess, conn, errWrite))
  				return false
  			}
@@ -20,7 +20,7 @@ index 29cd1569..1b88b005 100644
  			return true
  		}
  		flushPendingCreates := func() bool {
-@@ -774,7 +774,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
+@@ -739,7 +739,7 @@ func (e *CodexWebsocketsExecutor) streamCodexDuplex(
  						fail(mapCodexWebsocketWriteError(sess, conn, errWrite))
  						return
  					}
@@ -297,10 +297,10 @@ index 00000000..004370ea
 +	}
 +}
 diff --git a/internal/runtime/executor/xai_websockets_executor.go b/internal/runtime/executor/xai_websockets_executor.go
-index 4af6684a..9a7716a8 100644
+index bbb7e8f4..0b9179e5 100644
 --- a/internal/runtime/executor/xai_websockets_executor.go
 +++ b/internal/runtime/executor/xai_websockets_executor.go
-@@ -1008,14 +1008,9 @@ func (e *XAIWebsocketsExecutor) executeCompactionTriggerFromWebsocketContext(ctx
+@@ -1011,14 +1011,9 @@ func (e *XAIWebsocketsExecutor) executeCompactionTriggerFromWebsocketContext(ctx
  			}
  		}
  	}
@@ -317,7 +317,7 @@ index 4af6684a..9a7716a8 100644
  		inputItemsCount,
  		keepPreviousResponseID,
  	)
-@@ -1723,19 +1718,22 @@ func applyXAIWebsocketHeaders(ctx context.Context, headers http.Header, auth *cl
+@@ -1704,19 +1699,22 @@ func applyXAIWebsocketHeaders(ctx context.Context, headers http.Header, auth *cl
  	return headers
  }
  
@@ -344,7 +344,7 @@ index 4af6684a..9a7716a8 100644
  		strings.TrimSpace(wsURL),
  		strings.TrimSpace(ojson.GetBytesNoCopy(payload, "type").String()),
  		strings.TrimSpace(ojson.GetBytesNoCopy(payload, "previous_response_id").String()),
-@@ -1745,20 +1743,18 @@ func logXAIWebsocketRequest(sessionID string, authID string, wsURL string, paylo
+@@ -1726,20 +1724,18 @@ func logXAIWebsocketRequest(sessionID string, authID string, wsURL string, paylo
  }
  
  func logXAIWebsocketWarmupCompleted(sessionID string, authID string, wsURL string, payload []byte) {
@@ -369,7 +369,7 @@ index 4af6684a..9a7716a8 100644
  		strings.TrimSpace(wsURL),
  		strings.TrimSpace(eventType),
  		strings.TrimSpace(ojson.GetBytesNoCopy(payload, "response.id").String()),
-@@ -1774,10 +1770,10 @@ func logXAIWebsocketConnectedWithReused(sess *codexWebsocketSession, sessionID s
+@@ -1755,10 +1751,10 @@ func logXAIWebsocketConnectedWithReused(sess *codexWebsocketSession, sessionID s
  	sessionStr := strings.TrimSpace(sessionID)
  	sessionKind := sessionObjectKind(sess)
  	if reused {
@@ -382,7 +382,7 @@ index 4af6684a..9a7716a8 100644
  }
  
  func logXAIWebsocketDisconnected(sessionID string, authID string, wsURL string, reason string, err error) {
-@@ -1790,17 +1786,17 @@ func logXAIWebsocketDisconnectedWithLastEvent(sess *codexWebsocketSession, sessi
+@@ -1771,17 +1767,17 @@ func logXAIWebsocketDisconnectedWithLastEvent(sess *codexWebsocketSession, sessi
  	terminalStatus := isTerminalEvent(lastEvent)
  	if err != nil {
  		if lastEvent != "" {
@@ -405,7 +405,7 @@ index 4af6684a..9a7716a8 100644
  
  // CloseXAIWebsocketSessionsForAuthID closes all active xAI upstream websocket sessions
 diff --git a/sdk/cliproxy/auth/conductor_execution.go b/sdk/cliproxy/auth/conductor_execution.go
-index a291de91..6c62ca90 100644
+index 2b43fde5..6f61be49 100644
 --- a/sdk/cliproxy/auth/conductor_execution.go
 +++ b/sdk/cliproxy/auth/conductor_execution.go
 @@ -8,7 +8,6 @@ import (
@@ -416,7 +416,7 @@ index a291de91..6c62ca90 100644
  	"sort"
  	"strconv"
  	"strings"
-@@ -2034,14 +2033,14 @@ func debugLogAuthSelection(entry *log.Entry, auth *Auth, provider string, model
+@@ -2329,14 +2328,14 @@ func debugLogAuthSelection(entry *log.Entry, auth *Auth, provider string, model
  			entry.Debugf("Use API key %s for model %s%s", openAICompatAuthLogIdentity(auth), model, suffix)
  			return
  		}
@@ -433,7 +433,7 @@ index a291de91..6c62ca90 100644
  	if auth == nil {
  		return ""
  	}
-@@ -2050,26 +2049,13 @@ func formatOauthIdentity(auth *Auth, provider string, accountInfo string) string
+@@ -2345,26 +2344,13 @@ func formatOauthIdentity(auth *Auth, provider string, accountInfo string) string
  	if providerName == "" {
  		providerName = strings.TrimSpace(provider)
  	}
@@ -465,7 +465,7 @@ index a291de91..6c62ca90 100644
  }
  
  // isOpenAICompatAuthForLog reports an OpenAI-compatible provider auth
-@@ -2103,20 +2089,11 @@ func formatAuthIdentity(auth *Auth, provider string) string {
+@@ -2398,20 +2384,11 @@ func formatAuthIdentity(auth *Auth, provider string) string {
  		if isOpenAICompatAuthForLog(auth) {
  			return "api_key=" + openAICompatAuthLogIdentity(auth)
  		}
@@ -558,7 +558,7 @@ index babf7691..019aec8c 100644
  				foundWarn = true
  				break
 diff --git a/sdk/cliproxy/auth/home_execution_paths_test.go b/sdk/cliproxy/auth/home_execution_paths_test.go
-index e45b9b09..3f3de780 100644
+index 80a39133..2c7b8391 100644
 --- a/sdk/cliproxy/auth/home_execution_paths_test.go
 +++ b/sdk/cliproxy/auth/home_execution_paths_test.go
 @@ -147,7 +147,7 @@ func TestHomeNonStreamingExecutionLogsSelectedOAuthAuth(t *testing.T) {
@@ -1108,10 +1108,10 @@ index 38979ff0..1fa9d9f0 100644
  	}
  }
 diff --git a/sdk/cliproxy/auth/selector.go b/sdk/cliproxy/auth/selector.go
-index dda37508..9c92dce5 100644
+index db7f74f7..bdad773f 100644
 --- a/sdk/cliproxy/auth/selector.go
 +++ b/sdk/cliproxy/auth/selector.go
-@@ -1715,14 +1715,14 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
+@@ -1734,14 +1734,14 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
  		for _, auth := range available {
  			if auth.ID == cachedAuthID {
  				bind(auth.ID, true)
@@ -1128,7 +1128,7 @@ index dda37508..9c92dce5 100644
  			return nil, errBound
  		}
  		if err != nil {
-@@ -1738,11 +1738,11 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
+@@ -1757,11 +1757,11 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
  		}
  		if s.shouldPreserveBindingWhenUnavailable(ctx, availabilityCandidates, model, cachedAuthID, now) {
  			bind(cachedAuthID, false)
@@ -1142,7 +1142,7 @@ index dda37508..9c92dce5 100644
  		return auth, nil
  	}
  
-@@ -1762,7 +1762,7 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
+@@ -1781,7 +1781,7 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
  			for _, auth := range available {
  				if auth.ID == parentAuthID {
  					bind(auth.ID, true)
@@ -1151,7 +1151,7 @@ index dda37508..9c92dce5 100644
  					return s.pickWithAffinityReservation(ctx, provider, model, opts, available, auth, &reservation)
  				}
  			}
-@@ -1776,9 +1776,9 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
+@@ -1795,9 +1795,9 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
  					if !isSubagent || s.subagentAffinity {
  						bind(auth.ID, true)
  						if isFork {
@@ -1163,7 +1163,7 @@ index dda37508..9c92dce5 100644
  						}
  						return s.pickWithAffinityReservation(ctx, provider, model, opts, available, auth, &reservation)
  					}
-@@ -1787,7 +1787,7 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
+@@ -1806,7 +1806,7 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
  			if !isSubagent && !isFork && s.rebindOnNever {
  				bind(cachedAuthID, false)
  				errBound := s.unavailableBoundAuthError(ctx, availabilityCandidates, model, cachedAuthID, now)
@@ -1172,7 +1172,7 @@ index dda37508..9c92dce5 100644
  				return nil, errBound
  			}
  			if !isSubagent && !isFork && s.shouldPreserveBindingWhenUnavailable(ctx, availabilityCandidates, model, cachedAuthID, now) {
-@@ -1799,7 +1799,7 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
+@@ -1818,7 +1818,7 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
  					return nil, nil
  				}
  				bind(cachedAuthID, false)
@@ -1181,7 +1181,7 @@ index dda37508..9c92dce5 100644
  				return auth, nil
  			}
  		}
-@@ -1817,9 +1817,9 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
+@@ -1836,9 +1836,9 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
  	}
  	bind(auth.ID, true)
  	if isFork && fallbackID != "" {
@@ -1193,7 +1193,7 @@ index dda37508..9c92dce5 100644
  	}
  	return auth, nil
  }
-@@ -1881,21 +1881,21 @@ func (s *SessionAffinitySelector) pickLCP(ctx context.Context, provider, model s
+@@ -1900,21 +1900,21 @@ func (s *SessionAffinitySelector) pickLCP(ctx context.Context, provider, model s
  					delete(opts.Metadata, cliproxyexecutor.IsCompactionMetadataKey)
  					opts.Metadata[cliproxyexecutor.NodeKindMetadataKey] = "fork"
  				}
@@ -1218,7 +1218,7 @@ index dda37508..9c92dce5 100644
  			}
  			picked, errPick := s.pickWithAffinityReservation(ctx, provider, model, opts, available, auth, reservation)
  			return picked, true, errPick
-@@ -1925,7 +1925,7 @@ func (s *SessionAffinitySelector) pickLCP(ctx context.Context, provider, model s
+@@ -1944,7 +1944,7 @@ func (s *SessionAffinitySelector) pickLCP(ctx context.Context, provider, model s
  				}
  			}
  			errBound := s.unavailableBoundAuthError(ctx, availabilityCandidates, model, match.AuthID, now)
@@ -1227,7 +1227,7 @@ index dda37508..9c92dce5 100644
  			return nil, true, errBound
  		}
  		if !match.IsFork && s.shouldPreserveBindingWhenUnavailable(ctx, availabilityCandidates, model, match.AuthID, now) {
-@@ -1971,28 +1971,28 @@ func (s *SessionAffinitySelector) pickLCP(ctx context.Context, provider, model s
+@@ -1990,28 +1990,28 @@ func (s *SessionAffinitySelector) pickLCP(ctx context.Context, provider, model s
  				delete(opts.Metadata, cliproxyexecutor.IsCompactionMetadataKey)
  				delete(opts.Metadata, cliproxyexecutor.NodeKindMetadataKey)
  			}

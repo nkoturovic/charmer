@@ -1,5 +1,5 @@
 diff --git a/sdk/cliproxy/auth/conductor_selection.go b/sdk/cliproxy/auth/conductor_selection.go
-index 623105d1..de1216da 100644
+index 5683127f..fc4541ac 100644
 --- a/sdk/cliproxy/auth/conductor_selection.go
 +++ b/sdk/cliproxy/auth/conductor_selection.go
 @@ -301,7 +301,10 @@ func (m *Manager) ReconcileRegistryModelStates(ctx context.Context, authID strin

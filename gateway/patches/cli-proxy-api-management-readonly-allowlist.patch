@@ -1,8 +1,8 @@
 diff --git a/internal/api/handlers/management/handler.go b/internal/api/handlers/management/handler.go
-index 7e8db2f7..a230af08 100644
+index 41d30855..a36af7c9 100644
 --- a/internal/api/handlers/management/handler.go
 +++ b/internal/api/handlers/management/handler.go
-@@ -82,7 +82,7 @@ func NewHandler(cfg *config.Config, configFilePath string, manager *coreauth.Man
+@@ -83,7 +83,7 @@ func NewHandler(cfg *config.Config, configFilePath string, manager *coreauth.Man
  		failedAttempts:      make(map[string]*attemptInfo),
  		authManager:         manager,
  		tokenStore:          sdkAuth.GetTokenStore(),
@@ -79,10 +79,10 @@ index afdbf668..a74346fd 100644
  		if !s.managementRoutesEnabled.Load() {
  			return
 diff --git a/internal/api/server.go b/internal/api/server.go
-index 099b5dda..bbf35a77 100644
+index dab13afa..4f644cb4 100644
 --- a/internal/api/server.go
 +++ b/internal/api/server.go
-@@ -172,6 +172,8 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
+@@ -200,6 +200,8 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
  	// Add middleware
  	engine.Use(logging.GinLogrusLogger())
  	engine.Use(logging.CPATraceIDMiddleware())
@@ -91,7 +91,7 @@ index 099b5dda..bbf35a77 100644
  	engine.Use(s.maxRequestBodyBytesMiddleware())
  
  	// Add request logging middleware before recovery and extra middleware so that
-@@ -267,8 +269,11 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
+@@ -295,8 +297,11 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
  
  	// Create HTTP server
  	s.server = &http.Server{
@@ -106,7 +106,7 @@ index 099b5dda..bbf35a77 100644
  	}
  
 diff --git a/internal/api/server_devin_oauth_test.go b/internal/api/server_devin_oauth_test.go
-index e96150f3..30d853bd 100644
+index c493c2aa..3a0d079c 100644
 --- a/internal/api/server_devin_oauth_test.go
 +++ b/internal/api/server_devin_oauth_test.go
 @@ -18,7 +18,7 @@ func TestDevinOAuthRoutes(t *testing.T) {
@@ -166,10 +166,10 @@ index a026e3e5..391e38c6 100644
  
 diff --git a/internal/api/server_management_allowlist.go b/internal/api/server_management_allowlist.go
 new file mode 100644
-index 00000000..334ac126
+index 00000000..caaf69c8
 --- /dev/null
 +++ b/internal/api/server_management_allowlist.go
-@@ -0,0 +1,260 @@
+@@ -0,0 +1,262 @@
 +package api
 +
 +import (
@@ -256,6 +256,8 @@ index 00000000..334ac126
 +	"/v1/alpha/search",
 +	"/backend-api/codex/alpha/search",
 +	"/v1beta/interactions",
++	"/v1/tunnel",
++	"/muse-code",
 +	"/callback",
 +	"/anthropic/callback",
 +	"/codex/callback",
@@ -432,10 +434,10 @@ index 00000000..334ac126
 +}
 diff --git a/internal/api/server_management_allowlist_test.go b/internal/api/server_management_allowlist_test.go
 new file mode 100644
-index 00000000..2648ec96
+index 00000000..35ae7148
 --- /dev/null
 +++ b/internal/api/server_management_allowlist_test.go
-@@ -0,0 +1,1113 @@
+@@ -0,0 +1,1122 @@
 +package api
 +
 +import (
@@ -1466,8 +1468,9 @@ index 00000000..2648ec96
 +
 +// The API surfaces charmer does not serve are refused outright, with or
 +// without a valid API key and with no CORS: model detail, speech, realtime,
-+// live, videos, images, alpha search, interactions and the provider login
-+// redirect pages. The model list, messages, count_tokens, responses and chat
++// live, videos, images, alpha search, interactions, the websocket tunnel (which
++// also takes the key in its query string), the Muse Code relay and the
++// provider login redirect pages. The model list, messages, count_tokens, responses and chat
 +// completions stay served.
 +func TestManagementAllowlist_RefusedAPISurfaces(t *testing.T) {
 +	s := newAllowlistTestServer(t)
@@ -1492,6 +1495,14 @@ index 00000000..2648ec96
 +		{http.MethodPost, "/v1/alpha/search"},
 +		{http.MethodPost, "/backend-api/codex/alpha/search"},
 +		{http.MethodPost, "/v1beta/interactions"},
++		{http.MethodGet, "/v1/tunnel"},
++		{http.MethodGet, "/v1/tunnel?key=" + allowlistTestAPIKey},
++		{http.MethodPost, "/v1/tunnel"},
++		{http.MethodConnect, "/v1/tunnel"},
++		{http.MethodGet, "/muse-code/models"},
++		{http.MethodGet, "/muse-code/config"},
++		{http.MethodPost, "/muse-code/search"},
++		{http.MethodPost, "/muse-code/browser_open"},
 +		{http.MethodGet, "/callback?state=s&code=c"},
 +		{http.MethodGet, "/anthropic/callback?state=s&code=c"},
 +		{http.MethodGet, "/codex/callback?state=s&code=c"},
@@ -1551,10 +1562,10 @@ index 00000000..2648ec96
 +}
 diff --git a/internal/api/server_management_route_table_test.go b/internal/api/server_management_route_table_test.go
 new file mode 100644
-index 00000000..19a4e79e
+index 00000000..7698cae1
 --- /dev/null
 +++ b/internal/api/server_management_route_table_test.go
-@@ -0,0 +1,268 @@
+@@ -0,0 +1,281 @@
 +package api
 +
 +// charmer local patch (management-readonly-allowlist): the reviewed route
@@ -1575,6 +1586,7 @@ index 00000000..19a4e79e
 +)
 +
 +var reviewedRouteTable = map[string]reviewedRouteDisposition{
++	"CONNECT /v1/tunnel":                                routeRefuse,
 +	"DELETE /v0/management/api-keys":                    routeRefuse,
 +	"DELETE /v0/management/auth-files":                  routeRefuse,
 +	"DELETE /v0/management/claude-api-key":              routeRefuse,
@@ -1593,6 +1605,7 @@ index 00000000..19a4e79e
 +	"DELETE /v0/management/proxy-url":                   routeRefuse,
 +	"DELETE /v0/management/vertex-api-key":              routeRefuse,
 +	"DELETE /v0/management/xai-api-key":                 routeRefuse,
++	"DELETE /v1/tunnel":                                 routeRefuse,
 +	"DELETE /v8/management/config/*path":                routeRefuse,
 +	"DELETE /v8/management/credentials":                 routeRefuse,
 +	"DELETE /v8/management/oauth/session":               routeRefuse,
@@ -1608,6 +1621,8 @@ index 00000000..19a4e79e
 +	"GET /devin/callback":                                      routeRefuse,
 +	"GET /healthz":                                             routeOpen,
 +	"GET /management.html":                                     routeRefuse,
++	"GET /muse-code/config":                                    routeRefuse,
++	"GET /muse-code/models":                                    routeRefuse,
 +	"GET /openai/v1/videos/:video_id":                          routeRefuse,
 +	"GET /openai/v1/videos/:video_id/content":                  routeRefuse,
 +	"GET /v0/management/anthropic-auth-url":                    routeRefuse,
@@ -1672,6 +1687,7 @@ index 00000000..19a4e79e
 +	"GET /v1/realtime/calls/:call_id":                          routeRefuse,
 +	"GET /v1/realtime/translations":                            routeRefuse,
 +	"GET /v1/responses":                                        routeOpen,
++	"GET /v1/tunnel":                                           routeRefuse,
 +	"GET /v1/videos/:request_id":                               routeRefuse,
 +	"GET /v1beta/models":                                       routeOpen,
 +	"GET /v1beta/models/*action":                               routeOpen,
@@ -1690,6 +1706,7 @@ index 00000000..19a4e79e
 +	"GET /v8/management/observability/logs/errors":             routeRefuse,
 +	"GET /v8/management/observability/logs/errors/:name":       routeRefuse,
 +	"GET /v8/management/observability/logs/requests/:id":       routeRefuse,
++	"GET /v8/management/observability/requests/in-flight":      routeRefuse,
 +	"GET /v8/management/observability/usage/api-keys":          routeRefuse,
 +	"GET /v8/management/observability/usage/queue":             routeRefuse,
 +	"GET /v8/management/plugins":                               routeRefuse,
@@ -1698,6 +1715,7 @@ index 00000000..19a4e79e
 +	"GET /v8/management/routing/model-definitions/:channel":    routeRefuse,
 +	"GET /v8/management/server/latest-version":                 routeRefuse,
 +	"HEAD /healthz":                                            routeOpen,
++	"HEAD /v1/tunnel":                                          routeRefuse,
 +	"PATCH /v0/management/api-keys":                            routeRefuse,
 +	"PATCH /v0/management/auth-files/fields":                   routeRefuse,
 +	"PATCH /v0/management/auth-files/status":                   routeRefuse,
@@ -1729,6 +1747,7 @@ index 00000000..19a4e79e
 +	"PATCH /v0/management/vertex-api-key":                      routeRefuse,
 +	"PATCH /v0/management/ws-auth":                             routeRefuse,
 +	"PATCH /v0/management/xai-api-key":                         routeRefuse,
++	"PATCH /v1/tunnel":                                         routeRefuse,
 +	"PATCH /v8/management/config":                              routeRefuse,
 +	"PATCH /v8/management/config/*path":                        routeRefuse,
 +	"PATCH /v8/management/credentials/fields":                  routeRefuse,
@@ -1736,6 +1755,8 @@ index 00000000..19a4e79e
 +	"POST /backend-api/codex/alpha/search":                     routeRefuse,
 +	"POST /backend-api/codex/responses":                        routeOpen,
 +	"POST /backend-api/codex/responses/compact":                routeOpen,
++	"POST /muse-code/browser_open":                             routeRefuse,
++	"POST /muse-code/search":                                   routeRefuse,
 +	"POST /openai/v1/videos":                                   routeRefuse,
 +	"POST /v0/management/api-call":                             routeRefuse,
 +	"POST /v0/management/auth-files":                           routeRefuse,
@@ -1771,6 +1792,7 @@ index 00000000..19a4e79e
 +	"POST /v1/responses":                                       routeOpen,
 +	"POST /v1/responses/compact":                               routeOpen,
 +	"POST /v1/tts":                                             routeRefuse,
++	"POST /v1/tunnel":                                          routeRefuse,
 +	"POST /v1/videos":                                          routeRefuse,
 +	"POST /v1/videos/edits":                                    routeRefuse,
 +	"POST /v1/videos/extensions":                               routeRefuse,
@@ -1819,12 +1841,14 @@ index 00000000..19a4e79e
 +	"PUT /v0/management/vertex-api-key":                        routeRefuse,
 +	"PUT /v0/management/ws-auth":                               routeRefuse,
 +	"PUT /v0/management/xai-api-key":                           routeRefuse,
++	"PUT /v1/tunnel":                                           routeRefuse,
 +	"PUT /v8/management/config":                                routeRefuse,
 +	"PUT /v8/management/config.yaml":                           routeRefuse,
 +	"PUT /v8/management/config/*path":                          routeRefuse,
++	"TRACE /v1/tunnel":                                         routeRefuse,
 +}
 diff --git a/internal/api/server_test.go b/internal/api/server_test.go
-index 30cdbff2..5aa46426 100644
+index 9adcce01..fb1bc2c8 100644
 --- a/internal/api/server_test.go
 +++ b/internal/api/server_test.go
 @@ -1867,44 +1867,22 @@ func TestExampleAPIKeySafeModeShowsWarningAndKeepsManagement(t *testing.T) {

@@ -161,6 +161,35 @@ class GatewayListenerTests(unittest.TestCase):
         record("LO3", tcp_count=len(rows), udp_count=len(udp))
 
 
+class StartupFailureExitTests(unittest.TestCase):
+    def test_a_configuration_that_cannot_be_loaded_exits_1(self):
+        # Since 8.0.68 a startup failure exits 1, not 0, so the supervised unit
+        # (Restart=on-failure) restarts the gateway and then fails it; what
+        # charmer says then is test_gateway_lifecycle's
+        # test_a_startup_failure_restarts_then_fails_and_says_so.
+        binary = gateway_binary()
+        statuses = {}
+        with tempfile.TemporaryDirectory(prefix="gwtest-startup-") as directory:
+            root = Path(directory).resolve()
+            broken = root / "config.yaml"
+            state.atomic_write(broken, b"host: 127.0.0.1\nport: [unclosed\n")
+            for label, config in (("malformed", broken), ("missing", root / "absent" / "config.yaml")):
+                log_path = root / (label + ".log")
+                with log_path.open("wb") as log:
+                    process = probe.start_isolated_process(
+                        [binary, "--config", str(config), "--local-model"], cwd=root,
+                        env={"HOME": str(root), "PATH": "/usr/bin:/bin"}, stdout=log, stderr=subprocess.STDOUT)
+                    try:
+                        process.wait(timeout=15)
+                    finally:
+                        probe.stop_isolated_process(process)
+                with self.subTest(config=label):
+                    self.assertEqual(process.returncode, 1, log_path.read_text(errors="replace")[-400:])
+                    self.assertIn("failed to load config", log_path.read_text(errors="replace"))
+                statuses[label] = process.returncode
+        record("SF1", status="passed", malformed_exit=statuses["malformed"], missing_exit=statuses["missing"])
+
+
 class ManagementInertWithoutKeyTests(unittest.TestCase):
     def test_management_is_inert_without_key(self):
         gateway = harness.main_harness()
@@ -210,7 +239,9 @@ class ManagementAllowlistTests(unittest.TestCase):
                              ("GET", "/v8/management/oauth/callback"), ("POST", "/v8/management/requests/api-call"),
                              # Trailing-slash spellings: the same bare 404, never Gin's redirect.
                              ("GET", "/v8/management/credentials/"),
-                             ("GET", "/v8/management/server/latest-version/")):
+                             ("GET", "/v8/management/server/latest-version/"),
+                             # 8.0.76's live view of in-flight requests.
+                             ("GET", "/v8/management/observability/requests/in-flight")):
             reply = self.request(method, path)
             self.assertEqual((reply.status, len(reply.raw)), (404, 0), method + " " + path)
             self.assertNotIn("location", reply.headers, method + " " + path)
@@ -221,20 +252,32 @@ class ManagementAllowlistTests(unittest.TestCase):
     def test_refused_api_surfaces_are_404(self):
         # Model detail, the speech routes and every other 8.x surface charmer
         # does not serve (realtime, live, videos, images, alpha search,
-        # interactions, the top-level OAuth redirect pages) are refused with
-        # the API key too.
+        # interactions, the websocket tunnel, the Muse Code relay, the
+        # top-level OAuth redirect pages) are refused with the API key too.
         headers = {"Authorization": "Bearer " + harness.FIXTURE_GATEWAY_TOKEN}
+        upgrade = {"Upgrade": "websocket", "Connection": "Upgrade", "Sec-WebSocket-Version": "13",
+                   "Sec-WebSocket-Key": "Z3d0ZXN0LXR1bm5lbC1rZXk="}
+        tunnel = [(method, "/v1/tunnel", headers)
+                  for method in ("CONNECT", "DELETE", "GET", "HEAD", "PATCH", "POST", "PUT", "TRACE")]
+        # The tunnel also takes its key from the query string.
+        tunnel += [("GET", "/v1/tunnel", {**headers, **upgrade}),
+                   ("GET", "/v1/tunnel?key=" + harness.FIXTURE_GATEWAY_TOKEN, upgrade)]
         statuses = {}
-        for method, path in (("GET", "/v1/models/gwtest-detail"), ("POST", "/v1/audio/speech"), ("POST", "/v1/tts"),
-                             ("GET", "/v1/realtime"), ("POST", "/v1/realtime/client_secrets"), ("GET", "/v1/live"),
-                             ("POST", "/v1/videos"), ("POST", "/openai/v1/videos"),
-                             ("POST", "/v1/images/generations"), ("POST", "/v1/alpha/search"),
-                             ("POST", "/backend-api/codex/alpha/search"), ("POST", "/v1beta/interactions"),
-                             ("GET", "/callback"), ("GET", "/codex/callback"), ("GET", "/anthropic/callback")):
-            reply = self.request(method, path, key=False, **headers)
-            self.assertEqual((reply.status, len(reply.raw)), (404, 0), method + " " + path)
-            self.assertNotIn("access-control-allow-origin", reply.headers, method + " " + path)
-            statuses[method + " " + path] = reply.status
+        for method, path, sent in [*((method, path, headers) for method, path in (
+                ("GET", "/v1/models/gwtest-detail"), ("POST", "/v1/audio/speech"), ("POST", "/v1/tts"),
+                ("GET", "/v1/realtime"), ("POST", "/v1/realtime/client_secrets"), ("GET", "/v1/live"),
+                ("POST", "/v1/videos"), ("POST", "/openai/v1/videos"),
+                ("POST", "/v1/images/generations"), ("POST", "/v1/alpha/search"),
+                ("POST", "/backend-api/codex/alpha/search"), ("POST", "/v1beta/interactions"),
+                ("GET", "/muse-code/config"), ("GET", "/muse-code/models"),
+                ("POST", "/muse-code/browser_open"), ("POST", "/muse-code/search"),
+                ("GET", "/callback"), ("GET", "/codex/callback"), ("GET", "/anthropic/callback"))), *tunnel]:
+            label = method + " " + path.split("?")[0] + (" (upgrade)" if "Upgrade" in sent else "")
+            reply = self.request(method, path, key=False, **sent)
+            self.assertEqual((reply.status, len(reply.raw)), (404, 0), label)
+            self.assertNotIn("access-control-allow-origin", reply.headers, label)
+            self.assertNotIn("upgrade", reply.headers, label)
+            statuses[label + (" (query key)" if "?" in path else "")] = reply.status
         listing = self.request("GET", "/v1/models", key=False, **headers)
         self.assertEqual(listing.status, 200)
         record("M6", refused=len(statuses), listing=listing.status)

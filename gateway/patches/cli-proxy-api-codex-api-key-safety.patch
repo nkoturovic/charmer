@@ -129,7 +129,7 @@ index ed78dac9..f7d06885 100644
  	misc.EnsureHeader(r.Header, ginHeaders, "X-Codex-Turn-State", "")
  	misc.EnsureHeader(r.Header, ginHeaders, "X-Client-Request-Id", "")
 diff --git a/internal/runtime/executor/codex_executor_stream.go b/internal/runtime/executor/codex_executor_stream.go
-index 3223e020..eacf2349 100644
+index fb7b7e5b..efc90ce2 100644
 --- a/internal/runtime/executor/codex_executor_stream.go
 +++ b/internal/runtime/executor/codex_executor_stream.go
 @@ -137,6 +137,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
@@ -201,16 +201,16 @@ index 3223e020..eacf2349 100644
  					helps.RecordAPIResponseError(ctx, e.cfg, streamErr)
  					reporter.PublishFailure(ctx, streamErr)
  					if isCodexOverloadBootstrapFailure(terminalBody) {
-@@ -291,7 +314,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
- 							// transparently retry on another credential, and report the status the
- 							// upstream refused to put on the wire.
- 							helps.LogWithRequestID(ctx).Debugf("codex executor: bootstrap overload rejection after %d buffered lines, failing over", bufferedFrames)
--							return nil, newCodexBootstrapOverloadErr(terminalBody)
-+							return nil, codexBootstrapOverloadFailure(auth, terminalBody)
+@@ -294,7 +317,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+ 							if streamErr.StatusCode() == http.StatusTooManyRequests && streamErr.RetryAfter() != nil {
+ 								return nil, streamErr
+ 							}
+-							return nil, newCodexBootstrapOverloadErrWithRetryAfter(terminalBody, streamErr.RetryAfter())
++							return nil, codexBootstrapOverloadFailure(auth, terminalBody, streamErr.RetryAfter())
  						}
  						helps.LogWithRequestID(ctx).Debugf("codex executor: bootstrap overload rejection after %d lines / %v, time budget exhausted; delivering in-stream", bufferedFrames, timeSinceStart)
  					}
-@@ -392,6 +415,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -395,6 +418,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  				if ctx.Err() != nil {
  					return nil, ctx.Err()
  				}
@@ -220,7 +220,7 @@ index 3223e020..eacf2349 100644
  				helps.RecordAPIResponseError(ctx, e.cfg, errScan)
  				reporter.PublishFailure(ctx, errScan)
  				return nil, errScan
-@@ -461,6 +487,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -464,6 +490,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  		}()
  		for scanner.Scan() {
  			line := scanner.Bytes()
@@ -230,7 +230,7 @@ index 3223e020..eacf2349 100644
  			var translatedLine []byte
  			terminalSuccess := false
  			isIncompleteEvent := false
-@@ -483,6 +512,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -486,6 +515,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  						}
  						return
  					}
@@ -240,7 +240,7 @@ index 3223e020..eacf2349 100644
  					helps.RecordAPIResponseError(ctx, e.cfg, streamErr)
  					reporter.PublishFailure(ctx, streamErr)
  					select {
-@@ -554,6 +586,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -557,6 +589,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  			if ctx.Err() != nil {
  				return
  			}
@@ -251,7 +251,7 @@ index 3223e020..eacf2349 100644
  		}
  		if emittedCount == 0 {
 diff --git a/internal/runtime/executor/codex_executor_stream_output_test.go b/internal/runtime/executor/codex_executor_stream_output_test.go
-index 01cf3f2b..fa4bd2dc 100644
+index 993d2629..fcbc8ee2 100644
 --- a/internal/runtime/executor/codex_executor_stream_output_test.go
 +++ b/internal/runtime/executor/codex_executor_stream_output_test.go
 @@ -99,10 +99,11 @@ func TestCodexExecutorExecuteSurfacesTerminalStreamError(t *testing.T) {
@@ -466,10 +466,10 @@ index 00000000..84cc66e5
 +}
 diff --git a/internal/runtime/executor/codex_key_safety.go b/internal/runtime/executor/codex_key_safety.go
 new file mode 100644
-index 00000000..8d73b125
+index 00000000..802a47c5
 --- /dev/null
 +++ b/internal/runtime/executor/codex_key_safety.go
-@@ -0,0 +1,178 @@
+@@ -0,0 +1,180 @@
 +package executor
 +
 +import (
@@ -477,6 +477,7 @@ index 00000000..8d73b125
 +	"context"
 +	"encoding/json"
 +	"net/http"
++	"time"
 +
 +	"github.com/router-for-me/CLIProxyAPI/v8/internal/compatsafe"
 +	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
@@ -634,9 +635,10 @@ index 00000000..8d73b125
 +}
 +
 +// codexBootstrapOverloadFailure is the overload rejection of a buffered
-+// stream bootstrap, in its safe form for an API-key auth.
-+func codexBootstrapOverloadFailure(auth *cliproxyauth.Auth, body []byte) statusErr {
-+	failure := newCodexBootstrapOverloadErr(body)
++// stream bootstrap, in its safe form for an API-key auth; the terminal
++// event's own retry delay is preferred, as upstream does.
++func codexBootstrapOverloadFailure(auth *cliproxyauth.Auth, body []byte, preferredRetryAfter *time.Duration) statusErr {
++	failure := newCodexBootstrapOverloadErrWithRetryAfter(body, preferredRetryAfter)
 +	if codexKeySafe(auth) {
 +		failure = codexKeyTerminalFailure(failure, body)
 +	}
@@ -1136,6 +1138,21 @@ index 00000000..e44b98df
 +		t.Fatalf("websocket account Version = %q", got)
 +	}
 +}
+diff --git a/internal/runtime/executor/codex_policy_errors_test.go b/internal/runtime/executor/codex_policy_errors_test.go
+index 3b93d9bb..f28d4c51 100644
+--- a/internal/runtime/executor/codex_policy_errors_test.go
++++ b/internal/runtime/executor/codex_policy_errors_test.go
+@@ -68,7 +68,9 @@ func TestCodexPolicyErrorEnvelopesAcrossTransports(t *testing.T) {
+ 						if transport == "websocket" {
+ 							executor = NewCodexWebsocketsExecutor(cfg)
+ 						}
+-						auth := &cliproxyauth.Auth{Attributes: map[string]string{"base_url": server.URL, "api_key": "test"}}
++						// A ChatGPT account keeps the provider's error envelope; an API key
++						// gets fixed local text instead (codex_key_safety_test.go).
++						auth := &cliproxyauth.Auth{Attributes: map[string]string{"base_url": server.URL}, Metadata: map[string]any{"access_token": "test"}}
+ 						payload := []byte(`{"model":"gpt-5.5","input":"hello"}`)
+ 						if format == "claude" {
+ 							payload = []byte(`{"model":"gpt-5.5","messages":[{"role":"user","content":"hello"}]}`)
 diff --git a/internal/runtime/executor/codex_websockets_request.go b/internal/runtime/executor/codex_websockets_request.go
 index 70d663a0..7fd30124 100644
 --- a/internal/runtime/executor/codex_websockets_request.go

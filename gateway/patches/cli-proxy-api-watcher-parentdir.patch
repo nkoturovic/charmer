@@ -1,8 +1,8 @@
 diff --git a/cmd/server/main.go b/cmd/server/main.go
-index 047fea26..ba675971 100644
+index 4d617199..cf9710b8 100644
 --- a/cmd/server/main.go
 +++ b/cmd/server/main.go
-@@ -194,8 +194,12 @@ func main() {
+@@ -208,8 +208,12 @@ func run() (exitStatus int) {
  	}
  
  	pluginHost := pluginhost.New()
@@ -16,7 +16,7 @@ index 047fea26..ba675971 100644
  			pluginHost.ApplyConfig(context.Background(), bootstrapCfg)
  			pluginHost.RegisterCommandLineFlags(context.Background(), flag.CommandLine)
  		}
-@@ -588,7 +592,7 @@ func main() {
+@@ -602,7 +606,7 @@ func run() (exitStatus int) {
  		}
  	} else if configPath != "" {
  		configFilePath = configPath
@@ -25,8 +25,8 @@ index 047fea26..ba675971 100644
  	} else {
  		wd, err = os.Getwd()
  		if err != nil {
-@@ -596,7 +600,7 @@ func main() {
- 			return
+@@ -610,7 +614,7 @@ func run() (exitStatus int) {
+ 			return 1
  		}
  		configFilePath = filepath.Join(wd, "config.yaml")
 -		cfg, err = config.LoadConfigOptional(configFilePath, isCloudDeploy)
@@ -34,7 +34,7 @@ index 047fea26..ba675971 100644
  	}
  	if err != nil {
  		log.Errorf("failed to load config: %v", err)
-@@ -905,8 +909,40 @@ func defaultPluginBootstrapConfigPath(defaultPath string) string {
+@@ -940,8 +944,40 @@ func defaultPluginBootstrapConfigPath(defaultPath string) string {
  	return filepath.Join(wd, "config.yaml")
  }
  
@@ -183,7 +183,7 @@ index 00000000..d50ad1be
 +	}
 +}
 diff --git a/internal/api/handlers/management/config_v8_test.go b/internal/api/handlers/management/config_v8_test.go
-index 9943e213..27ab7730 100644
+index 3fb01ce3..2f9e2ab2 100644
 --- a/internal/api/handlers/management/config_v8_test.go
 +++ b/internal/api/handlers/management/config_v8_test.go
 @@ -536,16 +536,14 @@ func TestConfigV8EmptyExcludedModelsSurvivesSave(t *testing.T) {
@@ -677,10 +677,10 @@ index 4f9daa2e..3d65f835 100644
 +	return cfg
  }
 diff --git a/internal/config/config_v8_test.go b/internal/config/config_v8_test.go
-index 1c04a151..97b9b1fd 100644
+index 3f1b696b..5fd6ab4b 100644
 --- a/internal/config/config_v8_test.go
 +++ b/internal/config/config_v8_test.go
-@@ -113,7 +113,8 @@ func TestV8PresencePrecedenceAndCleanup(t *testing.T) {
+@@ -135,7 +135,8 @@ func TestV8PresencePrecedenceAndCleanup(t *testing.T) {
  		unchanged bool
  	}{
  		{"legacy", "request-retry: 4\ndisable-cooling: true\napi-keys: [old]\n", 4, true, 1, true},
@@ -690,7 +690,7 @@ index 1c04a151..97b9b1fd 100644
  		{"version does not force migration", "config-version: 8\nrequest-retry: 4\ndisable-cooling: true\napi-keys: [old]\n", 4, true, 1, true},
  		{"partial new block", "request-retry: 4\ndisable-cooling: true\napi-keys: [old]\nrouting: {retry: {max-retry-credentials: 2}}\n", 4, true, 1, true},
  	} {
-@@ -735,8 +736,10 @@ func TestV8SecretHashUsesNewPath(t *testing.T) {
+@@ -757,8 +758,10 @@ func TestV8SecretHashUsesNewPath(t *testing.T) {
  		t.Fatal(err)
  	}
  	saved, _ := os.ReadFile(path)
@@ -703,7 +703,7 @@ index 1c04a151..97b9b1fd 100644
  	}
  }
  
-@@ -904,31 +907,24 @@ func TestV8SecretHashResolvesReferences(t *testing.T) {
+@@ -926,31 +929,24 @@ func TestV8SecretHashResolvesReferences(t *testing.T) {
  			if err != nil {
  				t.Fatal(err)
  			}
@@ -746,7 +746,7 @@ index 1c04a151..97b9b1fd 100644
  		})
  	}
 diff --git a/internal/watcher/clients.go b/internal/watcher/clients.go
-index e8ddbcce..95afd9bd 100644
+index a8539af0..6ff8da3d 100644
 --- a/internal/watcher/clients.go
 +++ b/internal/watcher/clients.go
 @@ -26,6 +26,13 @@ import (

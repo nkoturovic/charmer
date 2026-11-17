@@ -196,7 +196,7 @@ index 00000000..bfdaec6f
 +	}
 +}
 diff --git a/sdk/cliproxy/auth/auto_refresh_loop.go b/sdk/cliproxy/auth/auto_refresh_loop.go
-index b7f87bf0..9538fa31 100644
+index 40600810..84c5da0b 100644
 --- a/sdk/cliproxy/auth/auto_refresh_loop.go
 +++ b/sdk/cliproxy/auth/auto_refresh_loop.go
 @@ -28,6 +28,7 @@ type authAutoRefreshLoop struct {
@@ -706,10 +706,10 @@ index 00000000..0dc2d9b2
 +	})
 +}
 diff --git a/sdk/cliproxy/auth/conductor.go b/sdk/cliproxy/auth/conductor.go
-index 3f485fcf..86f6e6b1 100644
+index 571c745a..b2805afe 100644
 --- a/sdk/cliproxy/auth/conductor.go
 +++ b/sdk/cliproxy/auth/conductor.go
-@@ -232,7 +232,9 @@ type Manager struct {
+@@ -255,7 +255,9 @@ type Manager struct {
  	refreshCancel context.CancelFunc
  	refreshLoop   *authAutoRefreshLoop
  	// refreshJobs retains queued and running jobs across loop restarts under m.mu.
@@ -721,7 +721,7 @@ index 3f485fcf..86f6e6b1 100644
  	requestPrepareLocks sync.Map
  	// refreshLocks serializes credential refresh per auth ID so concurrent
 diff --git a/sdk/cliproxy/auth/conductor_refresh.go b/sdk/cliproxy/auth/conductor_refresh.go
-index 6bfc063a..2ba2bcf9 100644
+index 10e8c3ab..2a88f09f 100644
 --- a/sdk/cliproxy/auth/conductor_refresh.go
 +++ b/sdk/cliproxy/auth/conductor_refresh.go
 @@ -41,28 +41,44 @@ const (
@@ -883,7 +883,7 @@ index 6bfc063a..2ba2bcf9 100644
  }
  
  func (m *Manager) queueRefreshReschedule(authID string) {
-@@ -1265,6 +1355,11 @@ func (m *Manager) refreshAuthForRequestAtEpoch(ctx context.Context, id, failedAc
+@@ -1271,6 +1361,11 @@ func (m *Manager) refreshAuthForRequestAtEpoch(ctx context.Context, id, failedAc
  	if id == "" {
  		return nil, errors.New("auth id is empty")
  	}
@@ -895,7 +895,7 @@ index 6bfc063a..2ba2bcf9 100644
  	if failedAccessToken != "" {
  		m.markRejectedAccessToken(id, failedAccessToken)
  	}
-@@ -1405,6 +1500,11 @@ func (m *Manager) refreshAuthForRequestAtEpoch(ctx context.Context, id, failedAc
+@@ -1415,6 +1510,11 @@ func (m *Manager) refreshAuthForRequestAtEpoch(ctx context.Context, id, failedAc
  		return nil, &Error{Code: "unauthorized", Message: "unauthorized (refresh token invalid)", HTTPStatus: http.StatusUnauthorized}
  	}
  
@@ -1065,12 +1065,12 @@ index 00000000..538dd88b
 +	}
 +}
 diff --git a/sdk/cliproxy/service.go b/sdk/cliproxy/service.go
-index 7f4d1ba8..9d74edac 100644
+index fd229fc8..ed387753 100644
 --- a/sdk/cliproxy/service.go
 +++ b/sdk/cliproxy/service.go
-@@ -122,8 +122,9 @@ type Service struct {
- 	// pluginHost owns dynamic plugin lifecycle and runtime capability adapters.
- 	pluginHost *pluginhost.Host
+@@ -137,8 +137,9 @@ type Service struct {
+ 	// installed on request handlers. Nil means the internal pluginHost is used.
+ 	pluginInterceptorHost handlers.PluginInterceptorHost
  
 -	// shutdownOnce ensures shutdown is called only once.
 +	// shutdownOnce publishes the first shutdown result to every caller.

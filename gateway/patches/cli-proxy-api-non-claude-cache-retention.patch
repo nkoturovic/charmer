@@ -1,10 +1,10 @@
 diff --git a/internal/runtime/executor/claude_executor_execute.go b/internal/runtime/executor/claude_executor_execute.go
-index e9352424..bb5419d2 100644
+index 5bd2e31f..5bcd1a9d 100644
 --- a/internal/runtime/executor/claude_executor_execute.go
 +++ b/internal/runtime/executor/claude_executor_execute.go
 @@ -260,6 +260,21 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, r
+ 	}
  	extraBetas, _ = extractAndRemoveBetasDoc(doc)
- 	stripPromptCacheOptionsDoc(doc)
  	bodyForUpstream := doc.Bytes()
 +	// Final outbound boundary for third-party Claude-compatible upstreams:
 +	// strip the unsupported OpenAI-platform TTL control after translation,
@@ -25,12 +25,12 @@ index e9352424..bb5419d2 100644
  	bodyForTranslation := bodyForUpstream
  	if cchSigning {
 diff --git a/internal/runtime/executor/claude_executor_stream.go b/internal/runtime/executor/claude_executor_stream.go
-index aa20045d..a6942504 100644
+index 4de4be93..0c9a6e2f 100644
 --- a/internal/runtime/executor/claude_executor_stream.go
 +++ b/internal/runtime/executor/claude_executor_stream.go
 @@ -254,6 +254,21 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
+ 	}
  	extraBetas, _ = extractAndRemoveBetasDoc(doc)
- 	stripPromptCacheOptionsDoc(doc)
  	bodyForUpstream := doc.Bytes()
 +	// Final outbound boundary for third-party Claude-compatible upstreams:
 +	// strip the unsupported OpenAI-platform TTL control after translation,
@@ -51,12 +51,12 @@ index aa20045d..a6942504 100644
  	bodyForTranslation := bodyForUpstream
  	if cchSigning {
 diff --git a/internal/runtime/executor/claude_executor_tokens.go b/internal/runtime/executor/claude_executor_tokens.go
-index 54197965..a7530850 100644
+index 9a872bc5..eb7f4733 100644
 --- a/internal/runtime/executor/claude_executor_tokens.go
 +++ b/internal/runtime/executor/claude_executor_tokens.go
-@@ -269,6 +269,20 @@ func (e *ClaudeExecutor) countTokensUpstream(ctx context.Context, auth *cliproxy
- 	helps.FinalizePayloadDoc(ctx, doc)
- 	stripPromptCacheOptionsDoc(doc)
+@@ -268,6 +268,20 @@ func (e *ClaudeExecutor) countTokensUpstream(ctx context.Context, auth *cliproxy
+ 	// Claude Code 2.1.220's beta.messages.countTokens() always appends this beta.
+ 	extraBetas = append(extraBetas, claudeTokenCountingBeta)
  	body = doc.Bytes()
 +	// Final outbound boundary for third-party Claude-compatible upstreams:
 +	// keep count_tokens payloads consistent with the messages paths. This
@@ -118,10 +118,10 @@ index e1b44ebb..ffbf6f44 100644
  	wsHeaders = applyCodexWebsocketHeaders(ctx, wsHeaders, auth, apiKey, e.cfg, nativeRequest, opts.Headers)
  	applyCodexRoutingHint(ctx, wsHeaders, auth, upstreamModel, body, opts.Headers)
 diff --git a/internal/runtime/executor/codex_websockets_stream.go b/internal/runtime/executor/codex_websockets_stream.go
-index e01dc786..4aadf3d2 100644
+index 6e1e1963..d4798447 100644
 --- a/internal/runtime/executor/codex_websockets_stream.go
 +++ b/internal/runtime/executor/codex_websockets_stream.go
-@@ -966,6 +966,14 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
+@@ -981,6 +981,14 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
  	helps.FinalizePayloadDoc(ctx, doc)
  	body = doc.Bytes()
  	upstreamModel := strings.TrimSpace(doc.Get("model").String())
@@ -296,10 +296,10 @@ index 00000000..6f42aa21
 +}
 diff --git a/internal/runtime/executor/non_claude_cache_retention_payload_rules_test.go b/internal/runtime/executor/non_claude_cache_retention_payload_rules_test.go
 new file mode 100644
-index 00000000..1bcc0e76
+index 00000000..b131c1f9
 --- /dev/null
 +++ b/internal/runtime/executor/non_claude_cache_retention_payload_rules_test.go
-@@ -0,0 +1,315 @@
+@@ -0,0 +1,322 @@
 +package executor
 +
 +import (
@@ -315,6 +315,7 @@ index 00000000..1bcc0e76
 +
 +	"github.com/MoeForge/moego/ojson"
 +	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 +	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 +	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 +	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
@@ -480,15 +481,13 @@ index 00000000..1bcc0e76
 +	assertRetentionPresent(t, gotBody)
 +}
 +
-+// prompt_cache_options is removed by upstream on every Claude route, also
-+// after the payload rules. The retention boundary sits next to that removal
-+// and must not disturb it: a third-party body leaves with neither field, the
-+// official endpoint keeps retention and still loses the options.
++// Upstream removes the client's prompt_cache_options on every Claude route,
++// before the payload rules (a rule may write it back by design). The
++// retention boundary runs after the rules and must not disturb that removal:
++// a third-party body leaves with neither field, the official endpoint keeps
++// retention and still loses the client's options.
 +func TestClaudeExecutorPromptCacheOptionsAndRetentionAtFinalBoundary(t *testing.T) {
-+	cfg := retentionOverrideConfig(map[string]any{
-+		"prompt_cache_retention": "24h",
-+		"prompt_cache_options":   map[string]any{"scope": "global"},
-+	})
++	cfg := retentionOverrideConfig(map[string]any{"prompt_cache_retention": "24h"})
 +	payload := []byte(`{"prompt_cache_retention":"1h","prompt_cache_options":{"scope":"user"},"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`)
 +
 +	t.Run("third-party", func(t *testing.T) {
@@ -602,14 +601,22 @@ index 00000000..1bcc0e76
 +}
 +
 +func TestXAIWebsocketRequestBodyRefusedWhenFinalizerRefuses(t *testing.T) {
++	// The websocket Execute path: business normalization, the payload rules
++	// once, then the transport frame; retries reuse that frame.
++	frame := func(body string, finalize helps.PayloadFinalizer) []byte {
++		doc := ojson.NewDoc([]byte(body))
++		normalizeXAIWebsocketRequestDoc(doc)
++		helps.FinalizePayloadDoc(helps.WithPayloadFinalizer(context.Background(), finalize), doc)
++		return buildXAIWebsocketRequestBodyDoc(doc)
++	}
 +	refusing := retentionStrippingFinalizer(func(body []byte) []byte {
 +		return append(bytes.Clone(body), []byte(`,"prompt_cache_retention":"24h"`)...)
 +	})
-+	if got := buildXAIWebsocketRequestBody([]byte(`{"model":"grok-4.3","input":"hello"}`), refusing); got != nil {
-+		t.Fatalf("buildXAIWebsocketRequestBody() = %s, want nil (no frame) for an unprovable body", got)
++	if got := frame(`{"model":"grok-4.3","input":"hello"}`, refusing); got != nil {
++		t.Fatalf("websocket frame = %s, want nil (no frame) for an unprovable body", got)
 +	}
 +	passing := retentionStrippingFinalizer(func(body []byte) []byte { return body })
-+	got := buildXAIWebsocketRequestBody([]byte(`{"model":"grok-4.3","prompt_cache_retention":"24h","input":"hello"}`), passing)
++	got := frame(`{"model":"grok-4.3","prompt_cache_retention":"24h","input":"hello"}`, passing)
 +	if ojson.GetBytes(got, "type").String() != "response.create" {
 +		t.Fatalf("frame type = %q, want response.create; frame=%s", ojson.GetBytes(got, "type").String(), got)
 +	}
@@ -2667,7 +2674,7 @@ index 00000000..c8ae1272
 +	})
 +}
 diff --git a/internal/runtime/executor/openai_compat_executor.go b/internal/runtime/executor/openai_compat_executor.go
-index c4ac7e0c..7e4cfaaf 100644
+index 1c72c5e2..e523ece4 100644
 --- a/internal/runtime/executor/openai_compat_executor.go
 +++ b/internal/runtime/executor/openai_compat_executor.go
 @@ -184,6 +184,18 @@ func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth
@@ -2730,10 +2737,10 @@ index a6eb980b..d5266a93 100644
  	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(prepared.body))
  	if err != nil {
 diff --git a/internal/runtime/executor/xai_executor_request.go b/internal/runtime/executor/xai_executor_request.go
-index b8e685bc..0034f591 100644
+index e0e46a0c..b44444a2 100644
 --- a/internal/runtime/executor/xai_executor_request.go
 +++ b/internal/runtime/executor/xai_executor_request.go
-@@ -126,11 +126,10 @@ func (e *XAIExecutor) prepareResponsesRequestToDoc(ctx context.Context, req clip
+@@ -137,11 +137,10 @@ func (e *XAIExecutor) prepareResponsesRequestToDoc(ctx context.Context, req clip
  		return nil, err
  	}
  
@@ -2746,7 +2753,7 @@ index b8e685bc..0034f591 100644
  	_ = doc.Delete("safety_identifier")
  	_ = doc.Delete("stream_options")
  	helps.RewriteCodexMultiAgentV2InputDoc(doc, ctx, opts.Headers, e.cfg)
-@@ -200,6 +199,17 @@ func (e *XAIExecutor) prepareResponsesRequestToDoc(ctx context.Context, req clip
+@@ -211,6 +210,17 @@ func (e *XAIExecutor) prepareResponsesRequestToDoc(ctx context.Context, req clip
  		helps.SetStringIfDifferentDoc(doc, "prompt_cache_key", sessionID)
  	}
  
@@ -2801,42 +2808,19 @@ index 6ffbbfb2..f5837e0e 100644
  	if err != nil {
  		return cliproxyexecutor.Response{}, fmt.Errorf("xai executor: token counting failed: %w", err)
 diff --git a/internal/runtime/executor/xai_websockets_executor.go b/internal/runtime/executor/xai_websockets_executor.go
-index 09943aaa..4af6684a 100644
+index 9a5f8148..bbb7e8f4 100644
 --- a/internal/runtime/executor/xai_websockets_executor.go
 +++ b/internal/runtime/executor/xai_websockets_executor.go
-@@ -541,6 +541,10 @@ func (e *XAIWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *cliprox
- 	sanitizeXAIInputEncryptedContentForBaseURLDoc(doc, baseURL)
- 	wsHeaders := applyXAIWebsocketHeaders(ctx, http.Header{}, auth, token, prepared.sessionID, opts.Headers)
- 	wsReqBody := buildXAIWebsocketRequestBodyDoc(ctx, doc, prepared.finalizePayload)
+@@ -548,6 +548,12 @@ func (e *XAIWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *cliprox
+ 	transcriptInput := xaiJSONRawMessages(doc.Get("input"))
+ 	helps.FinalizePayloadDoc(helps.WithPayloadFinalizer(ctx, prepared.finalizePayload), doc)
+ 	wsReqBody := buildXAIWebsocketRequestBodyDoc(doc)
 +	if len(wsReqBody) == 0 {
++		// The finalizer refused the body (retention not provably stripped);
++		// no frame is sent, and retries reuse this checked frame.
 +		unlockStreamSession()
 +		return nil, fmt.Errorf("xai websockets executor: %w", errRetentionUnverified)
 +	}
- 	prepared.body = wsReqBody
  	reporter.SetTranslatedReasoningEffort(wsReqBody, e.Identifier())
  	requestType := strings.TrimSpace(ojson.GetBytesNoCopy(req.Payload, "type").String())
-@@ -646,6 +650,12 @@ func (e *XAIWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *cliprox
- 			}
- 			readCh = sess.activate(conn)
- 			wsReqBodyRetry := buildXAIWebsocketRequestBody(prepared.body, prepared.finalizePayload)
-+			if len(wsReqBodyRetry) == 0 {
-+				e.invalidateUpstreamConn(sess, connRetry, "send_error", errRetentionUnverified)
-+				sess.clearActive(conn, readCh)
-+				sess.reqMu.Unlock()
-+				return nil, fmt.Errorf("xai websockets executor: %w", errRetentionUnverified)
-+			}
- 			helps.RecordAPIWebsocketRequest(ctx, e.cfg, helps.UpstreamRequestLog{
- 				URL:       wsURL,
- 				Method:    "WEBSOCKET",
-@@ -1655,6 +1665,11 @@ func buildXAIWebsocketRequestBodyDoc(ctx context.Context, doc *ojson.Doc, finali
- 	}
- 	if len(finalizers) > 0 && finalizers[0] != nil {
- 		helps.FinalizePayloadDoc(helps.WithPayloadFinalizer(ctx, finalizers[0]), doc)
-+		if len(doc.Bytes()) == 0 {
-+			// The finalizer refused the body (retention not provably
-+			// stripped); the caller sends no frame.
-+			return nil
-+		}
- 	}
- 	_ = doc.Set("type", "response.create")
- 	return doc.Bytes()
+ 	transcriptReset := strings.TrimSpace(ojson.GetBytesNoCopy(wsReqBody, "previous_response_id").String()) == "" &&

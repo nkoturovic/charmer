@@ -61,7 +61,7 @@ index 00000000..ee7bef8f
 +	}
 +}
 diff --git a/cmd/server/main.go b/cmd/server/main.go
-index ba675971..ee06ecb0 100644
+index cf9710b8..9eb3b2c0 100644
 --- a/cmd/server/main.go
 +++ b/cmd/server/main.go
 @@ -26,6 +26,7 @@ import (
@@ -72,7 +72,7 @@ index ba675971..ee06ecb0 100644
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/managementasset"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/misc"
-@@ -207,6 +208,8 @@ func main() {
+@@ -221,6 +222,8 @@ func run() (exitStatus int) {
  
  	// Parse the command-line flags.
  	flag.Parse()
@@ -81,7 +81,7 @@ index ba675971..ee06ecb0 100644
  
  	if discoverGateways || discoverJSON {
  		cfgInclude, cfgExclude := cmd.LoadDiscoveryScanFilters(configPath)
-@@ -761,9 +764,7 @@ func main() {
+@@ -772,9 +775,7 @@ func run() (exitStatus int) {
  		if tuiMode {
  			if standalone {
  				// Standalone mode: start an embedded local server and connect TUI client to it.
@@ -92,7 +92,7 @@ index ba675971..ee06ecb0 100644
  				hook := tui.NewLogHook(2000)
  				hook.SetFormatter(&logging.LogFormatter{})
  				log.AddHook(hook)
-@@ -836,14 +837,39 @@ func main() {
+@@ -865,9 +866,7 @@ func run() (exitStatus int) {
  			}
  		} else {
  			// Start the main proxy service
@@ -100,9 +100,11 @@ index ba675971..ee06ecb0 100644
 -			misc.StartAntigravityVersionUpdater(context.Background())
 -			registry.SetLocalModelCatalogs(localModel)
 +			startBackgroundUpdaters(localModel, configFilePath, defaultBackgroundUpdaters)
- 			cmd.StartServiceWithPluginHost(cfg, configFilePath, password, pluginHost, serverOptions...)
- 		}
- 	}
+ 			if errStart := cmd.StartServiceWithPluginHost(cfg, configFilePath, password, pluginHost, serverOptions...); errStart != nil {
+ 				if log.StandardLogger().Out != os.Stderr {
+ 					_, _ = fmt.Fprintf(os.Stderr, "proxy service error: %v\n", errStart)
+@@ -879,6 +878,33 @@ func run() (exitStatus int) {
+ 	return 0
  }
  
 +// backgroundUpdaters are the background refreshes startup may launch; tests
@@ -136,11 +138,11 @@ index ba675971..ee06ecb0 100644
  // Priority: command-line flag > config file remote-management.base-url > default localhost.
  func resolveManagementBaseURL(flagURL string, cfg *config.Config) string {
 diff --git a/internal/api/handlers/management/config_basic.go b/internal/api/handlers/management/config_basic.go
-index a6c02c4d..08e5d26f 100644
+index 72024385..c2b315ae 100644
 --- a/internal/api/handlers/management/config_basic.go
 +++ b/internal/api/handlers/management/config_basic.go
 @@ -12,6 +12,7 @@ import (
- 
+ 	"github.com/MoeForge/moego/json"
  	"github.com/gin-gonic/gin"
  	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 +	"github.com/router-for-me/CLIProxyAPI/v8/internal/localmode"
@@ -190,7 +192,7 @@ index 00000000..28f3c9eb
 +	return noEgress.Load()
 +}
 diff --git a/internal/managementasset/updater.go b/internal/managementasset/updater.go
-index 57aff6b8..00a78a6b 100644
+index a45fdf87..1f4a03af 100644
 --- a/internal/managementasset/updater.go
 +++ b/internal/managementasset/updater.go
 @@ -20,6 +20,7 @@ import (
@@ -366,13 +368,13 @@ index 00000000..024c15ed
 +	}
 +}
 diff --git a/internal/registry/catalog_sources.go b/internal/registry/catalog_sources.go
-index 226b2d3e..3b4239e4 100644
+index 0362d948..6ad4b5a4 100644
 --- a/internal/registry/catalog_sources.go
 +++ b/internal/registry/catalog_sources.go
 @@ -12,6 +12,7 @@ import (
- 	"sync"
  	"time"
  
+ 	"github.com/MoeForge/moego/json"
 +	"github.com/router-for-me/CLIProxyAPI/v8/internal/localmode"
  	log "github.com/sirupsen/logrus"
  )
@@ -481,13 +483,13 @@ index 226b2d3e..3b4239e4 100644
  	_, errValidate := ValidateDevinModelsJSON(data)
  	return errValidate
 diff --git a/internal/registry/model_updater.go b/internal/registry/model_updater.go
-index 59a0329b..c514edc4 100644
+index e81d51bd..ad0e40db 100644
 --- a/internal/registry/model_updater.go
 +++ b/internal/registry/model_updater.go
 @@ -10,6 +10,7 @@ import (
- 	"sync"
  	"time"
  
+ 	"github.com/MoeForge/moego/json"
 +	"github.com/router-for-me/CLIProxyAPI/v8/internal/localmode"
  	log "github.com/sirupsen/logrus"
  )

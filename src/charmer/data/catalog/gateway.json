@@ -10,7 +10,7 @@
     "token_file": ".config/charmer/api-key",
     "auth_dir": ".local/share/charmer/auth",
     "service": "cli-proxy-api",
-    "cliproxyapi_baseline": "8.0.67",
+    "cliproxyapi_baseline": "8.0.76",
     "patches": [
       "cli-proxy-api-loopback-oauth.patch",
       "cli-proxy-api-kimi-claude-compat.patch",
