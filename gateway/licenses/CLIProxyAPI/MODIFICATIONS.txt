@@ -253,7 +253,7 @@ Before the modules are vendored, this patch updates the module requirements:
       modified  sdk/cliproxy/service_lifecycle.go
 
 16. cli-proxy-api-codex-client-identity.patch
-    sha256 cebf35a42eae5a798e856f9826da64ebd0498c6c93cc0b64a91fe2ee20887de5
+    sha256 d45b6e47bfb5a78bcdb3347f6f0e0a52de78cf555fc5315d37f78b9df2659921
       added     internal/runtime/executor/codex_client_identity_cm055_test.go
       modified  internal/runtime/executor/codex_executor_request.go
       modified  internal/runtime/executor/codex_websockets_executor_test.go
@@ -265,7 +265,7 @@ Before the modules are vendored, this patch updates the module requirements:
       added     sdk/auth/antigravity_callback_loopback_test.go
 
 18. cli-proxy-api-codex-api-key-safety.patch
-    sha256 e17b17d0867e78199657483f5ac270c0b231e2bdfcfd0f66f1c725548ee7b2e4
+    sha256 ebf2d173e00350a310421c42fe37e61b5bfbf4806a4d47c111fb6f46a07a85a1
       modified  internal/runtime/executor/codex_executor_execute.go
       modified  internal/runtime/executor/codex_executor_request.go
       modified  internal/runtime/executor/codex_executor_stream.go

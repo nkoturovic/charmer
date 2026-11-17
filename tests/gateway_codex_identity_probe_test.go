@@ -46,8 +46,8 @@ func TestOmissionCodexIdentity(t *testing.T) {
 		"final-http": <-captured,
 	} {
 		for key, want := range map[string]string{
-			"User-Agent": "codex-tui/0.159.1 (Mac OS 26.5.2; arm64) iTerm.app/3.6.11 (codex-tui; 0.159.1)",
-			"Originator": "codex-tui", "Version": "0.159.1",
+			"User-Agent": "codex-tui/0.169.0 (Mac OS 26.5.2; arm64) iTerm.app/3.6.11 (codex-tui; 0.169.0)",
+			"Originator": "codex-tui", "Version": "0.169.0",
 			// 8.x's routing hint: the resolved model, no tier in this body.
 			"X-Codex-Routing-Hint": "model=codexprobe-omission",
 		} {
@@ -307,7 +307,7 @@ func codexProbeSolEfforts(t *testing.T, cfg *config.Config, spec codexProbeOverl
 		if r.URL.Path != "/responses" || r.Header.Get("Authorization") != "Bearer codexprobe-fixture" {
 			t.Error("wrong route or credential")
 		}
-		if r.Header.Get("Version") != "0.159.1" {
+		if r.Header.Get("Version") != "0.169.0" {
 			t.Error("a gateway without the Codex client identity")
 		}
 		output := `[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}]`

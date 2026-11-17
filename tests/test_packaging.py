@@ -1956,10 +1956,10 @@ class CodexApiKeySafetyGateTests(unittest.TestCase):
         self.assertEqual(sorted(re.findall(r"^\+func (Test\w+)\(", patch, re.MULTILINE)), sorted(self.TESTS))
         self.assertIn("+++ b/internal/runtime/executor/codex_key_safety.go", patch)
         self.assertIn('+\t"github.com/router-for-me/CLIProxyAPI/v8/internal/compatsafe"', patch)
-        # The codex client Version default is replaced, never removed for accounts.
-        self.assertIn('-\tmisc.EnsureHeader(r.Header, ginHeaders, "Version", "0.159.1")', patch)
-        self.assertIn('+\tmisc.EnsureHeader(r.Header, ginHeaders, "Version", codexVersionDefault(cfg, auth))', patch)
         from charmer import proxy
+        # The codex client Version default is replaced, never removed for accounts.
+        self.assertIn('-\tmisc.EnsureHeader(r.Header, ginHeaders, "Version", "' + proxy.CODEX_CLIENT_VERSION + '")', patch)
+        self.assertIn('+\tmisc.EnsureHeader(r.Header, ginHeaders, "Version", codexVersionDefault(cfg, auth))', patch)
         self.assertIn('+const codexClientVersion = "' + proxy.CODEX_CLIENT_VERSION + '"', patch)
 
     def test_gate_selects_exactly_the_patch_tests(self):

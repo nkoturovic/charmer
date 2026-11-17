@@ -1,7 +1,7 @@
 {
   "format": 1,
   "inputs": {
-    "post_apply_tree_sha256": "963101d4e4dc34779a980b47d49b6dda3c2c412e8e0e8329ef77bbe9ccb8c728",
+    "post_apply_tree_sha256": "1d9cdfe41ec2032ac206b9bbff58a3c5877fd6f3ddfad66d069e5c9c595ebabf",
     "series": [
       "cli-proxy-api-loopback-oauth.patch@244e68528cbc72a636d112d4350c9e2e9aeb0c4b55c9097e08ee42a201fa22f4",
       "cli-proxy-api-kimi-claude-compat.patch@2d4f9b1fedc2b191ed2f7fb42437537f1ea592b170f4fe1f0f82b7fbee440bc1",
@@ -18,9 +18,9 @@
       "cli-proxy-api-claude-metadata-locking.patch@f6490bfa8e2be77136d7f319895cfaf5731448da64c1d39997ce09e030c32312",
       "cli-proxy-api-oauth-model-overlay.patch@8dcf8777a76bdc9fd958c53a42e991cb5655045eec6de406e25ed6db0af02a88",
       "cli-proxy-api-no-antigravity-egress.patch@fe3bce1ebf16dfe3738d060f0a7c5dfa9b6d2837fc12242d2bf30ce392afa105",
-      "cli-proxy-api-codex-client-identity.patch@cebf35a42eae5a798e856f9826da64ebd0498c6c93cc0b64a91fe2ee20887de5",
+      "cli-proxy-api-codex-client-identity.patch@d45b6e47bfb5a78bcdb3347f6f0e0a52de78cf555fc5315d37f78b9df2659921",
       "cli-proxy-api-antigravity-loopback-callback.patch@0594e27c8978fb6f354317622fc66b477635164d56aef429e58f6590e0616d8b",
-      "cli-proxy-api-codex-api-key-safety.patch@e17b17d0867e78199657483f5ac270c0b231e2bdfcfd0f66f1c725548ee7b2e4",
+      "cli-proxy-api-codex-api-key-safety.patch@ebf2d173e00350a310421c42fe37e61b5bfbf4806a4d47c111fb6f46a07a85a1",
       "cli-proxy-api-refresh-shutdown-join.patch@04a370f1a0988bafd8172e9d59958e1f8862452ee0a5eee000e250d9a5fab068",
       "cli-proxy-api-openai-content-chunks.patch@ea9447511efea48358cdaf15903e50ca0c0fc8847ae7337f2bda6d8eba0467f8",
       "cli-proxy-api-charmer-model-ids.patch@00c2e621498482021d12902d2fccc2e2d59a71482eded48581d1dd511a34e48c",
@@ -2020,7 +2020,7 @@
     "license": "MIT",
     "modifications": {
       "path": "CLIProxyAPI/MODIFICATIONS.txt",
-      "sha256": "01d5781e4ef3a16fe10eb5800c0f6ef15c1cdb394e858ef3cc43b4633d48c660"
+      "sha256": "eece95f5906afe4caa9e5a4d4f07f156425472ff27c1bb786ee8b2939102078f"
     },
     "name": "CLIProxyAPI",
     "repository": "https://github.com/router-for-me/CLIProxyAPI",

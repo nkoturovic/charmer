@@ -127,7 +127,7 @@
     },
     {
       "basename": "cli-proxy-api-codex-client-identity.patch",
-      "sha256": "cebf35a42eae5a798e856f9826da64ebd0498c6c93cc0b64a91fe2ee20887de5",
+      "sha256": "d45b6e47bfb5a78bcdb3347f6f0e0a52de78cf555fc5315d37f78b9df2659921",
       "admitted": true
     },
     {
@@ -137,7 +137,7 @@
     },
     {
       "basename": "cli-proxy-api-codex-api-key-safety.patch",
-      "sha256": "e17b17d0867e78199657483f5ac270c0b231e2bdfcfd0f66f1c725548ee7b2e4",
+      "sha256": "ebf2d173e00350a310421c42fe37e61b5bfbf4806a4d47c111fb6f46a07a85a1",
       "admitted": true
     },
     {
@@ -1215,7 +1215,7 @@
     },
     {
       "patch": "cli-proxy-api-codex-client-identity.patch",
-      "text": "codex-tui/0.159.1 (Mac OS 26.5.2; arm64) iTerm.app/3.6.11 (codex-tui; 0.159.1)"
+      "text": "codex-tui/0.169.0 (Mac OS 26.5.2; arm64) iTerm.app/3.6.11 (codex-tui; 0.169.0)"
     },
     {
       "patch": "cli-proxy-api-refresh-shutdown-join.patch",
