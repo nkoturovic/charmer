@@ -627,7 +627,7 @@ class CompiledStatusLineTests(V4Case):
 
 
 # The 2.1.0 rollback lane has its own variable: CHARMER_TEST_PREVIOUS_RELEASE
-# names the 2.4.0 tree the split-resume and scope-doctor lanes need.
+# names the 2.5.0 tree the split-resume and scope-doctor lanes need.
 PREVIOUS_RELEASE_ENV = "CHARMER_TEST_RELEASE_2_1_0"
 PREVIOUS_RELEASE = "2.1.0"
 
