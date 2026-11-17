@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
-from charmer import catalog, compiler, operator, scope, sessions, state, strict_json, transition
+from charmer import catalog, compiler, operator, profile, scope, sessions, state, strict_json, transition
 from charmer.cli import doctor, doctor_actions
 from test_statusline import isolated_child_environ, write_fixture_endpoint
 
@@ -23,12 +23,13 @@ CURRENT_ASSETS = Path(__file__).resolve().parents[1] / "src" / "charmer" / "data
 MID = "11111111-1111-4111-8111-111111111111"
 HOOK = "/fixture/bin/charmer-hook-3"
 TOKEN_HELPER = "/fixture/bin/charmer-gateway-token"
-OPERATOR_KEY = "custom-fable-5-2"
+OPERATOR_KEY = "custom-gpt-6-2-sol"
 DECLARATION = {"version": 1, "lines": {OPERATOR_KEY: {
-    "wire_model": "claude-fable-5-2", "display": "Fable 5.2",
-    "efforts": ["high"], "default_effort": "high",
-    "context": {"declared_tokens": 1000000, "source": "docs",
-                "source_ref": "https://models.example/fable-5-2"},
+    "wire_model": "gpt-6.2-sol", "display": "GPT-6.2 Sol",
+    "efforts": {level: f"reasoning-effort-{level}" for level in ("low", "medium", "high", "xhigh", "max")},
+    "default_effort": "high", "capabilities": ["lead", "agents"], "roles": "all",
+    "context": {"declared_tokens": 872000, "source": "docs",
+                "source_ref": "https://models.example/gpt-6-2-sol"},
 }}}
 
 _PREVIOUS_COMPILE = r"""
@@ -43,14 +44,14 @@ from charmer import catalog, compiler, operator, profile, scope, sessions, setti
 assert Path(compiler.__file__).resolve().is_relative_to((previous / "src").resolve())
 assets = previous / "src/charmer/data"
 bundle = catalog.load_catalog(assets)
-assert bundle.docs["version"]["launcher_version"] == "2.4.0"
-assert bundle.docs["native-contract"]["verified"][0]["version"] == "2.1.312"
+assert bundle.docs["version"]["launcher_version"] == "2.5.0"
+assert bundle.docs["native-contract"]["verified"][0]["version"] == "2.1.322"
 data = json.loads(manifest.read_text())
 root = Path(data["state_root"])
 project = Path(data["project"])
 docs = bundle.docs
 if data["declaration"]:
-    layer = operator.validate_layer(docs, {"anthropic": strict_json.pretty_file_bytes(data["declaration"])},
+    layer = operator.validate_layer(docs, {"openai": strict_json.pretty_file_bytes(data["declaration"])},
                                     schemas=operator.load_schemas(assets))
     assert not operator.blocking_problems(layer), [problem.text() for problem in operator.blocking_problems(layer)]
     docs = operator.merge_docs(docs, layer)
@@ -77,15 +78,15 @@ applied = sessions.applied_from_lineup(lineup, context=context,
 record = sessions.make_v4_record(
     managed_id=mid, cwd=str(project), profile=document["name"], follow=True, applied=applied,
     lineup_generation=1, lead_class=lineup.lead_class, catalog_version=lcat.catalog_version,
-    catalog_hash=strict_json.bundle_digest(docs), launcher_version="2.4.0", launch_epoch=1,
+    catalog_hash=strict_json.bundle_digest(docs), launcher_version="2.5.0", launch_epoch=1,
     launch_fence=sessions.launch_digest(plan.settings, plan.other_files[scope.LEAD_SET_JSON]),
-    scope_lead=sessions.lead_ref(applied["lead"]), now="2026-10-28T00:00:00Z")
+    scope_lead=sessions.lead_ref(applied["lead"]), now="2026-11-13T00:00:00Z")
 store = sessions.SessionStore(root, sessions.default_schema())
 state.atomic_write(root / sessions.STATE_MARKER, b"4\n")
 scope.write_scope(root, mid, plan)
 store.save(record)
 store.record_session_end(mid, observed_runtime_id=mid, launch_epoch=1, reason="fixture ended")
-print("genuine 2.4.0 compiler; client contract 2.1.312; no client or provider executed")
+print("genuine 2.5.0 compiler; client contract 2.1.322; no client or provider executed")
 """
 
 
@@ -110,10 +111,11 @@ class PreviousReleaseDoctorTests(unittest.TestCase):
     def setUp(self):
         tree = os.environ.get(PREVIOUS_RELEASE_ENV)
         if not tree:
-            self.skipTest(f"BOUNDARY: {PREVIOUS_RELEASE_ENV} names no 2.4.0 source tree")
+            self.skipTest(f"BOUNDARY: {PREVIOUS_RELEASE_ENV} names no 2.5.0 source tree")
         self.previous = Path(tree)
         version = strict_json.load(self.previous / "src/charmer/data/version.json")["launcher_version"]
-        self.assertEqual(version, "2.4.0")
+        self.assertEqual(version, "2.5.0")
+        self.gpt_moved = catalog.load_catalog(CURRENT_ASSETS).lines["sol"]["generation"] == "6.2"
         temporary = tempfile.TemporaryDirectory(prefix="previous-scope-doctor-")
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
@@ -127,7 +129,7 @@ class PreviousReleaseDoctorTests(unittest.TestCase):
         bundle = catalog.load_catalog(assets)
         docs = bundle.docs
         if declaration:
-            layer = operator.validate_layer(docs, {"anthropic": strict_json.pretty_file_bytes(declaration)},
+            layer = operator.validate_layer(docs, {"openai": strict_json.pretty_file_bytes(declaration)},
                                             schemas=operator.load_schemas(assets))
             self.assertEqual(operator.blocking_problems(layer), ())
             docs = operator.merge_docs(docs, layer)
@@ -151,7 +153,7 @@ class PreviousReleaseDoctorTests(unittest.TestCase):
             print(child.stdout.strip())
         store = sessions.SessionStore(self.state_root, sessions.default_schema())
         record = store.load(MID)
-        self.assertEqual(record["launcher_version"], "2.4.0")
+        self.assertEqual(record["launcher_version"], "2.5.0")
         self.assertEqual(record["last_event_source"], "end")
         live = scope.scope_dir(self.state_root, MID)
         bundle, docs, layer = self.merged(CURRENT_ASSETS, declaration)
@@ -205,7 +207,7 @@ class PreviousReleaseDoctorTests(unittest.TestCase):
         if report:
             print(json.dumps(details, indent=2))
         if assert_lazy:
-            self.assertEqual(problems, [], f"genuine 2.4.0 scope must be lazy, not BLOCK: {drift}")
+            self.assertEqual(problems, [], f"genuine 2.5.0 scope must be lazy, not BLOCK: {drift}")
 
     def assess(self):
         with mock.patch.object(compiler, "git_work_tree", return_value=True):
@@ -215,12 +217,15 @@ class PreviousReleaseDoctorTests(unittest.TestCase):
         return {str(path.relative_to(self.fixture.live)): path.read_bytes()
                 for path in self.fixture.live.rglob("*") if path.is_file()}
 
-    def reject_edits(self, **case):
-        self.check_previous_scope(**case, assert_lazy=False, report=False)
+    def reject_edits(self, *, lead="opus", agent="luna"):
+        # Lead-move cases also need an unchanged agent whose body can drift
+        # without damaging its frontmatter or the launch-time fence.
+        self.check_previous_scope(lead=lead, agent=agent, assert_lazy=False, report=False)
+        moved = self.gpt_moved and any(key in ("sol", "astra", OPERATOR_KEY) for key in (lead, agent))
         before = self.scope_bytes()
         live = self.fixture.live
         for mutation in ("unknown-text", "self-consistent-text", "other-rendering", "generation",
-                         "digest", "other-file", "generated-file", "settings", "deny"):
+                         "digest", "other-file", "generated-file", "agent-body", "settings", "deny"):
             with self.subTest(mutation=mutation):
                 if mutation in ("unknown-text", "self-consistent-text", "other-rendering"):
                     text = before[scope.LINEUP_MD] + b"\nUnrecognized instructions.\n"
@@ -235,9 +240,10 @@ class PreviousReleaseDoctorTests(unittest.TestCase):
                     state.atomic_write(live / scope.LINEUP_GEN, b"1 000000000000\n")
                 elif mutation == "other-file":
                     state.atomic_write(live / "unrecognized.txt", b"not generated\n")
-                elif mutation == "generated-file":
-                    name = next((name for name in before if name.startswith(".claude/agents/")), scope.LEAD_SET_JSON)
-                    state.atomic_write(live / name, before[name] + b"\n")
+                elif mutation in ("generated-file", "agent-body"):
+                    name = next(name for name in before if name.startswith(".claude/agents/"))
+                    data = before[name] + b"\n" if mutation == "agent-body" else b"not a generated file\n" + before[name]
+                    state.atomic_write(live / name, data)
                 else:
                     document = strict_json.loads(before[scope.SETTINGS_RELPATH])
                     if mutation == "settings":
@@ -246,8 +252,12 @@ class PreviousReleaseDoctorTests(unittest.TestCase):
                         document["permissions"]["deny"].append("Bash(fixture:*)")
                     state.atomic_write(live / scope.SETTINGS_RELPATH, strict_json.canonical_file_bytes(document))
                 try:
-                    problems, _attention, _info = self.assess()
-                    self.assertTrue(problems, f"unknown {mutation} must remain BLOCK")
+                    problems, attention, _info = self.assess()
+                    if mutation == "agent-body" and not moved:
+                        self.assertEqual(problems, [])
+                        self.assertTrue(any("agent definitions differ" in line for line in attention), attention)
+                    else:
+                        self.assertTrue(problems, f"unknown {mutation} must remain BLOCK")
                 finally:
                     for name, data in before.items():
                         state.atomic_write(live / name, data)
@@ -255,34 +265,69 @@ class PreviousReleaseDoctorTests(unittest.TestCase):
 
     def check_repair(self, *, deferred, **case):
         self.check_previous_scope(**case, assert_lazy=False, report=False)
+        live = self.fixture.live
+        expected = self.fixture.expected
+        if not deferred:
+            self.assertIsNotNone(expected.plan, expected.reason)
+            # A genuine previous-release scope can already match. Damage a
+            # non-launch file so each repair command must actually write.
+            skill = live / scope.SKILL_RELPATH
+            state.atomic_write(skill, skill.read_bytes() + b"\n")
         before = self.scope_bytes()
         record = self.fixture.store.read_record_bytes(MID)
         for bulk in (False, True):
-            with self.subTest(bulk=bulk):
-                output = io.StringIO()
-                code = (doctor_actions._doctor_repair_all(self.fixture.reader, output) if bulk else
-                        doctor_actions._doctor_repair(self.fixture.reader, MID, output))
-                self.assertEqual(code, 0 if bulk or not deferred else 3, output.getvalue())
-                self.assertEqual(self.fixture.store.read_record_bytes(MID), record)
-                if deferred:
-                    self.assertEqual(self.scope_bytes(), before)
-                    self.assertIn("deferred", output.getvalue().lower())
-                else:
+            # Exercise both commands against the same unrepaired scope.
+            for name, data in before.items():
+                state.atomic_write(live / name, data)
+            for attempt in (0, 1):
+                with self.subTest(bulk=bulk, attempt=attempt):
+                    current = self.scope_bytes()
+                    if not deferred:
+                        drift = scope.live_drift(live, expected.plan)
+                        self.assertTrue(all(line.endswith(" content differs") for line in drift), drift)
+                        expected_changes = {line.removesuffix(" content differs") for line in drift}
+                        self.assertEqual(bool(expected_changes), attempt == 0)
+                    output = io.StringIO()
+                    code = (doctor_actions._doctor_repair_all(self.fixture.reader, output) if bulk else
+                            doctor_actions._doctor_repair(self.fixture.reader, MID, output))
+                    self.assertEqual(code, 0 if bulk or not deferred else 3, output.getvalue())
+                    self.assertEqual(self.fixture.store.read_record_bytes(MID), record)
                     after = self.scope_bytes()
-                    self.assertEqual({name for name in after if after[name] != before.get(name)},
-                                     {scope.LINEUP_MD, scope.LINEUP_GEN, scope.SETTINGS_RELPATH, scope.SKILL_RELPATH})
-                    self.assertEqual(after[scope.LEAD_SET_JSON], before[scope.LEAD_SET_JSON])
-                    self.assertEqual(sessions.launch_digest(strict_json.loads(after[scope.SETTINGS_RELPATH]),
-                                                           after[scope.LEAD_SET_JSON]),
-                                     self.fixture.record["launch_fence"])
-                    self.assertIn("record authority" if bulk else "recompiled", output.getvalue())
-                self.assertEqual(self.assess()[0], [])
-        if not deferred:
-            after = self.scope_bytes()
-            output = io.StringIO()
-            self.assertEqual(doctor_actions._doctor_repair(self.fixture.reader, MID, output), 0)
-            self.assertIn("matches the record-authoritative compile", output.getvalue())
-            self.assertEqual(self.scope_bytes(), after)
+                    if deferred:
+                        self.assertEqual(after, before)
+                        self.assertIn("deferred", output.getvalue().lower())
+                    else:
+                        changed = {name for name in current.keys() | after.keys()
+                                   if current.get(name) != after.get(name)}
+                        self.assertEqual(changed, expected_changes)
+                        self.assertEqual(scope.live_drift(live, expected.plan), [])
+                        self.assertEqual(after[scope.LEAD_SET_JSON], before[scope.LEAD_SET_JSON])
+                        self.assertEqual(sessions.launch_digest(strict_json.loads(after[scope.SETTINGS_RELPATH]),
+                                                               after[scope.LEAD_SET_JSON]),
+                                         self.fixture.record["launch_fence"])
+                        message = ("record authority" if bulk else
+                                   "recompiled" if attempt == 0 else "matches the record-authoritative compile")
+                        self.assertIn(message, output.getvalue())
+                    self.assertEqual(self.assess()[0], [])
+
+    def test_operator_line_tracks_the_codex_catalog_outcome(self):
+        self.assertEqual(catalog.validate_catalog(catalog.load_raw(CURRENT_ASSETS)), [])
+        self.check_previous_scope(lead=OPERATOR_KEY, agent=OPERATOR_KEY, report=False)
+        self.assertEqual(self.fixture.reader.catalog.docs["version"]["catalog_version"], 45)
+        layer = self.fixture.reader.operator_snapshot().layer
+        self.assertEqual(operator.blocking_problems(layer), ())
+        self.assertEqual(OPERATOR_KEY in layer.displaced, self.gpt_moved)
+        self.assertEqual(OPERATOR_KEY in layer.lines, not self.gpt_moved)
+        document = profile.ad_hoc_direct(OPERATOR_KEY, "max")
+        document["agents"] = {"cm-reviewer": {"model": OPERATOR_KEY, "effort": "low"}}
+        lineup = profile.resolve(document, profile.LineupCatalog.from_docs(self.fixture.parts.docs))
+        key = "sol" if self.gpt_moved else OPERATOR_KEY
+        selector = "gpt-multi-sol-6-2" if self.gpt_moved else OPERATOR_KEY
+        self.assertEqual((lineup.lead.binding.key, lineup.lead.binding.selector), (key, f"{selector}-max[1m]"))
+        agent = lineup.agents["cm-reviewer"].binding
+        self.assertEqual((agent.key, agent.selector), (key, f"{selector}-low[1m]"))
+        self.assertEqual(self.fixture.expected.plan is None, self.gpt_moved)
+        self.assertEqual(self.fixture.store.load(MID), self.fixture.record)
 
     def test_shipped_lead_without_rename_is_lazy(self):
         self.check_previous_scope(renamed=False)
@@ -290,11 +335,11 @@ class PreviousReleaseDoctorTests(unittest.TestCase):
     def test_displaced_operator_lead_is_lazy(self):
         self.check_previous_scope(renamed=True)
 
-    def test_shipped_fable_lead_generation_move_is_lazy(self):
-        self.check_previous_scope(lead="fable")
+    def test_shipped_gpt_lead_generation_move_is_lazy(self):
+        self.check_previous_scope(lead="sol")
 
-    def test_shipped_fable_agent_generation_move_is_lazy(self):
-        self.check_previous_scope(agent="fable")
+    def test_shipped_gpt_agent_generation_move_is_lazy(self):
+        self.check_previous_scope(agent="astra")
 
     def test_displaced_operator_agent_is_lazy(self):
         self.check_previous_scope(agent=OPERATOR_KEY)
@@ -306,19 +351,28 @@ class PreviousReleaseDoctorTests(unittest.TestCase):
         self.reject_edits(agent=OPERATOR_KEY)
 
     def test_moved_lead_unknown_edits_stay_blocked(self):
-        self.reject_edits(lead="fable")
+        self.reject_edits(lead="sol")
 
     def test_moved_agent_unknown_edits_stay_blocked(self):
-        self.reject_edits(agent="fable")
+        self.reject_edits(agent="astra")
 
-    def test_displaced_lead_repair_converges_without_changing_intent(self):
-        self.check_repair(lead=OPERATOR_KEY, deferred=False)
+    def test_unchanged_agent_edits_keep_their_classification(self):
+        self.reject_edits(agent="luna")
 
-    def test_displaced_agent_repair_converges_without_changing_intent(self):
-        self.check_repair(agent=OPERATOR_KEY, deferred=False)
+    def test_unchanged_lead_repair_preserves_intent_and_fence(self):
+        self.check_repair(lead="opus", deferred=False)
+
+    def test_unchanged_agent_repair_preserves_intent_and_fence(self):
+        self.check_repair(agent="luna", deferred=False)
+
+    def test_displaced_lead_repair_preserves_intent_and_fence(self):
+        self.check_repair(lead=OPERATOR_KEY, deferred=self.gpt_moved)
+
+    def test_displaced_agent_repair_preserves_intent_and_fence(self):
+        self.check_repair(agent=OPERATOR_KEY, deferred=self.gpt_moved)
 
     def test_moved_lead_repair_defers_without_writes(self):
-        self.check_repair(lead="fable", deferred=True)
+        self.check_repair(lead="sol", deferred=self.gpt_moved)
 
     def test_moved_agent_repair_defers_without_writes(self):
-        self.check_repair(agent="fable", deferred=True)
+        self.check_repair(agent="astra", deferred=self.gpt_moved)

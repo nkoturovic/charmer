@@ -48,10 +48,12 @@ class PreviousReleaseSplitResumeTests(LineupCase):
     def setUp(self):
         tree = os.environ.get(_PREVIOUS)
         if not tree:
-            self.skipTest(f"BOUNDARY: {_PREVIOUS} names no 2.4.0 source tree for split resume")
+            self.skipTest(f"BOUNDARY: {_PREVIOUS} names no 2.5.0 source tree for split resume")
         self.previous = Path(tree)
         version = json.loads((self.previous / "src/charmer/data/version.json").read_text())["launcher_version"]
-        self.assertEqual(version, "2.4.0", f"{_PREVIOUS} must name the 2.4.0 source tree for this lane")
+        self.assertEqual(version, "2.5.0", f"{_PREVIOUS} must name the 2.5.0 source tree for this lane")
+        contract = json.loads((self.previous / "src/charmer/data/catalog/native-contract.json").read_text())
+        self.assertEqual(contract["verified"][0]["version"], "2.1.322")
         super().setUp()
 
     def test_previous_release_consumes_split_pending_and_current_reader_accepts_it(self):
