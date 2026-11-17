@@ -41,7 +41,8 @@ held by anything else is refused, and no token is sent to it.
 On an ordinary stop or restart, the gateway cancels queued credential refreshes
 and waits for already-running refresh workers, including their credential saves
 and save reports. Its 30-second shutdown budget starts when shutdown begins,
-not when the gateway starts. HTTP requests still use graceful draining.
+not when the gateway starts. HTTP requests in flight are not drained: the
+stop closes them.
 
 This reduces the chance of losing a newly rotated sign-in token; it is not an
 unconditional token-survival guarantee. An active provider refresh can itself

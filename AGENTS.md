@@ -159,8 +159,8 @@ keyed-safety and codex-client-identity). #21 joins refresh workers at
 shutdown: `Service.Shutdown` waits, within the existing bounded shutdown,
 for every refresh run started before the stop through its durable save and
 receipt report, and `Run` starts its 30-second shutdown budget at exit (HTTP
-graceful draining is unchanged; a deadline exit leaves persistence
-unverified; omission row RS1). #22 decodes OpenAI-compatible
+requests in flight are closed, not drained; a deadline exit leaves
+persistence unverified; omission row RS1). #22 decodes OpenAI-compatible
 content-chunk arrays (Mistral-style `text` and `thinking` chunks) on all
 three response paths into text and unsigned thinking blocks, ignores
 `closed:true` as a block terminator, and keeps string, null and absent
