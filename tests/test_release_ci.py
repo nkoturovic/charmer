@@ -2292,7 +2292,7 @@ class VulncheckTests(unittest.TestCase):
         manifest["gateway"] = {"version": self.policy["gateway"]["version"]}
         manifest_path.write_text(json.dumps(manifest))
         self.messages = [
-            {"config": {"protocol_version": "v1.0.0", "scanner_name": "govulncheck", "scanner_version": "v1.9.0",
+            {"config": {"protocol_version": "v1.0.0", "scanner_name": "govulncheck", "scanner_version": "v1.10.0",
                         "db": "file:///synthetic-db", "db_last_modified": "2026-10-01T20:24:15Z",
                         "scan_level": "symbol", "scan_mode": "binary"}},
             {"progress": {"message": "Checking the binary against the vulnerabilities..."}},
@@ -2318,7 +2318,7 @@ mode = os.environ.get("STUB_MODE", "reviewed")
 if "-version" in sys.argv:
     if mode == "version-fail":
         sys.exit(1)
-    print("Scanner: govulncheck@v1.9.0")
+    print("Scanner: govulncheck@v1.10.0")
     if mode != "no-db":
         print("DB: file:///synthetic-db")
     sys.exit(0)
@@ -2452,7 +2452,7 @@ if mode == "fail":
 
     def test_scanner_version_is_exact_not_just_protocol_compatible(self) -> None:
         self.assertEqual(self.run_check()[0], 0)
-        for version in ("v1.8.0", "v1.10.0", "v1.9.0-dev", "", None):
+        for version in ("v1.9.0", "v1.11.0", "v1.10.0-dev", "", None):
             with self.subTest(version=version):
                 self.messages[0]["config"]["scanner_version"] = version
                 code, report, _ = self.run_check()
@@ -4281,12 +4281,14 @@ class VulnerabilityWatchTests(unittest.TestCase):
         reviews = self.watch.cpython_reviews(path)
         version = json.loads((REPO_ROOT / "packaging/python-runtimes.json").read_text())["python"]
         # A re-review changes the record, not a second copy of its revision in a test.
+        self.assertTrue(reviews)
         for review in reviews:
             self.assertEqual(review["version"], version)
             for key in ("summary_sha256", "details_sha256"):
                 self.assertRegex(review[key], r"^[0-9a-f]{64}$")
             self.assertIs(type(review["affected"]), bool)
             self.assertTrue(review["reason"].strip())
+            self.assertIn("not a CPython fix", review["reason"])
 
     def test_watch_applies_explicit_cpython_reviews(self) -> None:
         cpython, advisory, entry = self.cpython_review_fixture()
