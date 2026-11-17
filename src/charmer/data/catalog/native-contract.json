@@ -9,39 +9,39 @@
       "status": "verified"
     },
     "U11": {
-      "note": "Client checks S1 and agent-reload (client 2.1.322): /reload-plugins or a new process (--resume) makes the next spawn use an edited add-dir agent (model and body); without either the old definition stays, for an edit in place, an atomic replace, a swapped folder and three rapid writes alike. A SendMessage-resumed agent after the reload runs the new model with its original prompt. Radar: tests/test_client_agents.py test_s1_reload_plugins_rebinds_next_spawn, tests/test_client_agent_reload.py.",
+      "note": "Client checks S1 and agent-reload (client 2.1.326): /reload-plugins or a new process (--resume) makes the next spawn use an edited add-dir agent (model and body); without either the old definition stays, for an edit in place, an atomic replace, a swapped folder and three rapid writes alike. A SendMessage-resumed agent after the reload runs the new model with its original prompt. Radar: tests/test_client_agents.py test_s1_reload_plugins_rebinds_next_spawn, tests/test_client_agent_reload.py.",
       "status": "verified"
     },
     "U12": {
-      "note": "Client check S2 (re-run on client 2.1.322): after a live change, /compact and a relaunch with the same --resume argv keep the new binding; relaunch waits for the compact boundary; supervisor takeover stays user acceptance (U1). Radar: tests/test_client_agents.py test_s2_*.",
+      "note": "Client check S2 (re-run on client 2.1.326): after a live change, /compact and a relaunch with the same --resume argv keep the new binding; relaunch waits for the compact boundary; supervisor takeover stays user acceptance (U1). The exit hint names charmer --resume <id> under the compiled CLAUDE_CODE_RESUME_HINT_COMMAND (process env only). Radar: tests/test_client_agents.py test_s2_*, tests/test_client_models.py ResumeHintProbe.",
       "status": "verified"
     },
     "U13": {
-      "note": "Client check S3 (re-run on client 2.1.322) FAIL: SendMessage is now a deferred tool behind ToolSearch (a call by name still resumes the agent); a SendMessage-resumed agent is rebound to the current frontmatter model with its original prompt and transcript. Adopted fallback: lead-prompt wording and the lineup notice say spawn fresh after a lineup change, never SendMessage-continue. Radar: tests/test_client_agents.py test_s3_*.",
+      "note": "Client check S3 (re-run on client 2.1.326) FAIL: SendMessage is now a deferred tool behind ToolSearch (a call by name still resumes the agent); a SendMessage-resumed agent is rebound to the current frontmatter model with its original prompt and transcript. Adopted fallback: lead-prompt wording and the lineup notice say spawn fresh after a lineup change, never SendMessage-continue. Radar: tests/test_client_agents.py test_s3_*.",
       "status": "failed"
     },
     "U14": {
-      "note": "Client check S4 (re-run on client 2.1.322): the /cm skill runs the launcher at expansion with no model turn; body '$ARGUMENTS' is single-quoted and the launcher refuses more than one argument after --session <id> (balanced apostrophes word-split). Radar: tests/test_client_skill_workflow.py test_s4_cm_scope_skill_invocation.",
+      "note": "Client check S4 (re-run on client 2.1.326): the /cm skill runs the launcher at expansion with no model turn; '$ARGUMENTS' is single-quoted; the launcher refuses a second argument after --session <id>. A terminal launch asks before adding an untrusted --add-dir folder (Yes lasts the session); trusting it or a folder above it outside git (the scopes folder) skips that; -p never asks. Radar: tests/test_client_skill_workflow.py test_s4_cm_scope_skill_invocation, tests/test_client_trust.py.",
       "status": "verified"
     },
     "U15": {
-      "note": "Client check S5 (re-run on client 2.1.322): hook additionalContext reaches the lead for SessionStart startup/resume/fork/compact/clear and UserPromptSubmit; complete markup-looking lineup notices survive with only the leading < of embedded system-reminder tags escaped as &lt;; notices replay until compaction; exit 2 blocks the prompt, so hooks never exit 2. Radar: tests/test_client_hooks.py.",
+      "note": "Client check S5 (re-run on client 2.1.326): hook additionalContext reaches the lead for SessionStart startup/resume/fork/compact/clear and UserPromptSubmit; complete markup-looking lineup notices survive with only the leading < of embedded system-reminder tags escaped as &lt;; notices replay until compaction; exit 2 blocks the prompt, so hooks never exit 2. Radar: tests/test_client_hooks.py.",
       "status": "verified"
     },
     "U16": {
-      "note": "Client check S6 (re-run on client 2.1.322): PreModelSwitch/PostModelSwitch fire per surface; a picker Default row that resolves to the current model emits no switch event; a relaunch argv --model wins without PostModelSwitch and resume SessionStart carries no model, so takeover detection keeps the documented drift fallback; hint headers change headers only. Radar: tests/test_client_hooks.py.",
+      "note": "Client check S6 (re-run on client 2.1.326): PreModelSwitch/PostModelSwitch fire per surface; a picker Default row that resolves to the current model emits no switch event; a relaunch argv --model wins without PostModelSwitch and resume SessionStart carries no model, so takeover detection keeps the documented drift fallback; hint headers change headers only. Radar: tests/test_client_hooks.py.",
       "status": "verified"
     },
     "U17": {
-      "note": "Client check S7a/b (re-run on client 2.1.322): canonical Anthropic ids are recognised, Fable 5.2 natively (1M without a beta, 128000 output cap, medium default effort); charmer-* ids are unknown (32000 cap). Bare opus/sonnet follow the compiled defaults, bare fable asks for claude-fable-5-2 (the seed expiring 2026-11-16 did not apply), best for claude-opus-5-5. Canonical 1M ids book 1M with or without [1m]. Radar: tests/test_client_models.py SelectorRecognitionProbe, SelectorLimitsProbe, Fable52Probe.",
+      "note": "Client check S7a/b (re-run on client 2.1.326): canonical Anthropic ids are recognised, Fable 5.2 natively (1M, no beta, 128000 cap, medium effort); charmer-* ids are unknown (32000 cap). Bare opus/sonnet follow the compiled defaults, fable is claude-fable-5-2. An unknown id without [1m] books 1M unless CLAUDE_CODE_MAX_CONTEXT_TOKENS sets it (compiled 200000); the compiled DISABLE_1M_CONTEXT=0 undoes a user's 1. Radar: tests/test_client_models.py SelectorRecognitionProbe, OneMillionSuffixProbe.",
       "status": "verified"
     },
     "U18": {
-      "note": "Client check S8 (re-run on client 2.1.322): agent frontmatter low..max is sent verbatim, Fable 5.2 too; ultracode drops silently to the session effort. An explicit Agent effort overrides frontmatter and session effort; omitting it keeps the frontmatter. CLAUDE_CODE_SUBAGENT_EFFORT reaches only an agent that names no effort, never a compiled cm-* agent. The catalog validator rejects agent ultracode. Radar: tests/test_client_models.py AgentEffortProbe, Fable52Probe.",
+      "note": "Client check S8 (re-run on client 2.1.326): agent frontmatter low..max is sent verbatim, Fable 5.2 too; ultracode drops silently to the session effort. An explicit Agent effort overrides frontmatter and session effort; omitting it keeps the frontmatter. CLAUDE_CODE_SUBAGENT_EFFORT reaches only an agent that names no effort, never a compiled cm-* agent. The catalog validator rejects agent ultracode. Radar: tests/test_client_models.py AgentEffortProbe, Fable52Probe.",
       "status": "verified"
     },
     "U19": {
-      "note": "Client check S9 (re-run on client 2.1.322): native Explore inherits a GPT lead and is capped to the Opus default under a Fable lead unless CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP is set; statusline-setup follows the fenced Sonnet default; claude-code-guide sends Haiku 5.5 only when the fence admits Haiku, else runs on the lead; auxiliary requests follow ANTHROPIC_DEFAULT_HAIKU_MODEL alone, even outside the fence. Radar: tests/test_client_models.py test_s9_native_agent_wires, HaikuNativeProbe.",
+      "note": "Client check S9 (re-run on client 2.1.326): native Explore inherits a GPT lead and is capped to the Opus default under a Fable lead unless CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP is set; statusline-setup follows the fenced Sonnet default; claude-code-guide sends Haiku 5.5 only when the fence admits Haiku, else runs on the lead; auxiliary requests follow ANTHROPIC_DEFAULT_HAIKU_MODEL alone, even outside the fence. Radar: tests/test_client_models.py test_s9_native_agent_wires, HaikuNativeProbe.",
       "status": "verified"
     },
     "U2": {
@@ -49,43 +49,43 @@
       "status": "unverified"
     },
     "U20": {
-      "note": "Client check S10 (re-run on client 2.1.322): workflow agent() type, model and cwd behave as recorded; a workflow default binding must be inside availableModels; Workflow is on by default and disableWorkflows:true is the off control. Radar: tests/test_client_skill_workflow.py test_s10_*.",
+      "note": "Client check S10 (re-run on client 2.1.326): workflow agent() type, model and cwd behave as recorded; a workflow default binding must be inside availableModels; Workflow is on by default and disableWorkflows:true is the off control. Radar: tests/test_client_skill_workflow.py test_s10_*.",
       "status": "verified"
     },
     "U21": {
-      "note": "Client check S11 (re-run on client 2.1.322): helper-only gateway auth rotates in-process with one 401 and a ~1 s retry using the new helper token; an env token outranks the helper and freezes it, so durable launches unset ANTHROPIC_AUTH_TOKEN. Radar: tests/test_client_gateway_auth.py test_s11_*.",
+      "note": "Client check S11 (re-run on client 2.1.326): helper-only gateway auth rotates in-process with one 401 and a ~1 s retry using the new helper token; an env token outranks the helper and freezes it, so durable launches unset ANTHROPIC_AUTH_TOKEN. Radar: tests/test_client_gateway_auth.py test_s11_*.",
       "status": "verified"
     },
     "U22": {
-      "note": "Client check S12 (re-run on client 2.1.322, client half; the gateway half runs at integration on the release's gateway): the client strips [1m] from a codex selector, sends the 1M beta and books 1M. Provider acceptance above 272K is not decidable offline (consent-gated live call). Radar: tests/test_client_gateway_auth.py test_s12_gpt6_1m_selector_client_and_gateway.",
+      "note": "Client check S12 (re-run on client 2.1.326, client half; the gateway half runs at integration on the release's gateway): the client strips [1m] from a codex selector, sends the 1M beta and books 1M. Provider acceptance above 272K is not decidable offline (consent-gated live call). Radar: tests/test_client_gateway_auth.py test_s12_gpt6_1m_selector_client_and_gateway. The bare selector books 1M too from 2.1.323 (no beta); the compiled CLAUDE_CODE_MAX_CONTEXT_TOKENS bounds it to 200K.",
       "status": "verified"
     },
     "U23": {
-      "note": "Client check S7c and refusal-routing (client 2.1.322, 224 cases): a categorized refusal retries once, then switches to a fenced target (Opus/Fable, 5.2 included: cyber -> claude-opus-4-8, bio, frontier_llm -> claude-opus-5; Sonnet 5.5 -> claude-sonnet-5); the compiled CLAUDE_CODE_MODEL_CAPABILITIES keeps unknown ids on their model. Lead-only fences, server targets, switchModelsOnFlag:false, an unknown Opus default and Ask each time never switch. Radar: tests/test_client_models.py RefusalRoutingMatrixProbe.",
+      "note": "Client check S7c and refusal-routing (client 2.1.326, 224 cases): a categorized refusal retries once, then switches to a fenced target (Opus/Fable, 5.2 included: cyber -> claude-opus-4-8, bio, frontier_llm -> claude-opus-5; Sonnet 5.5 -> claude-sonnet-5); the compiled CLAUDE_CODE_MODEL_CAPABILITIES keeps unknown ids on their model. Lead-only fences, server targets, switchModelsOnFlag:false, an unknown Opus default and Ask each time never switch. Radar: tests/test_client_models.py RefusalRoutingMatrixProbe.",
       "status": "verified"
     },
     "U24": {
-      "note": "Client check S16 (re-run on client 2.1.322): the helper's gateway token reaches only the gateway. A local TLS tripwire for every proxied host saw no request carrying it, with the compiled policy and with the client defaults; the pin before 2.1.302 (2.1.292) sent it on bootstrap and feature-flag requests to api.anthropic.com. Requests that bypass the proxy are not observed. Radar: tests/test_client_gateway_auth.py test_s16_gateway_token_stays_on_the_gateway.",
+      "note": "Client check S16 (re-run on client 2.1.326): the helper's gateway token reaches only the gateway. A local TLS tripwire for every proxied host saw no request carrying it, with the compiled policy and with the client defaults; the pin before 2.1.302 (2.1.292) sent it on bootstrap and feature-flag requests to api.anthropic.com. Requests that bypass the proxy are not observed. Radar: tests/test_client_gateway_auth.py test_s16_gateway_token_stays_on_the_gateway.",
       "status": "verified"
     },
     "U25": {
-      "note": "Client check S10-precedence (re-run on client 2.1.322): CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL (2.1.296+) in a settings env or the process env runs every workflow agent on its model, over a cm-* agentType's frontmatter and a per-call model; the compiled flag settings state it inherit, so the lineup precedence holds against user/project/local env and the process env, fresh and on --resume. Radar: tests/test_client_skill_workflow.py test_s10_workflow_model_precedence.",
+      "note": "Client check S10-precedence (re-run on client 2.1.326): CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL (2.1.296+) in a settings env or the process env runs every workflow agent on its model, over a cm-* agentType's frontmatter and a per-call model; the compiled flag settings state it inherit, so the lineup precedence holds against user/project/local env and the process env, fresh and on --resume. Radar: tests/test_client_skill_workflow.py test_s10_workflow_model_precedence.",
       "status": "verified"
     },
     "U26": {
-      "note": "Client check S15 (re-run on client 2.1.322): without a deny, fork subagents (subagent_type fork, the caller's own model and context) start headless and in a terminal, from the lead and from a cm agent; the compiled Agent(fork) deny refuses them naming the rule, against user/project/local CLAUDE_CODE_FORK_SUBAGENT=1 with Agent(fork) allows and the process env, fresh and on --resume. Radar: tests/test_client_agents.py test_s15_fork_subagents_are_denied.",
+      "note": "Client check S15 (re-run on client 2.1.326): without a deny, fork subagents (subagent_type fork, the caller's own model and context) start headless and in a terminal, from the lead and from a cm agent; the compiled Agent(fork) deny refuses them naming the rule, against user/project/local CLAUDE_CODE_FORK_SUBAGENT=1 with Agent(fork) allows and the process env, fresh and on --resume. Radar: tests/test_client_agents.py test_s15_fork_subagents_are_denied.",
       "status": "verified"
     },
     "U27": {
-      "note": "Client check gateway-fallbacks (client 2.1.322): each managed request carries the effort beta and output_config.effort, context_management, tool search and system turns, once per turn. A refusing fixture gateway gets each resent without the part (tool search: up to four requests), and a terminal session keeps it off for its next turn (2.1.312 too). x-should-retry: false ends a turn without a retry. The gateway half runs at integration. Radar: tests/test_client_gateway_fallbacks.py.",
+      "note": "Client check gateway-fallbacks (client 2.1.326): each managed request carries the effort beta and output_config.effort, context_management, tool search and system turns, once per turn. A refusing fixture gateway gets each resent without the part (tool search: up to four requests), and a terminal session keeps it off for its next turn (2.1.312 too). x-should-retry: false ends a turn without a retry. The gateway half runs at integration. Radar: tests/test_client_gateway_fallbacks.py.",
       "status": "verified"
     },
     "U28": {
-      "note": "Client check mcp-http-retry (client 2.1.322): an HTTP MCP call held while the client closes the connection (three reset server-message streams) is sent again only for a tool marked read-only or idempotent; the changing tool, marked neither, is called once and reports an error. The fallback control 2.1.302 sends both again. Radar: tests/test_client_gateway_fallbacks.py HttpMcpRetryProbe.",
+      "note": "Client check mcp-http-retry (client 2.1.326): an HTTP MCP call held while the client closes the connection (three reset server-message streams) is sent again only for a tool marked read-only or idempotent; the changing tool, marked neither, is called once and reports an error. The fallback control 2.1.302 sends both again. Radar: tests/test_client_gateway_fallbacks.py HttpMcpRetryProbe.",
       "status": "verified"
     },
     "U29": {
-      "note": "Client check S17 (client 2.1.322): in a terminal a --settings subagentStatusLine runs when the user layer has none and its rows replace the native ones; without it the user layer's runs; with both only --settings runs, so the compile omits charmer's under a user key. The compiled shim draws the shipped row. stdin: columns (int), tasks[] with id, type, agentType, status, description, label, startTime, model, effort, contextWindowSize, tokenCount, tokenSamples, cwd. Radar: tests/test_client_statusline.py.",
+      "note": "Client check S17 (client 2.1.326): a --settings subagentStatusLine runs when the user layer has none and its rows replace the native ones; with both only --settings runs. stdin: columns (int), tasks[] with id, type, agentType, status, description, label, startTime, model, effort, contextWindowSize, tokenCount, tokenSamples, cwd. The client shows a deprecation notice at every start while any layer sets the key (S17-notice), so the compile states none. Radar: tests/test_client_statusline.py.",
       "status": "verified"
     },
     "U5": {
@@ -155,8 +155,8 @@
     ]
   },
   "lifecycle_evidence": {
-    "evidence_id": "deepwork-claude-multi-durable-session-config-phase0-2.1.322",
-    "inspected_version": "2.1.322"
+    "evidence_id": "deepwork-claude-multi-durable-session-config-phase0-2.1.326",
+    "inspected_version": "2.1.326"
   },
   "nested_subagents": {
     "concurrency_key": {
@@ -177,42 +177,42 @@
       "evidence": {
         "linux-x64": "battery",
         "others": "identity+smoke",
-        "receipt_sha256": "607cb0ba7b203d7354d29623841025d86d00b25bb0e9918f28d803f423f109d2"
+        "receipt_sha256": "7d9e5c4b0b3c0933dca21b00e569603a77068e2d05cf9017c0e9f9b39cafe0c8"
       },
       "key_fingerprint": "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE",
-      "manifest_sha256": "05d2eff648bb528c1479c719bb8eca9a759657631e285d03aaf37fe779173f1c",
+      "manifest_sha256": "883e153b05d4a34e4225cdc90d692e4415ed4e46b26434b6430f128b6b8beb1e",
       "platforms": {
         "darwin-arm64": {
-          "sha256": "a9d237949db816a0b7afd88a9a8e1df36b3a597a30f5a41d1c0539eb180a3450",
-          "size": 323702464
+          "sha256": "e214ad76dcc0e846b03be28ed1c2734aacd4e27acb527cb7f8a9e2bed644e837",
+          "size": 353037664
         },
         "darwin-x64": {
-          "sha256": "b513d15117cbf1bb05095dab41963fd394ff40de1fa99dcc6d7d1033bf292e9b",
-          "size": 338400544
+          "sha256": "bd8e26290f93353590b831600a7ced02d625018fbaa2a82d8817368d3e2d2f82",
+          "size": 367809664
         },
         "linux-arm64": {
-          "sha256": "f220ca50ea4f3222043ff83cc224a1262e0196e9897acc0871efa94235b0c1fd",
-          "size": 341501368
+          "sha256": "98d56f6ffe53469767a74864a38eaf359d62ef557a8de1b1ad524d61a66ec119",
+          "size": 370271672
         },
         "linux-arm64-musl": {
-          "sha256": "b8a07ebb71cd612bd1ed80eabd2084ded98cadbae298d068a4a1307f0448c40c",
-          "size": 325808392
+          "sha256": "827b08bda7ed682685ee770e0e61f8c128d3c951486e96348663893dca5bae41",
+          "size": 355365832
         },
         "linux-x64": {
-          "sha256": "bfb3703ad5380242328459bc62ada4bde8ae7ba57c6e1eeadb9c00e08874c478",
-          "size": 341914128
+          "sha256": "b6b3647d981130dc44fc670846ae97b6cde531ffb667cf9c4d17cfcafb38cb37",
+          "size": 371429904
         },
         "linux-x64-musl": {
-          "sha256": "9bed6cfc5d2420b673a0b9fe41c71533a02904935cbc3b4cd110302d475fee6f",
-          "size": 328374856
+          "sha256": "595f563b879d54965e5c4bafa3b6b1829ef34865a434b97408ebcb797eb85d5c",
+          "size": 357788936
         },
         "win32-arm64": {
-          "sha256": "8e32c3f2fee1e5c17f0ae9a544fedf0951c4d0482268bb47c06c229fc62894c4",
-          "size": 329660576
+          "sha256": "12042740540c184b351274c11aa808252796770626ce990be740dd0d11d67e5b",
+          "size": 360077472
         },
         "win32-x64": {
-          "sha256": "345996b4bdbae21d817f750fae2f34cbf8d81224a5444c78136091d121beb298",
-          "size": 346496160
+          "sha256": "44e85ac6d3e36b924a0d631d3f69c13a6907491115d71e97c8eb6160c82b2aed",
+          "size": 378067616
         }
       },
       "settings_keys": [
@@ -259,6 +259,7 @@
         "channelsEnabled",
         "claudeMd",
         "claudeMdExcludes",
+        "clawdFileProgressEnabled",
         "cleanupPeriodDays",
         "companyAnnouncements",
         "crossSessionInbound",
@@ -339,6 +340,7 @@
         "policyHelper",
         "policyHelpers",
         "prUrlTemplate",
+        "precomputeArmTokens",
         "precomputeCompactionEnabled",
         "preferredNotifChannel",
         "prefersReducedMotion",
@@ -407,9 +409,9 @@
         "wslInheritsWindowsSettings",
         "xaaIdp"
       ],
-      "signature_sha256": "c66b0b463899b33dd9ef3c086cd9451aac3b2494a2f4f3134683d10cab0309c3",
-      "verified_at": "2026-11-12",
-      "version": "2.1.322"
+      "signature_sha256": "50db46627c45106962392b8e367da37b7dec71fc0dd15f30b5e456272cb894d8",
+      "verified_at": "2026-11-17",
+      "version": "2.1.326"
     }
   ],
   "version": 2

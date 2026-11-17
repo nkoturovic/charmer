@@ -667,10 +667,15 @@ class _ForkFixture:
             os.link(trusted.resolved_path, owned)
         except OSError:
             shutil.copy2(trusted.resolved_path, owned)
-        # Claude Code's own config: onboarding done, the project trusted.
+        # Claude Code's own config: onboarding done, the project trusted, and
+        # charmer's scopes folder trusted (from 2.1.326 a terminal launch asks
+        # before it adds an untrusted folder: the user's one-time answer in
+        # that folder covers every scope below it).
         config = {"hasCompletedOnboarding": True, "theme": "dark",
                   "projects": {str(self.fx.project_dir): {"hasTrustDialogAccepted": True,
-                                                          "hasCompletedProjectOnboarding": True}}}
+                                                          "hasCompletedProjectOnboarding": True},
+                               str(self.fx.xdg_state_home / "charmer" / "scopes"): {
+                                   "hasTrustDialogAccepted": True}}}
         state.atomic_write(self.home / ".claude.json", strict_json.canonical_file_bytes(config))
         python = str(Path(os.path.realpath(sys.executable)))
         self.python = python

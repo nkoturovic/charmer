@@ -350,6 +350,8 @@ class S4ScopeSkillTests(_SpikeTestCase):
         # A file an unquoted `opus[1m]` glob matches (shell cwd = project).
         (self.fixture.project_dir / "cm-explorer=opus1:high").write_text("x")
         probe.seed_fixture_project_trust(self.fixture, self.fixture.project_dir)
+        # A terminal launch asks before it adds an untrusted folder (2.1.326).
+        probe.seed_fixture_project_trust(self.fixture, self.scope)
         responder = _SkillResponder()
         step = probe.PTYInteraction
         interactions = (

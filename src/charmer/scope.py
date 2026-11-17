@@ -728,7 +728,8 @@ SKILL_POLICY: tuple[tuple[str, str, str], ...] = (
     ("pr", "opens a pull request", "absent"),
     ("run-skill-generator", "writes a project skill", "user"),
     ("schedule", "schedules remote agents", "absent"),
-    ("security-review", "launches review sub-tasks outside the lineup", "model"),
+    # Ask-gated since Claude Code 2.1.323 ("asks before Claude runs it").
+    ("security-review", "launches review sub-tasks outside the lineup", "ask"),
     ("simplify", "applies cleanup edits and launches review agents", "model"),
     ("update-config", "edits Claude settings and hooks", "ask"),
     ("verify", "conditional bundled entry (runs a verification)", "user"),

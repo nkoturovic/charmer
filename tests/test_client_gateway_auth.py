@@ -815,7 +815,10 @@ class S12GptContextTests(_SpikeCase):
         self.assertEqual(wide["usage"], {line["selector"]: 1_000_000})
         self.assertEqual(bare["models"], [line["base"]])
         self.assertFalse(any(bare["long_context"]))
-        self.assertEqual(bare["usage"], {line["base"]: 200_000})
+        # From 2.1.323 an unknown id without [1m] books 1M on its own (no
+        # beta); the compile's CLAUDE_CODE_MAX_CONTEXT_TOKENS brings it back
+        # to 200K (client check one-m-suffix).
+        self.assertEqual(bare["usage"], {line["base"]: 1_000_000})
         self.assertEqual(wide["max_tokens"], bare["max_tokens"])
         self.assertEqual(len(wide["max_tokens"]), 1)
         self.assertLessEqual(wide["max_tokens"][0], 128_000)
@@ -878,7 +881,7 @@ class S12GptContextTests(_SpikeCase):
         print(
             f"client check S12: {verdict} client: {line['selector']} -> wire "
             f"{wide['models'][0]} + {_LONG_CONTEXT_BETA}, contextWindow=1000000 "
-            f"(bare selector 200000, no beta), max_tokens={wide['max_tokens'][0]}, "
+            f"(bare selector {bare['usage'][line['base']]}, no beta), max_tokens={wide['max_tokens'][0]}, "
             f"auto-compact unmanaged window={unmanaged['window']} buffer=none "
             f"(source auto) vs managed CLAUDE_CODE_AUTO_COMPACT_WINDOW={capacity} "
             f"window={managed['window']} buffer={managed['buffer']}; "

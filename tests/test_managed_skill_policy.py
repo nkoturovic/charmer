@@ -393,6 +393,9 @@ class _RealCase(unittest.TestCase):
         self.fixture = probe.build_fixture(self.root / "fixture", environ=self.environ)
         self.scope = state.ensure_private_dir(self.fixture.root / "scope")
         probe.seed_fixture_project_trust(self.fixture, self.fixture.project_dir)
+        # The terminal lanes add the scope: from 2.1.326 an untrusted added
+        # folder is asked about first (``-p`` never asks).
+        probe.seed_fixture_project_trust(self.fixture, self.scope)
         self.runs = 0
 
     @property
