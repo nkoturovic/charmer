@@ -116,14 +116,14 @@ index fae2f322..77a2df92 100644
  		return resp, err
  	}
 diff --git a/internal/runtime/executor/codex_executor_request.go b/internal/runtime/executor/codex_executor_request.go
-index 836fcdef..c8f7f671 100644
+index ed78dac9..f7d06885 100644
 --- a/internal/runtime/executor/codex_executor_request.go
 +++ b/internal/runtime/executor/codex_executor_request.go
 @@ -558,7 +558,7 @@ func applyCodexHeadersWithSIWC(r *http.Request, auth *cliproxyauth.Auth, useSIWC
  	if ginHeaders != nil && ginHeaders.Get("X-Codex-Beta-Features") != "" {
  		r.Header.Set("X-Codex-Beta-Features", ginHeaders.Get("X-Codex-Beta-Features"))
  	}
--	misc.EnsureHeader(r.Header, ginHeaders, "Version", "0.159.1")
+-	misc.EnsureHeader(r.Header, ginHeaders, "Version", "0.169.0")
 +	misc.EnsureHeader(r.Header, ginHeaders, "Version", codexVersionDefault(cfg, auth))
  	misc.EnsureHeader(r.Header, ginHeaders, "X-Codex-Turn-Metadata", "")
  	misc.EnsureHeader(r.Header, ginHeaders, "X-Codex-Turn-State", "")
@@ -466,7 +466,7 @@ index 00000000..84cc66e5
 +}
 diff --git a/internal/runtime/executor/codex_key_safety.go b/internal/runtime/executor/codex_key_safety.go
 new file mode 100644
-index 00000000..67de4b7e
+index 00000000..8d73b125
 --- /dev/null
 +++ b/internal/runtime/executor/codex_key_safety.go
 @@ -0,0 +1,178 @@
@@ -515,7 +515,7 @@ index 00000000..67de4b7e
 +
 +// codexClientVersion is the Version header a codex client request carries
 +// when its client sends none.
-+const codexClientVersion = "0.159.1"
++const codexClientVersion = "0.169.0"
 +
 +// codexKeySafe reports whether the failures of auth are rebuilt locally.
 +func codexKeySafe(auth *cliproxyauth.Auth) bool {
@@ -1137,14 +1137,14 @@ index 00000000..e44b98df
 +	}
 +}
 diff --git a/internal/runtime/executor/codex_websockets_request.go b/internal/runtime/executor/codex_websockets_request.go
-index 23fb8f5c..7fd30124 100644
+index 70d663a0..7fd30124 100644
 --- a/internal/runtime/executor/codex_websockets_request.go
 +++ b/internal/runtime/executor/codex_websockets_request.go
 @@ -128,7 +128,7 @@ func applyCodexWebsocketHeaders(ctx context.Context, headers http.Header, auth *
  	misc.EnsureHeader(headers, ginHeaders, "x-codex-turn-metadata", "")
  	misc.EnsureHeader(headers, ginHeaders, "x-client-request-id", "")
  	misc.EnsureHeader(headers, ginHeaders, "x-responsesapi-include-timing-metrics", "")
--	misc.EnsureHeader(headers, ginHeaders, "Version", "0.159.1")
+-	misc.EnsureHeader(headers, ginHeaders, "Version", "0.169.0")
 +	misc.EnsureHeader(headers, ginHeaders, "Version", codexVersionDefault(cfg, auth))
  	if nativeRequest {
  		misc.EnsureHeader(headers, ginHeaders, codexResponsesLiteHeader, "")

@@ -3423,7 +3423,7 @@ class OperatorListingRefusalTests(unittest.TestCase):
 
 class CodexListingIdentityTests(unittest.TestCase):
     def test_single_version_drives_url_and_user_agent(self) -> None:
-        self.assertEqual(proxy.CODEX_CLIENT_VERSION, "0.159.1")
+        self.assertEqual(proxy.CODEX_CLIENT_VERSION, "0.169.0")
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(proxy.CODEX_MODELS_URL).query)
         self.assertEqual(query, {"client_version": [proxy.CODEX_CLIENT_VERSION]})
         self.assertTrue(proxy.CODEX_USER_AGENT.startswith(f"{proxy.CODEX_ORIGINATOR}/{proxy.CODEX_CLIENT_VERSION} "))

@@ -354,7 +354,7 @@ def _freeze_descriptors(
     )
 
 
-CODEX_CLIENT_VERSION = "0.159.1"
+CODEX_CLIENT_VERSION = "0.169.0"
 
 
 _LISTING_SUPPORT = _freeze_descriptors({

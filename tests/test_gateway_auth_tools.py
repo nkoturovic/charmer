@@ -392,7 +392,7 @@ class CodexPlanListingTests(_AuthHomeCase):
         self.assertEqual(len(calls), 1)
         url, headers = calls[0]
         self.assertEqual(
-            url, "https://chatgpt.com/backend-api/codex/models?client_version=0.159.1"
+            url, "https://chatgpt.com/backend-api/codex/models?client_version=0.169.0"
         )
         self.assertTrue(headers["Authorization"].startswith("Bearer "))
         self.assertEqual(headers["Chatgpt-Account-Id"], "acct-dummy")

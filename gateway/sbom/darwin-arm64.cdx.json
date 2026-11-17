@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:8fbc78fa-3f49-5ec8-a764-b742698edda6",
+  "serialNumber": "urn:uuid:5248b4e8-2cd4-5d19-a608-b6dca773c9dc",
   "version": 1,
   "metadata": {
     "tools": {
@@ -289,7 +289,7 @@
         },
         {
           "name": "charmer:gateway:post-apply-tree-sha256",
-          "value": "963101d4e4dc34779a980b47d49b6dda3c2c412e8e0e8329ef77bbe9ccb8c728"
+          "value": "1d9cdfe41ec2032ac206b9bbff58a3c5877fd6f3ddfad66d069e5c9c595ebabf"
         },
         {
           "name": "charmer:gateway:build-godebug",
@@ -357,7 +357,7 @@
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-codex-client-identity.patch@cebf35a42eae5a798e856f9826da64ebd0498c6c93cc0b64a91fe2ee20887de5"
+          "value": "cli-proxy-api-codex-client-identity.patch@d45b6e47bfb5a78bcdb3347f6f0e0a52de78cf555fc5315d37f78b9df2659921"
         },
         {
           "name": "charmer:gateway:patch",
@@ -365,7 +365,7 @@
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-codex-api-key-safety.patch@e17b17d0867e78199657483f5ac270c0b231e2bdfcfd0f66f1c725548ee7b2e4"
+          "value": "cli-proxy-api-codex-api-key-safety.patch@ebf2d173e00350a310421c42fe37e61b5bfbf4806a4d47c111fb6f46a07a85a1"
         },
         {
           "name": "charmer:gateway:patch",
