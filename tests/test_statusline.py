@@ -28,7 +28,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from charmer import managed, scope, state, statusline, strict_json, transition
+from charmer import managed, paths, scope, state, statusline, strict_json, transition
 from charmer.cli import doctor
 from charmer.cli.commands import statusline as statusline_command
 from _golden import assertGolden
@@ -459,7 +459,17 @@ class MainLineTests(unittest.TestCase):
 
 
 class CompiledStatusLineTests(V4Case):
-    """The compiled ``subagentStatusLine`` through real launches, resumes, doctor and repair."""
+    """The subagent status line through real launches, resumes, doctor and
+    repair. Claude Code 2.1.326 shows "subagentStatusLine is deprecated in
+    favor of mods and will stop working in a future release" at every start
+    while any settings layer sets the key (client check S17-notice), so a
+    launch compiles none. The stable shim stays (for sessions an earlier
+    release compiled with it, and for a key of the user's own), and a scope
+    an earlier release compiled with it converges lazily."""
+
+    NONE_LINE = ("subagent status line: not compiled (Claude Code shows a deprecation notice at every start while "
+                 "subagentStatusLine is set; for charmer's rows set it in your own settings to {shim})")
+    USER_LINE = "subagent status line: user-owned (subagentStatusLine in settings.json; charmer compiles none)"
 
     def settings(self, mid: str) -> dict:
         return strict_json.loads((self.live(mid) / scope.SETTINGS_RELPATH).read_bytes())
@@ -485,12 +495,20 @@ class CompiledStatusLineTests(V4Case):
     def converge(self, mid: str) -> list[str]:
         return transition.converge(self.store.root, self.store, mid, runtime_parts=self.runtime.converge_parts())
 
-    def test_a_launch_compiles_the_stable_shim_and_no_bundle_path(self) -> None:
+    def status_line_info(self) -> list[str]:
+        return [text for text in doctor._doctor_user_settings_report(self.runtime, [])[1]
+                if text.startswith("subagent status line:")]
+
+    def none_line(self) -> str:
+        shim = scope.status_line_shim_path(self.store.root)
+        return self.NONE_LINE.format(shim=paths.display(shim, self.runtime.environ))
+
+    def test_a_launch_compiles_none_and_keeps_the_stable_shim(self) -> None:
         for target in (self.profile_target(), self.direct_target()):
             with self.subTest(target=target.kind):
                 record = self.launch_fresh(target)
                 settings = self.settings(record["managed_id"])
-                self.assertEqual(settings["subagentStatusLine"], self.shipped())
+                self.assertNotIn("subagentStatusLine", settings)
                 self.assertNotIn("statusLine", settings)  # the main line stays the user's
                 shim = scope.status_line_shim_path(self.store.root)
                 self.assertTrue(os.access(shim, os.X_OK))
@@ -498,33 +516,28 @@ class CompiledStatusLineTests(V4Case):
                 for data in self.tree(self.live(record["managed_id"])).values():
                     self.assertNotIn(self.runtime.resolved_hook_command.encode(), data)
 
-    def test_a_user_owned_key_wins_and_the_next_resume_follows_the_layers(self) -> None:
-        self.user_layer({"subagentStatusLine": {"type": "command", "command": "true"}})
+    def test_a_user_owned_key_changes_nothing_compiled(self) -> None:
         record = self.launch_fresh()
         mid = record["managed_id"]
-        self.assertNotIn("subagentStatusLine", self.settings(mid))
+        self.user_layer({"subagentStatusLine": {"type": "command", "command": "true"}})
         self.assertEqual(self.integrity(record), ([], []))  # nothing drifts under the user's key
+        self.assertEqual(self.resume(mid)["managed_id"], mid)
+        self.assertNotIn("subagentStatusLine", self.settings(mid))
         self.user_layer(None)
         self.assertEqual(self.resume(mid)["managed_id"], mid)
-        self.assertEqual(self.settings(mid)["subagentStatusLine"], self.shipped())
+        self.assertNotIn("subagentStatusLine", self.settings(mid))
 
     def test_doctor_names_the_line_in_effect(self) -> None:
-        def line() -> list[str]:
-            return [text for text in doctor._doctor_user_settings_report(self.runtime, [])[1]
-                    if text.startswith("subagent status line:")]
-
-        self.assertEqual(line(), ["subagent status line: charmer (compiled into managed sessions)"])
+        self.assertEqual(self.status_line_info(), [self.none_line()])
         self.user_layer({"subagentStatusLine": {"type": "command", "command": "/home/user/secret-command"}})
-        self.assertEqual(line(), ["subagent status line: user-owned (subagentStatusLine in settings.json; "
-                                  "charmer compiles none)"])
+        self.assertEqual(self.status_line_info(), [self.USER_LINE])
         self.assertNotIn("secret-command", " ".join(doctor._doctor_user_settings_report(self.runtime, [])[1]))
 
-    def test_a_scope_another_release_compiled_is_lazy_and_repair_converges_it(self) -> None:
+    def test_a_scope_an_earlier_release_compiled_is_lazy_and_repair_converges_it(self) -> None:
         record = self.launch_fresh()
         mid = record["managed_id"]
         compiled = self.settings(mid)
-        earlier = {key: value for key, value in compiled.items() if key != "subagentStatusLine"}
-        self.write_settings(mid, earlier)  # as 2.1.0 compiled it
+        self.write_settings(mid, {**compiled, "subagentStatusLine": self.shipped()})  # as 2.5.0 compiled it
         problems, attention = self.integrity(record)
         self.assertEqual(problems, [])
         self.assertTrue(any(text.startswith(f"session {mid[:8]}: its subagent status line differs") for text in attention),
@@ -537,14 +550,11 @@ class CompiledStatusLineTests(V4Case):
         self.assertEqual(self.settings(mid), compiled)
         self.assertEqual(self.integrity(record), ([], []))
 
-    def test_repair_drops_it_under_a_user_owned_key(self) -> None:
+    def test_a_resume_drops_an_earlier_releases_key(self) -> None:
         record = self.launch_fresh()
         mid = record["managed_id"]
-        self.user_layer({"subagentStatusLine": {"type": "command", "command": "true"}})
-        problems, attention = self.integrity(record)
-        self.assertEqual(problems, [])
-        self.assertEqual(len([text for text in attention if "subagent status line differs" in text]), 1)
-        self.converge(mid)
+        self.write_settings(mid, {**self.settings(mid), "subagentStatusLine": self.shipped()})
+        self.assertEqual(self.resume(mid)["managed_id"], mid)
         self.assertNotIn("subagentStatusLine", self.settings(mid))
 
     def test_another_status_line_in_the_scope_stays_a_problem(self) -> None:
@@ -573,14 +583,14 @@ class CompiledStatusLineTests(V4Case):
                 self.assertFalse(any("subagent status line differs" in text for text in attention), attention)
 
     # Layers that exist but cannot be read as the client parses them: each
-    # holds the user's key, so reading it as "not configured" would compile
-    # over the user's opt-out. (kind, bytes, doctor's value-free reason)
+    # holds the user's key. Nothing is compiled either way, and doctor says
+    # only that (presence never read from such a file).
     USER_KEY = b'"subagentStatusLine": {"type": "command", "command": "/home/user/my-secret-line"}'
     UNREADABLE = (
-        ("malformed", b"{" + USER_KEY + b",}", "is not valid JSON"),
-        ("oversized", b"{" + USER_KEY + b', "padding": "' + b"x" * (1 << 20) + b'"}', "is larger than 1 MiB"),
-        ("not an object", b"[{" + USER_KEY + b"}]", "is not a JSON object"),
-        ("permission", b"{" + USER_KEY + b"}", "cannot be read"),
+        ("malformed", b"{" + USER_KEY + b",}"),
+        ("oversized", b"{" + USER_KEY + b', "padding": "' + b"x" * (1 << 20) + b'"}'),
+        ("not an object", b"[{" + USER_KEY + b"}]"),
+        ("permission", b"{" + USER_KEY + b"}"),
     )
 
     def unreadable_layer(self, path: Path, kind: str, data: bytes) -> None:
@@ -590,51 +600,22 @@ class CompiledStatusLineTests(V4Case):
         if kind == "permission":
             path.chmod(0)
 
-    def status_line_info(self) -> list[str]:
-        return [text for text in doctor._doctor_user_settings_report(self.runtime, [])[1]
-                if text.startswith("subagent status line:")]
-
-    def test_a_layer_it_cannot_read_compiles_none_and_doctor_names_it(self) -> None:
+    def test_a_layer_it_cannot_read_changes_nothing(self) -> None:
         user = Path(self.env["HOME"]) / ".claude" / "settings.json"
         local = self.project / ".claude" / "settings.local.json"
         for layer in (user, local):
-            for kind, data, reason in self.UNREADABLE:
+            for kind, data in self.UNREADABLE:
                 if kind == "permission" and os.geteuid() == 0:
                     continue  # root reads a mode-0 file
                 with self.subTest(layer=str(layer.relative_to(self.root)), kind=kind):
                     self.unreadable_layer(layer, kind, data)
-                    # The launch goes on and compiles none: the user keeps control.
                     record = self.launch_fresh()
                     self.assertNotIn("subagentStatusLine", self.settings(record["managed_id"]))
-                    layers = self.runtime.subagent_status_line_layers(str(self.project))
-                    self.assertEqual((layers.defined, [(path, text.split(" (")[0]) for path, text in layers.unreadable]),
-                                     (False, [(layer, reason)]))
-                    self.assertTrue(managed.subagent_status_line_configured(
-                        {**self.env, "HOME": str(self.runtime.home)}, self.project))
                     [line] = self.status_line_info()
-                    self.assertTrue(line.startswith("subagent status line: a settings layer could not be read ("), line)
-                    self.assertIn(f"{layer.name} {reason}", line)
-                    self.assertIn("charmer's subagent status line was not compiled", line)
-                    self.assertNotIn("my-secret-line", line)  # presence only, never the command
+                    self.assertEqual(line, self.none_line())
+                    self.assertNotIn("my-secret-line", line)
                     layer.unlink()
-        self.assertEqual(self.status_line_info(), ["subagent status line: charmer (compiled into managed sessions)"])
-
-    def test_repair_and_resume_omit_it_while_a_layer_cannot_be_read(self) -> None:
-        record = self.launch_fresh()
-        mid = record["managed_id"]
-        self.assertEqual(self.settings(mid)["subagentStatusLine"], self.shipped())
-        user = Path(self.env["HOME"]) / ".claude" / "settings.json"
-        kind, data, _reason = self.UNREADABLE[0]
-        self.unreadable_layer(user, kind, data)
-        problems, attention = self.integrity(record)
-        self.assertEqual(problems, [])
-        self.assertEqual(len([text for text in attention if "subagent status line differs" in text]), 1, attention)
-        self.converge(mid)  # doctor --repair
-        self.assertNotIn("subagentStatusLine", self.settings(mid))
-        self.assertEqual(self.integrity(record), ([], []))
-        user.write_text(json.dumps({"model": "opus"}), encoding="utf-8")  # readable, without the key
-        self.assertEqual(self.resume(mid)["managed_id"], mid)
-        self.assertEqual(self.settings(mid)["subagentStatusLine"], self.shipped())
+        self.assertEqual(self.status_line_info(), [self.none_line()])
 
     def test_an_absent_layer_or_one_without_the_key_says_nothing(self) -> None:
         environ = {**self.env, "HOME": str(self.runtime.home)}
@@ -1030,33 +1011,12 @@ class RuntimeStatusLineTests(unittest.TestCase):
         shim = self.state / "bin" / "charmer-statusline"
         self.assertEqual(shim.read_bytes(), scope.status_line_shim_text(runtime.resolved_hook_command))
         self.assertEqual(runtime.status_line_setting, scope.status_line_setting(shim))
-        self.assertEqual(runtime.subagent_status_line(str(self.root / "project")), scope.status_line_setting(shim))
 
     def test_a_read_only_runtime_names_the_shim_and_writes_nothing(self) -> None:
         runtime = self.runtime(refresh_shims=False, allow_state_writes=False, initialize_session_store=False)
         self.assertFalse((self.state / "bin" / "charmer-statusline").exists())
         self.assertEqual(runtime.status_line_setting,
                          scope.status_line_setting(self.state / "bin" / "charmer-statusline"))
-
-    def test_a_user_owned_key_in_any_layer_compiles_none(self) -> None:
-        runtime = self.runtime(refresh_shims=False, allow_state_writes=False, initialize_session_store=False)
-        project = self.root / "project"
-        layers = (self.home / ".claude" / "settings.json", project / ".claude" / "settings.json",
-                  project / ".claude" / "settings.local.json")
-        for layer in layers:
-            with self.subTest(layer=str(layer.relative_to(self.root))):
-                layer.parent.mkdir(parents=True, exist_ok=True)
-                # Any value counts, an empty command (the opt-out) included.
-                layer.write_text(json.dumps({"subagentStatusLine": {"type": "command", "command": "printf ''"}}))
-                self.assertIsNone(runtime.subagent_status_line(str(project)))
-                layer.unlink()
-                self.assertIsNotNone(runtime.subagent_status_line(str(project)))
-        # Never CLAUDE_CONFIG_DIR, which every managed launch unsets.
-        other = self.root / "config-dir"
-        other.mkdir()
-        (other / "settings.json").write_text(json.dumps({"subagentStatusLine": None}))
-        runtime.environ["CLAUDE_CONFIG_DIR"] = str(other)
-        self.assertIsNotNone(runtime.subagent_status_line(str(project)))
 
     def test_an_inhibition_the_run_does_not_own_leaves_the_shim(self) -> None:
         from charmer import gateway_inhibition as gi

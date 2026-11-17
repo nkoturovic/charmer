@@ -238,7 +238,10 @@ def ensure_token_helper_command(
 
 # Claude Code's ``subagentStatusLine`` setting (2.1.293+; client check S17):
 # a command the client runs through a shell every few seconds while a
-# subagent row is visible, with the row document on stdin.
+# subagent row is visible, with the row document on stdin. From 2.1.326 the
+# client shows a deprecation notice at every start while any layer sets it
+# (client check S17-notice), so a launch compiles none; the stable shim stays
+# for scopes an earlier release compiled and for a user's own key.
 SUBAGENT_STATUS_LINE_KEY = managed.SUBAGENT_STATUS_LINE_KEY
 
 
@@ -1865,11 +1868,10 @@ def compile_lineup_scope(
     ``feedback_drafts`` is the explicit feedback-draft policy input (the current
     ``preferences.json`` value; absent = ``off``).
 
-    ``subagent_status_line`` is the explicit status-line decision: the
+    ``subagent_status_line`` is an explicit status-line value: the
     :func:`status_line_setting` of the stable shim compiles
-    ``subagentStatusLine``; None compiles nothing (a settings layer of the
-    user's own defines the key, or a caller that compiles no managed
-    session). Launch, resume and repair decide it from the settings layers.
+    ``subagentStatusLine`` (the shape an earlier release compiled); None
+    compiles nothing. Launch, resume and repair compile none.
 
     ``default_mode`` is the explicit permission-mode decision:
     :data:`PERMISSION_DEFAULT_MODE` compiles ``permissions.defaultMode``,

@@ -238,10 +238,11 @@ class ScopeCompatibilityTests(unittest.TestCase):
             problems, attention, info = doctor._check_scope_integrity(reader, self.record)
         self.assertEqual(problems, [])
         self.assertTrue(any("proven scope is kept until the next resume" in line for line in attention))
-        # The fork deny and the status line it predates are lazy state, never BLOCK.
+        # The fork deny it predates is lazy state, never BLOCK; the baseline
+        # has no subagent status line and this release compiles none.
         self.assertIn(cli_text.FORK_POLICY_DRIFT.format(m8=MID[:8], mid=MID), attention)
-        self.assertTrue(any(line.startswith(f"session {MID[:8]}: its subagent status line differs") for line in attention),
-                        attention)
+        self.assertFalse(any(line.startswith(f"session {MID[:8]}: its subagent status line differs")
+                             for line in attention), attention)
         self.assertEqual(self.tree(), before)
         altered = self.old_plan.other_files[scope.LINEUP_MD] + b"Injected instructions.\n"
         state.atomic_write(self.live / scope.LINEUP_MD, altered)
@@ -366,8 +367,7 @@ class ScopeCompatibilityTests(unittest.TestCase):
         self.assertEqual(after[scope.SKILL_RELPATH], scope.SKILL_MD_BYTES)
         repaired = strict_json.loads(after[scope.SETTINGS_RELPATH])
         self.assertIn(compiler.FORK_AGENT_DENY, repaired["permissions"]["deny"])
-        self.assertEqual(repaired[scope.SUBAGENT_STATUS_LINE_KEY],
-                         scope.status_line_setting(scope.status_line_shim_path(self.root)))
+        self.assertNotIn(scope.SUBAGENT_STATUS_LINE_KEY, repaired)
         self.assertEqual(without_fork_deny(repaired), self.old_plan.settings)
         self.assertEqual(store.read_record_bytes(MID), record)
 
@@ -379,7 +379,6 @@ class ScopeCompatibilityTests(unittest.TestCase):
             lineup, lcat, eff, prompts, scope.catalog_meta_v2(docs),
             lineup_generation=2, managed_id=MID, hook_command=HOOK,
             token_helper_command=HELPER, worktree_available=True,
-            subagent_status_line=scope.status_line_setting(scope.status_line_shim_path(self.root)),
         )
         self.assertIn(b"independence unknown", plan.other_files[scope.LINEUP_MD])
         self.assertNotEqual(plan.other_files[scope.LINEUP_MD], self.old_plan.other_files[scope.LINEUP_MD])

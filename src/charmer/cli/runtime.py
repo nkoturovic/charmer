@@ -814,19 +814,6 @@ class Runtime:
 
         return managed.subagent_status_line_layers({**self.environ, "HOME": str(self.home)}, cwd)
 
-    def subagent_status_line(self, cwd: str) -> dict[str, str] | None:
-        """The launch/resume status-line decision: the stable shim's
-        ``subagentStatusLine`` unless a settings layer of the user's own
-        (``$HOME/.claude``, never ``CLAUDE_CONFIG_DIR``; the launch cwd's
-        project and local files) defines that key, or one of them cannot be
-        read: then nothing is compiled (the user's display is the one in
-        effect, or keeps control) and the launch goes on. A change to those
-        layers applies at the next resume."""
-
-        if self.subagent_status_line_layers(cwd).withheld:
-            return None
-        return dict(self.status_line_setting)
-
     def settings_skew(self, cwd: str, passthrough: Iterable[str] = ()) -> list[str]:
         """Attention lines for user settings files with keys the pin does not know.
 
@@ -2039,7 +2026,6 @@ class Runtime:
             agent_gate=lcat.agent_gate,
             default_mode=self.permission_default_mode(cwd),
             env_keep=self.session_env_keep(),
-            subagent_status_line=self.subagent_status_line(cwd),
             # Every resume of a session started as a fork keeps Claude Code's
             # system-prompt record off, as its fork launch did.
             **({"fork_record": True} if record is not None and record.get("forked_from") else {}),

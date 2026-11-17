@@ -2098,13 +2098,13 @@ def _doctor_user_settings_report(
     layers = runtime.subagent_status_line_layers(str(runtime.cwd))
     if layers.defined:
         info.append("subagent status line: user-owned (subagentStatusLine in settings.json; charmer compiles none)")
-    elif layers.unreadable:
-        where = "; ".join(f"{product_paths.display(layer, runtime.environ)} {reason}"
-                          for layer, reason in layers.unreadable)
-        info.append(f"subagent status line: a settings layer could not be read ({where}); charmer's subagent "
-                    "status line was not compiled — fix or remove that file, then it applies at the next resume")
     else:
-        info.append("subagent status line: charmer (compiled into managed sessions)")
+        # Claude Code 2.1.326 shows a deprecation notice at every start while
+        # any layer sets the key (client check S17-notice): none is compiled.
+        shim = product_paths.display(scope_mod.status_line_shim_path(sessions.state_root(runtime.environ)),
+                                     runtime.environ)
+        info.append("subagent status line: not compiled (Claude Code shows a deprecation notice at every start "
+                    f"while subagentStatusLine is set; for charmer's rows set it in your own settings to {shim})")
     if isinstance(document, dict):
         known = _charmer_selector_set(runtime)
         hits: list[tuple[str, Any]] = []
@@ -2905,10 +2905,9 @@ def _check_scope_integrity(
 
     default_mode = (cli_text.DEFAULT_MODE_DRIFT.format(m8=m8, mid=mid), "default-mode", cli_text.DEFAULT_MODE_DRIFTS)
     status_line = (
-        f"session {m8}: its subagent status line differs from this release's compile (a scope another release "
-        "compiled, or your own settings since launch: a subagentStatusLine added or removed, or a layer that "
-        f"cannot be read; lazy state); applies at the next resume (charmer -r {mid}) — or charmer doctor "
-        f"--repair {mid} now",
+        f"session {m8}: its subagent status line differs from this release's compile (a scope an earlier "
+        "release compiled with charmer's subagent status line, which this release compiles into no session; "
+        f"lazy state); applies at the next resume (charmer -r {mid}) — or charmer doctor --repair {mid} now",
         "status-line",
         "{n} sessions: the subagent status line differs from this release's compile (lazy state); each applies "
         "at its next resume — or charmer doctor --repair-all now (stopped sessions)",

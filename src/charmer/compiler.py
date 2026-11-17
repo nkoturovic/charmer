@@ -980,9 +980,8 @@ def compile_lineup_launch(
     (``CompilerError``/``ScopeError``) on every gap. ``default_mode`` is the
     launch's permission-mode decision (``scope.PERMISSION_DEFAULT_MODE``
     when no settings layer configures one, else None);
-    ``subagent_status_line`` the launch's status-line decision (the stable
-    shim's ``scope.status_line_setting`` unless a settings layer of the
-    user's own defines ``subagentStatusLine``, else None).
+    ``subagent_status_line`` an explicit status-line value
+    (``scope.status_line_setting``; a launch passes none).
     """
 
     from . import profile as profile_mod

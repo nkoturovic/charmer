@@ -291,14 +291,6 @@ class StatusLineLayers:
     defined: bool
     unreadable: tuple[tuple[Path, str], ...] = ()
 
-    @property
-    def withheld(self) -> bool:
-        """charmer compiles no ``subagentStatusLine``: the user's own is the
-        one in effect, or a layer that may define it cannot be read (the user
-        keeps control; the launch goes on)."""
-
-        return self.defined or bool(self.unreadable)
-
 
 def subagent_status_line_layers(environ: Mapping[str, str], cwd: str | Path) -> StatusLineLayers:
     """Read the user settings layers the managed client reads
@@ -317,16 +309,6 @@ def subagent_status_line_layers(environ: Mapping[str, str], cwd: str | Path) -> 
         elif document is not None and SUBAGENT_STATUS_LINE_KEY in document:
             defined = True
     return StatusLineLayers(defined, tuple(unreadable))
-
-
-def subagent_status_line_configured(environ: Mapping[str, str], cwd: str | Path) -> bool:
-    """True when a launch compiles no ``subagentStatusLine``
-    (:attr:`StatusLineLayers.withheld`): a user settings layer defines the
-    key, with any value (the user's own status line is the one in effect, and
-    such a key is also how a user turns charmer's off), or a layer cannot be
-    read. Decided at launch, resume and repair; doctor names which."""
-
-    return subagent_status_line_layers(environ, cwd).withheld
 
 
 def settings_env(path: Path) -> dict[str, str]:
