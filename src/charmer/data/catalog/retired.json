@@ -126,6 +126,28 @@
     }
   },
   "retired": {
+    "astra@6": {
+      "capabilities": [
+        "lead",
+        "agents"
+      ],
+      "context_tokens": 872000,
+      "display": "GPT-6 Astra",
+      "generation": "6",
+      "last_wire": "gpt-6-astra",
+      "provider": "openai",
+      "reason": "Astra generation move: GPT-6 aliases stay on their recorded wire for running sessions; resume resolves astra to the current generation. Continuity is not a selectable rollback.",
+      "roles": "all",
+      "selectors": {
+        "gpt-multi-astra-high[1m]": "reasoning-effort-high",
+        "gpt-multi-astra-low[1m]": "reasoning-effort-low",
+        "gpt-multi-astra-max[1m]": "reasoning-effort-max",
+        "gpt-multi-astra-medium[1m]": "reasoning-effort-medium",
+        "gpt-multi-astra-xhigh[1m]": "reasoning-effort-xhigh"
+      },
+      "since_catalog": 45,
+      "successor": "astra"
+    },
     "deepseek-pro": {
       "capabilities": [
         "lead",
@@ -477,6 +499,28 @@
         "gpt-multi-sol-xhigh[1m]": "reasoning-effort-xhigh"
       },
       "since_catalog": 36,
+      "successor": "sol"
+    },
+    "sol@6.1": {
+      "capabilities": [
+        "lead",
+        "agents"
+      ],
+      "context_tokens": 872000,
+      "display": "GPT-6.1 Sol",
+      "generation": "6.1",
+      "last_wire": "gpt-6.1-sol",
+      "provider": "openai",
+      "reason": "Sol generation move: GPT-6.1 aliases stay on their recorded wire for running sessions; resume resolves sol to the current generation. Continuity is not a selectable rollback.",
+      "roles": "all",
+      "selectors": {
+        "gpt-multi-sol-6-1-high[1m]": "reasoning-effort-high",
+        "gpt-multi-sol-6-1-low[1m]": "reasoning-effort-low",
+        "gpt-multi-sol-6-1-max[1m]": "reasoning-effort-max",
+        "gpt-multi-sol-6-1-medium[1m]": "reasoning-effort-medium",
+        "gpt-multi-sol-6-1-xhigh[1m]": "reasoning-effort-xhigh"
+      },
+      "since_catalog": 45,
       "successor": "sol"
     },
     "sonnet@5": {

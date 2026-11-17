@@ -102,7 +102,7 @@ RETAINED_SELECTOR_BASES = frozenset(FROZEN_2X_SELECTORS)
 # Gateway-effort lines that moved to a new generation on their key: their
 # selectors carry the generation (``<prefix><key>-<generation>-<effort>``)
 # and the previous generation's selectors live on under ``<key>@<old>``.
-GENERATION_TAGGED_LINES = {"sol": "6", "muse": "1.3", "or-deepseek": "4.1", "or-kimi": "3"}
+GENERATION_TAGGED_LINES = {"astra": "6", "sol": "6.1", "muse": "1.3", "or-deepseek": "4.1", "or-kimi": "3"}
 CODEX_SELECTOR_PREFIX = "gpt-multi-"
 CLAUDE_SELECTOR_PREFIX = "charmer-"
 REMOVED_PATTERNS = (
@@ -307,7 +307,7 @@ class SeedLoadTests(unittest.TestCase):
         self.assertGreater(sol["declared_tokens"], sol["client_tokens"])
         self.assertNotIn("agent_client_tokens", sol)
         self.assertNotIn("provider_stated_limit_tokens", sol)
-        self.assertIn("inherited GPT-6 route bound, unverified for 6.1", sol["qualification"])
+        self.assertIn("inherited GPT-6 Codex-route bound, unverified for 6.2", sol["qualification"])
         for historical in ("343,541", "868,925", "Near-limit retrieval", "G5-route"):
             self.assertNotIn(historical, sol["qualification"])
 
@@ -430,8 +430,8 @@ class FrozenSelectorCoverageTests(unittest.TestCase):
         "claude-opus-4-8": {"ii"},
         "gpt-multi-sol-high": {"iii"},
         "gpt-multi-sol-xhigh": {"iii"},
-        "gpt-multi-astra-high": {"i"},
-        "gpt-multi-astra-xhigh": {"i"},
+        "gpt-multi-astra-high": {"iii"},
+        "gpt-multi-astra-xhigh": {"iii"},
         legacy.LEGACY_SELECTOR_PREFIX + "deepseek-flash-high": {"iv"},
         legacy.LEGACY_SELECTOR_PREFIX + "deepseek-flash-max": {"iv"},
     }
@@ -2365,15 +2365,14 @@ class RetiredDirectLinesTests(unittest.TestCase):
 
 
 class AstraAndMuseModelTests(unittest.TestCase):
-    """The gpt-6-astra line (codex route) and the muse-spark pair (Meta API)."""
+    """The Astra line (Codex route) and the Muse pair (Meta API)."""
 
     def test_astra_lead_capable_1m_shape(self) -> None:
         bundle = catalog.load_catalog(CATALOG_ROOT)
         astra = bundle.lines["astra"]
         self.assertEqual(astra["provider"], "openai")
-        self.assertEqual(astra["wire_model"], "gpt-6-astra")
-        self.assertEqual(astra["display"], "GPT-6 Astra")
-        # Lead-capable since catalog22 (route acceptance verified 2026-09-05).
+        self.assertEqual(astra["wire_model"], "gpt-6.2-astra")
+        self.assertEqual(astra["display"], "GPT-6.2 Astra")
         self.assertEqual(astra["capabilities"], ["lead", "agents"])
         self.assertEqual(astra["lead"], {"effort": "ultracode", "env": {}})
         self.assertEqual(astra["roles"], "all")
@@ -2387,19 +2386,24 @@ class AstraAndMuseModelTests(unittest.TestCase):
                 self.assertEqual(
                     astra["efforts"][level],
                     {
-                        "selector": f"gpt-multi-astra-{level}[1m]",
+                        "selector": f"gpt-multi-astra-6-2-{level}[1m]",
                         "proxy_contract": f"reasoning-effort-{level}",
                     },
                 )
         context = astra["context"]
         self.assertEqual(context["declared_tokens"], 1050000)
-        # Lead-capable since catalog22 -> joins the large ordinary profile;
-        # The 2026-09-26 probe sets the provider window and the
-        # validated size (relations only, never the numbers).
-        assert_gpt6_probe_context(self, context)
-        self.assertIn("Route acceptance verified 2026-09-05", context["qualification"])
-        self.assertIn("272,000", context["qualification"])
-        self.assertNotIn("qwen38", context["qualification"])
+        self.assertEqual(context["client_tokens"], 1000000)
+        self.assertEqual(context["ordinary_profile"], "large")
+        self.assertIsNone(context["scalar_tokens"])
+        self.assertNotIn("provider_stated_limit_tokens", context)
+        self.assertEqual(context["provider_tokens"], bundle.retired["astra@6"]["context_tokens"])
+        self.assertEqual(context["validated_tokens"], 200000)
+        self.assertIn("inherited GPT-6 Codex-route bound, unverified for 6.2", context["qualification"])
+        self.assertIn("conservative floor, not a new-model measurement", context["qualification"])
+        self.assertNotIn("868,925", context["qualification"])
+        self.assertEqual(astra["output"], {"declared_tokens": 128000, "source": "docs",
+                         "source_ref": astra["key_route"]["source_ref"]})
+        self.assertEqual(astra["registry_overlay"], {"channel": "codex"})
 
     def test_muse_pair_shape(self) -> None:
         # Catalog 42: muse moved from Muse Spark 1.3 to Muse Wonder 1.0
@@ -2982,6 +2986,7 @@ class NewLineGateTests(unittest.TestCase):
         like_key = next(key for key, line in sorted(raw["models"]["models"].items())
                         if isinstance(line["efforts"], dict)
                         and providers[line["provider"]]["transport"].get("pool") == "codex"
+                        and key not in GENERATION_TAGGED_LINES  # --like cannot derive a generation-tagged sibling
                         and "agents" in line["capabilities"])
         entry = dev._scaffold_model_entry(raw, like_id=like_key, new_id="disposable-new",
                                           wire_model="gpt-disposable-new")
@@ -3170,7 +3175,7 @@ class SolGenerationTests(unittest.TestCase):
             f"gpt-multi-{key}-{level}[1m]": f"reasoning-effort-{level}"
             for level in line["efforts"]
         })
-        self.assertEqual(line["generation"], "6.1")
+        self.assertEqual(line["generation"], "6.2")
         self.assertEqual(line["context"]["declared_tokens"], 1050000)
         self.assertEqual(line["context"]["client_tokens"], 1000000)
         self.assertNotIn("agent_client_tokens", line["context"])
@@ -3261,6 +3266,8 @@ class GenerationMoveTests(unittest.TestCase):
         "muse": ("1.3", "muse-spark-1.3", "muse-wonder-1.0", 42),
         "or-deepseek": ("4.1", "deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash-1017", 42),
         "or-kimi": ("3", "moonshotai/kimi-k3", "moonshotai/kimi-k3.1-pro", 42),
+        "astra": ("6", "gpt-6-astra", "gpt-6.2-astra", 45),
+        "sol": ("6.1", "gpt-6.1-sol", "gpt-6.2-sol", 45),
     }
 
     def test_measured_moves_keep_their_evidence(self) -> None:
