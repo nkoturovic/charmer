@@ -6,6 +6,14 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.6.0] — 2026-11-18
+
+### Fixed
+
+- The gateway identifies its requests on a ChatGPT account as Codex CLI
+  0.169.0 (was 0.159.1); OpenAI requires at least 0.166.0 for GPT-6.2.
+  `charmer discover openai` lists models as the same client.
+
 ## [2.5.0] — 2026-11-13
 
 ### Upgrade notes
