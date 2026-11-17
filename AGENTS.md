@@ -138,7 +138,7 @@ series then adds credential-save receipts, credentialed redirect refusal, keyed
 OpenAI-compat safety, auth snapshot ownership, server config snapshots,
 Claude metadata locking, the OAuth model overlay and suppression of
 the Antigravity version updater under `--local-model`, in that order; #18 is
-the Codex 0.159.1 client identity (one bounded exception: the pinned
+the Codex 0.169.0 client identity (one bounded exception: the pinned
 registry's static `override_header` entries sit on `gpt-5.6-luna`, which no
 catalog or retired line routes); #19 binds the
 `--antigravity-login` callback listener to 127.0.0.1 instead of every
@@ -2628,8 +2628,8 @@ the operator's approval. Doctor never retires backups.
   visibility only. Declared context is 1,050,000; the inherited GPT-6 route bound
   872,000 is unverified for 6.1; validated floor is 200,000, not near-limit
   acceptance. Output 128,000 is API-documented, not measured on the Codex route.
-  No real acceptance is claimed. Shared discover identity is 0.159.1; patch
-  #18 must use that version too. The move bumped the quality/max seeds to
+  No real acceptance is claimed. Shared discover identity is 0.169.0
+  (`proxy.CODEX_CLIENT_VERSION`); patches #18 and #20 carry the same version. The move bumped the quality/max seeds to
   version 2 and balanced/economy/openai to 3; role/effort adoption needs
   explicit reseeding. Stable-key generation movement does not reseed
   installed profiles; the quality seed's Sonnet row relies on its
