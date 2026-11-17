@@ -467,10 +467,10 @@ class StreamRelay(probe.FakeAnthropicProvider):
         request = (f"{handler.command} {handler.path} HTTP/1.1\r\n"
                    + "".join(f"{name}: {value}\r\n" for name, value in headers.items()) + "\r\n").encode()
         client = handler.connection
-        upstream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        upstream = None
         observer = BodyObserver(row, self.clock)
         try:
-            upstream.connect(str(self.gateway.socket))
+            upstream = probe.unix_connect(self.gateway.socket, timeout=None)
             upstream.sendall(request + body)
             while True:
                 readable, _, _ = select.select([upstream, client], [], [], 1.0)
@@ -493,7 +493,8 @@ class StreamRelay(probe.FakeAnthropicProvider):
         except OSError as exc:
             row["error"] = type(exc).__name__
         finally:
-            upstream.close()
+            if upstream is not None:
+                upstream.close()
             handler.close_connection = True
         observer.finish()
         row["ended"] = self.clock.now()
