@@ -31,7 +31,7 @@ TARGETS = {"linux-x86_64", "linux-aarch64", "darwin-x86_64", "darwin-arm64"}
 CLASSES = {"component-absent", "function-not-called", "feature-excluded"}
 # The one scanner release whose output this gate was checked against; the
 # workflows install exactly this version (.github/PINS.md).
-SCANNER_VERSION = "v1.9.0"
+SCANNER_VERSION = "v1.10.0"
 TIMEOUT = 900
 EXIT_OK, EXIT_FAILED, EXIT_USAGE = 0, 1, 2
 
