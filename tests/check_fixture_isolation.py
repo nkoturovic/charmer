@@ -2,9 +2,15 @@
 
 Usage (from the repository root; NOT auto-discovered by unittest)::
 
-    python3 tests/check_fixture_isolation.py [--keep] [--python-guard-only] [--retired-probe] [--operator-probe]
+    python3 tests/check_fixture_isolation.py [--keep] [--python-guard-only]
+        [--model-probe | --retired-probe | --operator-probe] [--jobs N --log-dir DIR]
 
-Three probes, each in its own disposable copy, run in order by default:
+Three probes, each in its own disposable copy, run in order by default.
+``--jobs N`` overlaps up to N probes; ``--log-dir DIR`` is required above 1.
+Each completed probe prints one whole block and leaves its own log there. A
+failed probe lets its peers finish; a setup failure stops them.
+
+The probes are:
 
 - **probe 1**: a fake model line in the shipped ``models.json``;
 - **probe 2**: a fake retired key in the shipped ``retired.json``
@@ -65,9 +71,11 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 # Run as a script, the tests directory is sys.path[0]; imported (test_harness),
@@ -494,7 +502,11 @@ def _suite_command(targets: list[str]) -> list[str]:
 def _run_probe(args: argparse.Namespace, kind: str) -> int:
     """One probe (``model``, ``retired`` or ``operator``) in its own disposable copy."""
 
-    workdir = Path(tempfile.mkdtemp(prefix=f"charmer-isolation-{kind}-"))
+    try:
+        workdir = Path(tempfile.mkdtemp(prefix=f"charmer-isolation-{kind}-"))
+    except OSError as exc:
+        print(f"setup: {exc}", file=sys.stderr)
+        return 2
     ok = False
     try:
         component = _copy_tree(workdir)
@@ -565,7 +577,7 @@ def _run_probe(args: argparse.Namespace, kind: str) -> int:
             suite = subprocess.run(
                 [*prefix, *_suite_command(targets)],
                 cwd=component, env=env, stdout=handle, stderr=subprocess.STDOUT,
-                timeout=3600,
+                timeout=5400,
             )
         output = suite_log.read_text(encoding="utf-8", errors="replace")
         ran = re.findall(r"(?m)^Ran (\d+) tests? in", output)
@@ -666,11 +678,87 @@ def _run_probe(args: argparse.Namespace, kind: str) -> int:
         if not ok:
             print(f"logs kept: {suite_log} {guard_log}")
         return 0 if ok else 1
+    except subprocess.TimeoutExpired as exc:
+        print(f"RESULT: FAIL (command timed out after {exc.timeout}s)")
+        return 1
+    except (OSError, ValueError, SystemExit) as exc:
+        print(f"setup: {exc}", file=sys.stderr)
+        return 2
     finally:
         if args.keep or not ok:
             print(f"temp copy kept: {workdir}")
         else:
             shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _probe_command(args: argparse.Namespace, kind: str) -> list[str]:
+    command = [sys.executable, str(REPO_ROOT / "tests/check_fixture_isolation.py"), f"--{kind}-probe"]
+    for name in ("keep", "python_guard_only"):
+        if getattr(args, name):
+            command.append("--" + name.replace("_", "-"))
+    return command + [arg for target in args.only for arg in ("--only", target)]
+
+
+def _stop_probe(proc: subprocess.Popen) -> None:
+    # Each worker owns a process group, including its runner and namespace children.
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    proc.wait()
+
+
+def _parallel_probes(args: argparse.Namespace, kinds: tuple[str, ...], labels: dict[str, str]) -> dict[str, int]:
+    args.log_dir.mkdir(parents=True, exist_ok=True)
+    pending = list(kinds)
+    active: dict[str, subprocess.Popen] = {}
+    results: dict[str, int] = {}
+
+    def report(kind: str, code: int) -> None:
+        results[kind] = code
+        print(f"=== {labels[kind]}\n" + (args.log_dir / f"{kind}.log").read_text(errors="replace"),
+              end="", flush=True)
+
+    def interrupted(signum, frame):
+        raise KeyboardInterrupt
+
+    previous = signal.signal(signal.SIGTERM, interrupted)
+    try:
+        while pending or active:
+            while pending and len(active) < args.jobs:
+                kind = pending.pop(0)
+                with (args.log_dir / f"{kind}.log").open("w") as log:
+                    try:
+                        active[kind] = subprocess.Popen(_probe_command(args, kind), stdout=log,
+                            stderr=subprocess.STDOUT, start_new_session=True)
+                    except OSError as exc:
+                        log.write(f"setup: {exc}\n")
+                        results[kind] = 2
+                if results.get(kind) == 2:
+                    report(kind, 2)
+                    break
+            for kind, proc in list(active.items()):
+                code = proc.poll()
+                if code is not None:
+                    _stop_probe(proc)  # also stop a timed-out runner's remaining descendants
+                    del active[kind]
+                    report(kind, code if code in (0, 1) else 2)
+            if 2 in results.values():
+                for kind, proc in active.items():
+                    _stop_probe(proc)
+                    with (args.log_dir / f"{kind}.log").open("a") as log:
+                        log.write("setup: cancelled because another probe could not be set up\n")
+                    report(kind, 2)
+                active.clear()
+                results.update((kind, 2) for kind in pending)
+                break
+            if active:
+                time.sleep(0.05)
+    finally:
+        for proc in active.values():
+            _stop_probe(proc)
+        signal.signal(signal.SIGTERM, previous)
+    return results
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -680,15 +768,13 @@ def main(argv: list[str] | None = None) -> int:
         "--python-guard-only", action="store_true",
         help="no network namespace; rely on the Python tripwire only",
     )
-    parser.add_argument(
-        "--retired-probe", action="store_true",
-        help="run only probe 2 (a fake retired key in the shipped retired.json); "
-        "by default probe 1 (fake model) runs first, then probe 2",
-    )
-    parser.add_argument(
-        "--operator-probe", action="store_true",
-        help="run only probe 3 (operator declaration + ledger in the probe HOME)",
-    )
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--model-probe", action="store_true", help="run only probe 1 (a fake model line)")
+    selection.add_argument("--retired-probe", action="store_true", help="run only probe 2 (a fake retired key)")
+    selection.add_argument("--operator-probe", action="store_true",
+                           help="run only probe 3 (operator declaration + ledger in the probe HOME)")
+    parser.add_argument("--jobs", type=int, default=1, help="concurrent probes (default: 1)")
+    parser.add_argument("--log-dir", type=Path, help="per-probe logs; required with --jobs above 1")
     parser.add_argument(
         "--only", metavar="TEST", action="append", default=[],
         help=(
@@ -703,26 +789,29 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         parser.error(str(exc))
 
-    if args.retired_probe and args.operator_probe:
-        parser.error("--retired-probe and --operator-probe are exclusive")
-    kinds = (("retired",) if args.retired_probe else ("operator",) if args.operator_probe
-             else ("model", "retired", "operator"))
+    if args.jobs < 1 or (args.jobs > 1 and args.log_dir is None):
+        parser.error("--jobs must be positive; --jobs above 1 requires --log-dir")
+    kinds = tuple(kind for kind in ("model", "retired", "operator") if getattr(args, kind + "_probe"))
+    kinds = kinds or ("model", "retired", "operator")
     labels = {"model": "probe 1 (model line)", "retired": "probe 2 (retired key)",
               "operator": "probe 3 (operator state in the probe HOME)"}
     results: dict[str, int] = {}
-    for kind in kinds:
-        label = labels[kind]
-        print(f"=== {label}", flush=True)
-        results[kind] = _run_probe(args, kind)
-        if results[kind] == 2:
-            return 2
-    ok = all(code == 0 for code in results.values())
-    if len(results) > 1:
-        summary = ", ".join(
-            f"{kind} {'PASS' if code == 0 else 'FAIL'}" for kind, code in results.items()
-        )
-        print(f"OVERALL: {'PASS' if ok else 'FAIL'} ({summary})")
-    return 0 if ok else 1
+    if args.jobs > 1:
+        try:
+            results = _parallel_probes(args, kinds, labels)
+        except OSError as exc:
+            print(f"setup: {exc}", file=sys.stderr)
+            results = dict.fromkeys(kinds, 2)
+    else:
+        for kind in kinds:
+            print(f"=== {labels[kind]}", flush=True)
+            results[kind] = _run_probe(args, kind)
+            if results[kind] == 2:
+                break
+    ok = len(results) == len(kinds) and all(code == 0 for code in results.values())
+    summary = ", ".join(f"{kind} {'PASS' if results.get(kind) == 0 else 'FAIL'}" for kind in kinds)
+    print(f"OVERALL: {'PASS' if ok else 'FAIL'} ({summary})")
+    return 2 if 2 in results.values() else 0 if ok else 1
 
 
 if __name__ == "__main__":
