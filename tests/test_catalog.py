@@ -3253,18 +3253,23 @@ def _effort_params(document, alias: str) -> list:
 
 @uses_shipped_catalog
 class GenerationMoveTests(unittest.TestCase):
-    """Catalog 42 moves the lines hardcoded to a dated model to the newest
-    of their kind on the same key where a measurement supports it: ``muse``
-    to Muse Wonder 1.0, ``or-deepseek`` to the 1017 snapshot, ``or-kimi``
-    to Kimi K3.1 Pro (all measured on 2026-10-27). Old scopes keep routing
-    to the old wire through the retired selectors; new compiles and resumes
-    route to the new wire. The held line (``muse-contributor``) records why."""
+    """Old scopes keep their recorded wires and contracts; new compiles
+    and resumes follow stable keys onto generation-tagged selectors."""
 
+    # Previous generation, recorded wire, new wire, retirement catalog.
     MOVES = {
-        "muse": ("1.3", "muse-spark-1.3", "muse-wonder-1.0"),
-        "or-deepseek": ("4.1", "deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash-1017"),
-        "or-kimi": ("3", "moonshotai/kimi-k3", "moonshotai/kimi-k3.1-pro"),
+        "muse": ("1.3", "muse-spark-1.3", "muse-wonder-1.0", 42),
+        "or-deepseek": ("4.1", "deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash-1017", 42),
+        "or-kimi": ("3", "moonshotai/kimi-k3", "moonshotai/kimi-k3.1-pro", 42),
     }
+
+    def test_measured_moves_keep_their_evidence(self) -> None:
+        bundle = catalog.load_catalog(SHIPPED_ROOT)
+        for key in ("muse", "or-deepseek", "or-kimi"):
+            with self.subTest(line=key):
+                text = bundle.lines[key]["context"]["qualification"]
+                self.assertIn("Claude Code 2.1.310, CLIProxyAPI 8.0.42", text)
+                self.assertIn(f"Moved from {self.MOVES[key][1]} on 2026-10-27", text)
 
     def test_or_kimi_keeps_xhigh_and_records_the_tool_choice(self) -> None:
         bundle = catalog.load_catalog(SHIPPED_ROOT)
@@ -3292,26 +3297,24 @@ class GenerationMoveTests(unittest.TestCase):
 
     def test_the_moves_and_their_continuity_entries(self) -> None:
         bundle = catalog.load_catalog(SHIPPED_ROOT)
-        for key, (old_generation, old_wire, new_wire) in self.MOVES.items():
+        for key, (old_generation, old_wire, new_wire, since) in self.MOVES.items():
             with self.subTest(line=key):
                 self.assertEqual(GENERATION_TAGGED_LINES[key], old_generation)
                 line, old = bundle.lines[key], bundle.retired[f"{key}@{old_generation}"]
                 self.assertEqual((line["wire_model"], old["last_wire"]), (new_wire, old_wire))
                 self.assertNotEqual(line["generation"], old["generation"])
-                self.assertEqual((old["successor"], old["since_catalog"], old["provider"]), (key, 42, line["provider"]))
+                self.assertEqual((old["successor"], old["since_catalog"], old["provider"]), (key, since, line["provider"]))
                 self.assertEqual(old.get("family"), line.get("family"))
                 self.assertEqual((old["capabilities"], old["roles"]), (line["capabilities"], line["roles"]))
                 tag = line["generation"].replace(".", "-")
                 old_bases = {selector.removesuffix("[1m]") for selector in old["selectors"]}
+                prefix = CODEX_SELECTOR_PREFIX if line["provider"] == "openai" else CLAUDE_SELECTOR_PREFIX
                 for level, spec in line["efforts"].items():
-                    self.assertEqual(spec["selector"], f"charmer-{key}-{tag}-{level}[1m]")
+                    self.assertEqual(spec["selector"], f"{prefix}{key}-{tag}-{level}[1m]")
                     self.assertNotIn(spec["selector"].removesuffix("[1m]"), old_bases)
                 # Every effort an existing binding could name still resolves.
                 self.assertLessEqual({selector.removesuffix("[1m]").rsplit("-", 1)[1] for selector in old["selectors"]},
                                      set(line["efforts"]))
-                # Measured text: the twin's pins, never 2.3.0's.
-                self.assertIn("Claude Code 2.1.310, CLIProxyAPI 8.0.42", line["context"]["qualification"])
-                self.assertIn(f"Moved from {old_wire} on 2026-10-27", line["context"]["qualification"])
                 self.assertEqual(line["context"]["validated_tokens"], 200000)
                 self.assertEqual(bundle.resolve_key(f"{key}@{old_generation}").key, key)
         self.assertEqual(bundle.lines["or-deepseek"]["output"]["declared_tokens"], 393216)
@@ -3326,19 +3329,21 @@ class GenerationMoveTests(unittest.TestCase):
         bundle = catalog.load_catalog(SHIPPED_ROOT)
         document = _shipped_render(bundle)
         routes = _routes(document)
-        for key, (old_generation, old_wire, _new_wire) in self.MOVES.items():
+        for key, (old_generation, old_wire, _new_wire, since) in self.MOVES.items():
             retired_key = f"{key}@{old_generation}"
             for selector, contract in bundle.retired[retired_key]["selectors"].items():
                 base = selector.removesuffix("[1m]")
                 with self.subTest(selector=selector):
                     self.assertEqual(routes.get(base), {old_wire})
-                    level = contract.removeprefix("output-config-")
-                    self.assertIn(json.dumps({"output_config.effort": level}, sort_keys=True),
-                                  _effort_params(document, base))
+                    level = contract.rsplit("-", 1)[1]
+                    parameter = "reasoning.effort" if contract.startswith("reasoning-effort-") else "output_config.effort"
+                    self.assertIn(json.dumps({parameter: level}, sort_keys=True), _effort_params(document, base))
                     for spelling in (selector, base):
                         self.assertEqual(bundle.resolve_selector(spelling)[0], retired_key)
-                    # A catalog-41 record of this key meant the old generation.
-                    self.assertEqual(migrate.translate_key(key, selector, 41, bundle), retired_key)
+                    # A record before this move meant the old generation,
+                    # even without its selector (Sol has two retired generations).
+                    self.assertEqual(migrate.translate_key(key, selector, since - 1, bundle), retired_key)
+                    self.assertEqual(migrate.translate_key(key, None, since - 1, bundle), retired_key)
                     earlier = legacy.LEGACY_SELECTOR_PREFIX + selector.removeprefix("charmer-")
                     if earlier in bundle.renamed:
                         self.assertEqual(bundle.resolve_selector(earlier)[0], retired_key)
@@ -3351,7 +3356,7 @@ class GenerationMoveTests(unittest.TestCase):
         routes = _routes(document)
         lcat = profile.LineupCatalog.from_docs(bundle.docs)
         eff = settings.effective({"version": 1}, provider_ids=lcat.providers, line_keys=lcat.lines)
-        for key, (_old_generation, old_wire, new_wire) in self.MOVES.items():
+        for key, (_old_generation, old_wire, new_wire, _since) in self.MOVES.items():
             line = bundle.lines[key]
             for level in line["efforts"]:
                 with self.subTest(line=key, effort=level):
@@ -3363,8 +3368,8 @@ class GenerationMoveTests(unittest.TestCase):
                     base = selector.removesuffix("[1m]")
                     self.assertEqual(routes.get(base), {new_wire})
                     self.assertNotIn(old_wire, routes.get(base))
-                    self.assertIn(json.dumps({"output_config.effort": level}, sort_keys=True),
-                                  _effort_params(document, base))
+                    parameter = "reasoning.effort" if line["provider"] == "openai" else "output_config.effort"
+                    self.assertIn(json.dumps({parameter: level}, sort_keys=True), _effort_params(document, base))
         # The OpenRouter seed's DeepSeek agents compile the 1017 selectors.
         lineup = profile.resolve(bundle.seed_profiles["openrouter"], lcat, effective=eff)
         plan = scope.compile_lineup_scope(lineup, lcat, eff, bundle.prompt_bodies, scope.catalog_meta_v2(bundle.docs),
