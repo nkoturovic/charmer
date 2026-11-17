@@ -111,6 +111,8 @@ REMOVED_PATTERNS = (
     "charmer-gpt55",
     "conserve-",
 )
+# OpenRouter generation moves can be held independently of the Codex lines.
+GENERATION_TAGGED_LINES["or-gpt"] = "6.1"
 
 
 def _raw(root: Path = CATALOG_ROOT) -> dict:
@@ -660,8 +662,7 @@ class RenamedSelectorContinuityTests(unittest.TestCase):
         # The 31 selectors catalog 39 renamed: distinct charmer-* selectors,
         # each mapped from its old twin (a line added later has no earlier
         # name, so it is in no entry). Each is live, or the selector of a
-        # generation a later catalog moved on from (catalog 42: muse,
-        # muse-contributor, or-kimi, or-deepseek), which keeps its route.
+        # generation a later catalog moved on from, which keeps its route.
         targets = sorted(spec["selector"] for spec in renamed.values())
         self.assertEqual(len(targets), 31)
         self.assertEqual(len(set(targets)), 31)
@@ -3263,6 +3264,7 @@ class GenerationMoveTests(unittest.TestCase):
 
     # Previous generation, recorded wire, new wire, retirement catalog.
     MOVES = {
+        "or-gpt": ("6.1", "openai/gpt-6.1-sol", "openai/gpt-6.2-sol", 45),
         "muse": ("1.3", "muse-spark-1.3", "muse-wonder-1.0", 42),
         "or-deepseek": ("4.1", "deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash-1017", 42),
         "or-kimi": ("3", "moonshotai/kimi-k3", "moonshotai/kimi-k3.1-pro", 42),
@@ -3277,6 +3279,30 @@ class GenerationMoveTests(unittest.TestCase):
                 text = bundle.lines[key]["context"]["qualification"]
                 self.assertIn("Claude Code 2.1.310, CLIProxyAPI 8.0.42", text)
                 self.assertIn(f"Moved from {self.MOVES[key][1]} on 2026-10-27", text)
+
+    def test_or_gpt_context_retirement_and_independent_hold(self) -> None:
+        from _layout import FIXTURES_ROOT
+
+        raw = catalog.load_raw(SHIPPED_ROOT)
+        line = raw["docs"]["models"]["models"]["or-gpt"]
+        self.assertEqual((line["wire_model"], line["display"], line["generation"], line["family"]),
+                         ("openai/gpt-6.2-sol", "GPT-6.2 Sol · OpenRouter", "6.2", "openai"))
+        self.assertEqual(set(line["efforts"]), {"high", "xhigh"})
+        self.assertEqual(line["context"]["declared_tokens"], 1050000)
+        self.assertEqual(line["context"]["provider_tokens"], 1000000)
+        self.assertEqual(line["context"]["client_tokens"], 1000000)
+        self.assertEqual(line["context"]["validated_tokens"], 200000)
+        self.assertIn("Not measured on GPT-6.2 Sol", line["context"]["qualification"])
+        old = strict_json.load(FIXTURES_ROOT / "rollback-preflight/2.5.0/catalog/models.json")["models"]["or-gpt"]
+        retired = raw["docs"]["retired"]["retired"]["or-gpt@6.1"]
+        self.assertEqual(retired["context_tokens"], old["context"]["provider_tokens"])
+        self.assertEqual(retired["family"], "openai")
+        self.assertEqual(retired["selectors"], {spec["selector"]: spec["proxy_contract"]
+                                              for spec in old["efforts"].values()})
+        # Holding this route leaves the rest of the release's catalog valid.
+        raw["docs"]["models"]["models"]["or-gpt"] = old
+        del raw["docs"]["retired"]["retired"]["or-gpt@6.1"]
+        self.assertEqual(catalog.validate_catalog(raw), [])
 
     def test_or_kimi_keeps_xhigh_and_records_the_tool_choice(self) -> None:
         bundle = catalog.load_catalog(SHIPPED_ROOT)

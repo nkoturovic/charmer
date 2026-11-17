@@ -404,6 +404,26 @@
       "since_catalog": 42,
       "successor": "or-deepseek"
     },
+    "or-gpt@6.1": {
+      "capabilities": [
+        "lead",
+        "agents"
+      ],
+      "context_tokens": 1000000,
+      "display": "GPT-6.1 Sol · OpenRouter",
+      "family": "openai",
+      "generation": "6.1",
+      "last_wire": "openai/gpt-6.1-sol",
+      "provider": "openrouter",
+      "reason": "OpenRouter GPT move: the or-gpt line moved to GPT-6.2 Sol in catalog 45; GPT-6.1 Sol aliases stay on their recorded wire for running sessions; resume resolves or-gpt to the current one.",
+      "roles": "all",
+      "selectors": {
+        "charmer-or-gpt-high[1m]": "output-config-high",
+        "charmer-or-gpt-xhigh[1m]": "output-config-xhigh"
+      },
+      "since_catalog": 45,
+      "successor": "or-gpt"
+    },
     "or-kimi@3": {
       "capabilities": [
         "lead",
