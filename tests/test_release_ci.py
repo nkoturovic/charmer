@@ -262,7 +262,7 @@ class WorkflowTests(unittest.TestCase):
         tables = _pin_tables(PINS.read_text())
         tools = {row[0]: row[1] for row in tables["Tools (pinned by version)"]}
         self.assertEqual({name: tools[name] for name in ("setuptools", "zizmor", "govulncheck")},
-                         {"setuptools": "84.2.1", "zizmor": "1.32.0", "govulncheck": "v1.9.0"})
+                         {"setuptools": "84.2.1", "zizmor": "1.32.0", "govulncheck": "v1.10.0"})
         actions = {row[0]: row[1] for row in tables["Actions (pinned by commit)"]}
         for action, tag in {"actions/upload-artifact": "v7.0.2", "actions/download-artifact": "v8.0.2",
                             "actions/setup-python": "v7.1.0", "cachix/install-nix-action": "v31.11.5"}.items():
@@ -304,14 +304,14 @@ class WorkflowTests(unittest.TestCase):
         rows = tables["Runtime and workflow refresh"]
         self.assertEqual(len(rows), 8)
         self.assertEqual({row[0]: row[1] for row in rows}, expected)
-        self.assertEqual({row[2] for row in rows}, {"2026-11-11"})
+        self.assertEqual({row[2] for row in rows}, {"2026-11-17"})
 
     @requires_checkout
     def test_nix_pins_match_the_reviewed_inputs(self) -> None:
         tables = _pin_tables(PINS.read_text())
         locked = json.loads((REPO_ROOT / "flake.lock").read_text())["nodes"]["nixpkgs"]["locked"]
-        self.assertEqual(locked["rev"], "f4a03c008967841f2a0b3cb7c436fc6fc31671f6")
-        self.assertEqual(locked["narHash"], "sha256-ziZn2PvCJE5JEEpqTdxXwJpPB+L3YqoCpTAMCzyaP3U=")
+        self.assertEqual(locked["rev"], "d5cc6833999746cffdfe0598f7bc801a57b887a9")
+        self.assertEqual(locked["narHash"], "sha256-Wpz/7x/YWnDIBu7yj6ixe8j6fIMsidd9Y+o1PqPF3iM=")
         nix_rows = {row[0]: row for row in tables["Nix inputs (flake.lock)"]}
         for package, version in (("python3", "3.14.10"), ("bubblewrap", "0.13.1")):
             self.assertEqual(nix_rows[package][1], version)
@@ -4156,73 +4156,145 @@ class VulnerabilityWatchTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("IncompleteRead", report["problems"][0])
 
-    def test_cpython_reviews_bind_id_aliases_version_revision_and_expiry(self) -> None:
+    @staticmethod
+    def cpython_review_fixture() -> tuple[dict, dict, dict]:
         cpython = {"version": "3.14.8", "commit": "a" * 40}
-        advisory = {"id": "PSF-test", "aliases": ["CVE-test"], "modified": "2026-10-18T12:00:00Z"}
-        today = datetime.datetime.now(datetime.timezone.utc).date()
-        entry = {**advisory, "version": cpython["version"], "reason": "Synthetic platform-only advisory.",
-                 "re_review": str(today + datetime.timedelta(days=1))}
-        variants = [{}, {"id": "CVE-test"}, {"aliases": []}, {"version": "3.15.0"},
-                    {"modified": "2026-10-19T12:00:00Z"}, {"re_review": str(today)},
-                    {"re_review": str(today - datetime.timedelta(days=1))}]
+        advisory = {"id": "PSF-test", "aliases": ["CVE-test"], "modified": "2026-10-18T12:00:00Z",
+                    "summary": "Synthetic cookie policy defect.", "details": "A synthetic detail.\n",
+                    "affected": [{"ranges": [{"type": "GIT", "repo": "https://github.com/python/cpython"}],
+                                  "versions": ["v3.14.8"]}]}
+        entry = {key: advisory[key] for key in ("id", "aliases", "modified")}
+        entry.update(version=cpython["version"], reason="Synthetic platform-only advisory.", affected=True,
+                     summary_sha256=hashlib.sha256(advisory["summary"].encode()).hexdigest(),
+                     details_sha256=hashlib.sha256(advisory["details"].encode()).hexdigest(),
+                     re_review=str(datetime.datetime.now(datetime.timezone.utc).date() + datetime.timedelta(days=1)))
+        return cpython, advisory, entry
+
+    def reviewed_cpython_row(self, advisory: dict, entry: dict, *, commit: str | None = None) -> dict:
+        cpython, _, _ = self.cpython_review_fixture()
         with tempfile.TemporaryDirectory() as raw:
             path = Path(raw) / "reviewed.json"
-            for changes in variants:
-                path.write_text(json.dumps({"format": 1, "cpython": [{**entry, **changes}]}))
-                # An id equal to its alias is malformed, not an alias-only exemption.
-                if changes.get("id") == "CVE-test":
-                    with self.assertRaises(ValueError):
-                        self.watch.cpython_reviews(path)
-                    continue
-                reviews = self.watch.cpython_reviews(path)
-                with self.subTest(changes=changes), mock.patch.object(self.watch, "request", side_effect=[
-                        b'{"results":[{"vulns":[{"id":"PSF-test"}]}]}', json.dumps(advisory).encode()]):
-                    rows = self.watch.osv_findings([{"commit": cpython["commit"]}], set(), cpython=cpython, reviews=reviews)
-                self.assertEqual(rows[0]["result"], "unreviewed" if changes else "reviewed")
-                if not changes:
-                    self.assertEqual(rows[0]["review"], entry)
-            for changes in ({"id": "other"}, {"commit": "b" * 40}):
-                current = {**advisory, **changes} if "id" in changes else advisory
-                query = {"commit": changes.get("commit", cpython["commit"])}
-                with self.subTest(changes=changes), mock.patch.object(self.watch, "request", side_effect=[
-                        json.dumps({"results": [{"vulns": [{"id": current["id"]}]}]}).encode(),
-                        json.dumps(current).encode()]):
-                    rows = self.watch.osv_findings([query], set(), cpython=cpython, reviews=[entry])
-                self.assertEqual(rows[0]["result"], "unreviewed")
-            for entries in ([entry, entry], [{**entry, "reason": ""}], [{**entry, "re_review": "2026-02-30"}],
-                            [{**entry, "modified": ""}], [{**entry, "extra": True}]):
-                path.write_text(json.dumps({"format": 1, "cpython": entries}))
+            path.write_text(json.dumps({"format": 2, "cpython": [entry]}))
+            reviews = self.watch.cpython_reviews(path)
+        with mock.patch.object(self.watch, "request", side_effect=[
+                json.dumps({"results": [{"vulns": [{"id": advisory["id"]}]}]}).encode(),
+                json.dumps(advisory).encode()]):
+            rows = self.watch.osv_findings([{"commit": commit or cpython["commit"]}], set(),
+                                           cpython=cpython, reviews=reviews)
+        self.assertEqual(len(rows), 1)
+        return rows[0]
+
+    def test_cpython_review_equal_revision(self) -> None:
+        _, advisory, entry = self.cpython_review_fixture()
+        row = self.reviewed_cpython_row(advisory, entry)
+        self.assertEqual(row["result"], "reviewed")
+        self.assertEqual(row["review"], entry)
+        self.assertNotIn("review_note", row)
+
+    def test_cpython_review_republished_unchanged(self) -> None:
+        _, advisory, entry = self.cpython_review_fixture()
+        advisory["modified"] = "2026-10-19T12:00:00.123456789Z"
+        row = self.reviewed_cpython_row(advisory, entry)
+        self.assertEqual(row["result"], "reviewed")
+        self.assertEqual(row["review"], entry)  # the reviewed revision is not silently rewritten
+        self.assertEqual(row["review_note"], "reviewed (advisory re-published 2026-10-19T12:00:00.123456789Z; "
+                         "text and affected status unchanged since the review of 2026-10-18T12:00:00Z)")
+
+    def test_cpython_review_changed_text_refused(self) -> None:
+        _, advisory, entry = self.cpython_review_fixture()
+        for field in ("summary", "details"):
+            with self.subTest(field=field):
+                changed = {**advisory, "modified": "2026-10-19T12:00:00Z", field: advisory[field] + " "}
+                row = self.reviewed_cpython_row(changed, entry)
+                self.assertEqual(row["result"], "unreviewed")
+                self.assertNotIn("review", row)
+
+    def test_cpython_review_changed_affected_status_refused(self) -> None:
+        _, advisory, entry = self.cpython_review_fixture()
+        advisory["modified"] = "2026-10-19T12:00:00Z"
+        for was_affected in (True, False):
+            with self.subTest(was_affected=was_affected):
+                advisory["affected"][0]["versions"] = [] if was_affected else ["v3.14.8"]
+                row = self.reviewed_cpython_row(advisory, {**entry, "affected": was_affected})
+                self.assertEqual(row["result"], "unreviewed")
+
+    def test_cpython_review_new_alias_refused(self) -> None:
+        _, advisory, entry = self.cpython_review_fixture()
+        for revision in (entry["modified"], "2026-10-19T12:00:00Z"):
+            with self.subTest(revision=revision):
+                row = self.reviewed_cpython_row({**advisory, "modified": revision,
+                                                 "aliases": [*entry["aliases"], "CVE-new"]}, entry)
+                self.assertEqual(row["result"], "unreviewed")
+
+    def test_cpython_review_format_one_refused(self) -> None:
+        _, _, entry = self.cpython_review_fixture()
+        for key in ("summary_sha256", "details_sha256", "affected"):
+            del entry[key]
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "reviewed.json"
+            path.write_text(json.dumps({"format": 1, "cpython": [entry]}))
+            with self.assertRaisesRegex(ValueError, "CPython review format 1 lacks text and affected bindings; re-review as format 2"):
+                self.watch.cpython_reviews(path)
+
+    def test_cpython_reviews_bind_identity_and_expiry(self) -> None:
+        _, advisory, entry = self.cpython_review_fixture()
+        today = datetime.datetime.now(datetime.timezone.utc).date()
+        for changes in ({"id": "other"}, {"aliases": []}, {"version": "3.15.0"},
+                        {"re_review": str(today)}, {"re_review": str(today - datetime.timedelta(days=1))}):
+            with self.subTest(changes=changes):
+                self.assertEqual(self.reviewed_cpython_row(advisory, {**entry, **changes})["result"], "unreviewed")
+        self.assertEqual(self.reviewed_cpython_row({**advisory, "id": "unknown"}, entry)["result"], "unreviewed")
+        self.assertEqual(self.reviewed_cpython_row(advisory, entry, commit="b" * 40)["result"], "unreviewed")
+
+    def test_cpython_reviews_require_complete_typed_bindings(self) -> None:
+        _, _, entry = self.cpython_review_fixture()
+        changes = [{"reason": ""}, {"re_review": "2026-02-30"}, {"modified": ""}, {"extra": True},
+                   {"id": "CVE-test"}, {"summary_sha256": "g" * 64}, {"details_sha256": "a" * 63},
+                   {"summary_sha256": None}, {"affected": 1}, {"affected": "true"}]
+        variants = [[entry, entry], *[[{**entry, **change}] for change in changes]]
+        variants += [[{key: value for key, value in entry.items() if key != missing}]
+                     for missing in ("summary_sha256", "details_sha256", "affected")]
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "reviewed.json"
+            for entries in variants:
+                path.write_text(json.dumps({"format": 2, "cpython": entries}))
                 with self.subTest(entries=entries), self.assertRaises(ValueError):
                     self.watch.cpython_reviews(path)
 
-    def test_shipped_cpython_review_list_validates(self) -> None:
-        reviews = self.watch.cpython_reviews(SCRIPTS.parent / "vulnerability-watch-reviewed.json")
-        self.assertIsInstance(reviews, list)
+    def test_cpython_republication_needs_known_text_and_affected_versions(self) -> None:
+        _, advisory, entry = self.cpython_review_fixture()
+        advisory["modified"] = "2026-10-19T12:00:00Z"
+        variants = [{key: value for key, value in advisory.items() if key != missing}
+                    for missing in ("summary", "details", "affected", "modified")]
+        variants += [{**advisory, "summary": None}, {**advisory, "modified": "invalid"},
+                     {**advisory, "affected": [{"ranges": advisory["affected"][0]["ranges"]}]},
+                     {**advisory, "affected": [{"versions": ["v3.14.8"]}]},
+                     {**advisory, "affected": [{"ranges": [{"type": "GIT", "repo": "https://example.invalid/other"}],
+                                                "versions": ["v3.14.8"]}]}]
+        for current in variants:
+            with self.subTest(current=current):
+                self.assertEqual(self.reviewed_cpython_row(current, entry)["result"], "unreviewed")
 
     def test_only_the_reviews_the_scanned_runtime_needs_remain(self) -> None:
-        reviews = self.watch.cpython_reviews(SCRIPTS.parent / "vulnerability-watch-reviewed.json")
+        path = SCRIPTS.parent / "vulnerability-watch-reviewed.json"
+        self.assertEqual(json.loads(path.read_text())["format"], 2)
+        reviews = self.watch.cpython_reviews(path)
         version = json.loads((REPO_ROOT / "packaging/python-runtimes.json").read_text())["python"]
-        self.assertEqual(version, "3.15.2")
-        # This is a bounded non-use review, not a claim that CPython is fixed.
-        # The watch's published runtime is the same version as the bundled pin.
-        self.assertEqual([{key: review[key] for key in ("id", "aliases", "modified", "version", "re_review")}
-                          for review in reviews], [{
-            "id": "CVE-2026-124249", "aliases": [],
-            "modified": "2026-11-13T02:30:33.123266090Z", "version": version, "re_review": "2026-12-01",
-        }])
-        self.assertIn("http.cookiejar", reviews[0]["reason"])
-        self.assertIn("HTTPCookieProcessor", reviews[0]["reason"])
-        self.assertIn("not a CPython fix", reviews[0]["reason"])
+        # A re-review changes the record, not a second copy of its revision in a test.
+        for review in reviews:
+            self.assertEqual(review["version"], version)
+            for key in ("summary_sha256", "details_sha256"):
+                self.assertRegex(review[key], r"^[0-9a-f]{64}$")
+            self.assertIs(type(review["affected"]), bool)
+            self.assertTrue(review["reason"].strip())
 
     def test_watch_applies_explicit_cpython_reviews(self) -> None:
-        cpython = {"version": "3.14.8", "commit": "a" * 40}
-        entry = {"id": "PSF-test", "aliases": [], "modified": "2026-10-18T12:00:00Z", "version": "3.14.8",
-                 "reason": "Synthetic review.",
-                 "re_review": str(datetime.datetime.now(datetime.timezone.utc).date() + datetime.timedelta(days=1))}
+        cpython, advisory, entry = self.cpython_review_fixture()
+        advisory["modified"] = "2026-10-19T12:00:00Z"
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             reviews = root / "reviews.json"
-            reviews.write_text(json.dumps({"format": 1, "cpython": [entry]}))
+            reviews.write_text(json.dumps({"format": 2, "cpython": [entry]}))
             with mock.patch.object(self.watch, "download_release", return_value={"version": "1.0.0"}), \
                     mock.patch.object(self.watch, "release_dispositions", return_value=(Path("policy"),
                                       {"source": "tag:v1.0.0", "sha256": "b" * 64})), \
@@ -4230,7 +4302,7 @@ class VulnerabilityWatchTests(unittest.TestCase):
                     mock.patch.object(self.watch, "module_queries", return_value=[]), \
                     mock.patch.object(self.watch, "cpython_query", return_value=({"commit": cpython["commit"]}, cpython)), \
                     mock.patch.object(self.watch, "request", side_effect=[
-                        b'{"results":[{"vulns":[{"id":"PSF-test"}]}]}', json.dumps(entry).encode()]):
+                        b'{"results":[{"vulns":[{"id":"PSF-test"}]}]}', json.dumps(advisory).encode()]):
                 report, ok = self.watch.watch("example/project", root, "scanner", Path("policy"), reviews)
             self.assertTrue(ok, report)
             self.assertEqual(report["osv"][0]["review"], entry)
