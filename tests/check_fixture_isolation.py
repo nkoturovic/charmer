@@ -716,8 +716,8 @@ def _parallel_probes(args: argparse.Namespace, kinds: tuple[str, ...], labels: d
 
     def report(kind: str, code: int) -> None:
         results[kind] = code
-        print(f"=== {labels[kind]}\n" + (args.log_dir / f"{kind}.log").read_text(errors="replace"),
-              end="", flush=True)
+        block = (args.log_dir / f"{kind}.log").read_text(errors="replace")
+        print(f"=== {labels[kind]}\n" + block, end="" if block.endswith("\n") else "\n", flush=True)
 
     def interrupted(signum, frame):
         raise KeyboardInterrupt

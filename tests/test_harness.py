@@ -522,6 +522,33 @@ class IsolationEnvironmentTests(unittest.TestCase):
     def test_parallel_setup_failure_stops_other_probes(self) -> None:
         self._parallel_probe_case({"model": 2, "retired": 3, "operator": 3}, 2)
 
+    def test_partial_probe_block_cannot_hide_the_parent_overall(self) -> None:
+        import io
+        import re
+        from tests import check_fixture_isolation as isolation
+
+        with tempfile.TemporaryDirectory(prefix="cm-probe-partial-") as tmp:
+            root = Path(tmp)
+            def command(args, kind):
+                if kind != "operator":
+                    script = f"from pathlib import Path; print('OVERALL: PASS ({kind} PASS)'); Path({str(root / kind)!r}).touch()"
+                else:
+                    # End last, without a newline, as an interrupted probe can.
+                    script = ("import sys, time; from pathlib import Path; "
+                              f"root = Path({tmp!r}); deadline = time.monotonic() + 5\n"
+                              "while not all((root / k).exists() for k in ('model', 'retired')):\n"
+                              "    assert time.monotonic() < deadline\n"
+                              "    time.sleep(.01)\n"
+                              "time.sleep(.2); sys.stdout.write('RESULT: FAIL partial'); sys.exit(1)")
+                return [sys.executable, "-c", script]
+            output = io.StringIO()
+            with mock.patch.object(isolation, "_probe_command", side_effect=command), mock.patch("sys.stdout", output):
+                self.assertEqual(isolation.main(["--jobs", "3", "--log-dir", tmp]), 1)
+            text = output.getvalue()
+            self.assertIn("RESULT: FAIL partial\n", text)
+            self.assertEqual(re.findall(r"(?m)^OVERALL[:\s]+(\w+)", text)[-1], "FAIL")
+            self.assertTrue(text.endswith("OVERALL: FAIL (model PASS, retired PASS, operator FAIL)\n"))
+
     def _parallel_probe_case(self, codes, expected):
         import io
         import json
