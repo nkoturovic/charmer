@@ -14,6 +14,7 @@
 
 - Lead class `large`: process compaction window 800000 tokens; deterministic reactive trigger 702000 (90% of the prompt budget). Proactive summary preparation is runtime-controlled and may occur earlier. These numbers hold for every model in your lead set.
 - Operating ceiling: the process window is capped below the lead set's smallest provider bound by local operating policy; it is not a route-capability claim.
+- Process scalar: CLAUDE_CODE_MAX_CONTEXT_TOKENS=200000 is exported; it is the window of every model id without [1m].
 - Context qualification: at least one lead-set provider bound is not near-limit benchmark-verified; it follows explicit route or operator attestation.
 
 ## Standing rules (generated)

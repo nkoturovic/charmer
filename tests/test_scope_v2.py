@@ -757,7 +757,9 @@ class SettingsTests(unittest.TestCase):
                     self.assertEqual({key: plan.settings["env"][key] for key in keys if key in plan.settings["env"]},
                                      {key: result.env_set[key] for key in keys if key in result.env_set})
                     self.assertEqual(plan.settings["env"][keys[1]], str(percent))
-                    self.assertEqual(keys[2] in plan.settings["env"], scalar is not None and client_tokens < 1000000)
+                    # A declared scalar below the 1M class, else the 200K class.
+                    self.assertEqual(plan.settings["env"][keys[2]],
+                                     str(scalar if scalar is not None and client_tokens < 1000000 else 200000))
 
     def test_explore_cap_setting(self) -> None:
         bundle, lcat, eff, lineup = _seed("balanced")
@@ -1640,12 +1642,12 @@ class LeadContextTests(unittest.TestCase):
         self.assertEqual(
             context.scalar, min(800_000, lines[key]["context"]["provider_tokens"] - 1000)
         )
-        # A 1M lead class never exports a scalar (the fixture large class
-        # has a scalar line).
+        # A 1M lead class never exports a declared scalar (the fixture large
+        # class has a scalar line): it exports the 200K class.
         _, lcat2, eff2, lineup2 = _seed("balanced")
         fence2 = scope.compile_fence(lineup2, lcat2, eff2)
         self.assertTrue(any(row.scalar_tokens is not None for row in fence2.lead_set))
-        self.assertIsNone(compiler.lead_set_context(fence2, 90).scalar)
+        self.assertEqual(compiler.lead_set_context(fence2, 90).scalar, profile.CLASS_STANDARD)
 
 
 class CatalogMetaV2Tests(unittest.TestCase):
@@ -2030,7 +2032,8 @@ class LineupDefaultEnvTests(unittest.TestCase):
 
     def test_the_lineup_default_env(self) -> None:
         self.assertEqual(compiler.lineup_default_env("lead[1m]", ()),
-                         {"ANTHROPIC_DEFAULT_HAIKU_MODEL": "lead[1m]", "DISABLE_AUTO_COMPACT": "0"})
+                         {"ANTHROPIC_DEFAULT_HAIKU_MODEL": "lead[1m]", "DISABLE_AUTO_COMPACT": "0",
+                          "CLAUDE_CODE_DISABLE_1M_CONTEXT": "0"})
         bound = (("sonnet", "s[1m]"), ("haiku", "h[1m]"), ("haiku", "h[1m]"))
         self.assertEqual(compiler.lineup_default_env("lead[1m]", bound)["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "h[1m]")
         # Another line on the same wire is not the haiku line.

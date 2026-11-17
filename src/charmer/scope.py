@@ -1033,8 +1033,7 @@ def _agent_forms(line: OfferedLine, policy: profile.WindowPolicy) -> list[str]:
     forms: list[str] = []
     for _effort, selector in _line_selectors_v2(line):
         decided = profile.role_window(
-            selector, client_tokens=context["client_tokens"], provider_tokens=context["provider_tokens"],
-            policy=policy, decide=True,
+            selector, provider_tokens=context["provider_tokens"], policy=policy, decide=True,
         ).selector
         forms += [selector, decided]
     return forms
@@ -1390,8 +1389,7 @@ def _workflow_default_window(
     context = entry["context"]
     return profile.role_window(
         profile.binding_selector(entry, line.provider, effort, lead=False)[0],
-        client_tokens=context["client_tokens"], provider_tokens=context["provider_tokens"],
-        policy=policy, decide=True,
+        provider_tokens=context["provider_tokens"], policy=policy, decide=True,
     )
 
 
@@ -1458,8 +1456,7 @@ def workflow_default_warnings(
             known_families=cat.known_families,
             admitted=entry.get("status", "active") != "new" or key in eff.admitted_lines))
         problem = profile.agent_window_problem(
-            profile.binding_agent_selector(entry, effort), entry["context"]["provider_tokens"],
-            policy=policy, client_tokens=entry["context"]["client_tokens"])
+            profile.binding_agent_selector(entry, effort), entry["context"]["provider_tokens"], policy=policy)
         if problem:
             warnings.append(profile.Finding("context-risk", None, f"{key}: {problem}", "workflow context overflow risk"))
     return tuple(profile.Finding(finding.code, finding.slot, f"workflow default: {finding.message}",
@@ -1941,8 +1938,7 @@ def compile_lineup_scope(
     # Flag settings win over user/project env and survive takeover.
     env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = str(context.window)
     env["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"] = str(context.percent)
-    if context.scalar is not None:
-        env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(context.scalar)
+    env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(context.scalar)
     if eff.explore_inherit_cap_disabled:
         env["CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP"] = "1"
     if workflow_default is not None:

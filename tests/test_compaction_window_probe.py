@@ -25,7 +25,10 @@ and local settings and the process environment, after ``/autocompact``
 flag passed straight to the client (a launch refuses one; the variable
 outranks it anyway); a
 ``[1m]`` agent on a line bound below the window shares its 200K class's
-window; a lead set bound below 100K compacts at the client's 100K floor,
+window (from Claude Code 2.1.323 an id without ``[1m]`` is 1M unless
+``CLAUDE_CODE_MAX_CONTEXT_TOKENS`` says otherwise: the compile states the
+200K class there, in every representation below); a lead set bound below
+100K compacts at the client's 100K floor,
 never at the model's own default.
 
 Per-agent windows (an agent file's ``autoCompactWindow``) are not compiled: a
@@ -91,7 +94,8 @@ USER_WINDOW = 300_000
 FLAG_WINDOW = 1_000_000
 REPRESENTATIONS = ("env", "settings", "flag")
 PASS_CLASS = "env-window-holds"
-
+# The client's own refusal of a context past the session's limit.
+_TOO_LONG = "prompt is too long"
 
 
 # The completion record the re-pin gate requires (charmer.upgrade); release
@@ -170,6 +174,8 @@ class Case:
     # A user settings env (the user layer) and extra flag settings env.
     user_env: tuple[tuple[str, str], ...] = field(default=())
     flag_env: tuple[tuple[str, str], ...] = field(default=())
+    # Recorded only: the run may end with the client's "Prompt is too long".
+    stop_allowed: bool = False
 
 
 def cases(window: int) -> tuple[Case, ...]:
@@ -220,11 +226,12 @@ def cases(window: int) -> tuple[Case, ...]:
         # the compiled scope (a launch unsets them in the process
         # environment), and the flag settings stating them off (from 2.1.311
         # a settings env can use DISABLE_COMPACT only to turn compaction off).
-        Case("env-lead-user-disable-compact", "env", "lead", "base", lead, user_env=(("DISABLE_COMPACT", "1"),)),
+        Case("env-lead-user-disable-compact", "env", "lead", "base", lead, user_env=(("DISABLE_COMPACT", "1"),),
+             stop_allowed=True),
         Case("env-lead-user-disable-auto-compact", "env", "lead", "base", lead,
              user_env=(("DISABLE_AUTO_COMPACT", "1"),)),
         Case("env-lead-user-disable-compact-flag-off", "env", "lead", "base", lead,
-             user_env=(("DISABLE_COMPACT", "1"),), flag_env=(("DISABLE_COMPACT", "0"),)),
+             user_env=(("DISABLE_COMPACT", "1"),), flag_env=(("DISABLE_COMPACT", "0"),), stop_allowed=True),
         Case("env-lead-user-disable-auto-compact-flag-off", "env", "lead", "base", lead,
              user_env=(("DISABLE_AUTO_COMPACT", "1"),), flag_env=(("DISABLE_AUTO_COMPACT", "0"),)),
         Case("env-lead-flag-disable-compact-off", "env", "lead", "base", lead, flag_env=(("DISABLE_COMPACT", "0"),)),
@@ -245,6 +252,8 @@ def outcomes(observed: dict, expected: dict) -> dict[str, str]:
             raise client_probe._Inconclusive(f"{name}: the lead never spawned the agent")
         if row["target_models"] != [want["wire"]]:
             outcome[name] = "model-wrong"
+        elif row.get("stopped"):
+            outcome[name] = f"stopped-after-{row['peak']}"
         elif row["summaries"] and row["first_summary_after"] == want["trigger"]:
             outcome[name] = "ok"
         elif row["summaries"]:
@@ -326,10 +335,16 @@ class ScheduleTests(unittest.TestCase):
         # (a client that ignores it, as 2.1.311 did, still passes).
         rows["env-agent-window"]["first_summary_after"] = 162_000
         rows["settings-lead-autocompact-flag"]["summaries"] = 0
+        # A user's DISABLE_COMPACT: the turn stops at the session's limit (recorded).
+        rows["env-lead-user-disable-compact"].update(summaries=0, stopped=True, peak=251_000)
         outcome = outcomes(rows, expected)
         self.assertEqual(outcome["env-agent-window"], "compacted-at-162000")
         self.assertEqual(outcome["settings-lead-autocompact-flag"], "never-compacted")
+        self.assertEqual(outcome["env-lead-user-disable-compact"], "stopped-after-251000")
         self.assertEqual(verdict(outcome, gating), PASS_CLASS)
+        self.assertEqual({case.name for case in names if case.stop_allowed},
+                         {"env-lead-user-disable-compact", "env-lead-user-disable-compact-flag-off"})
+        self.assertFalse(gating & {case.name for case in names if case.stop_allowed})
         broken = copy.deepcopy(rows)
         broken["env-lead-autocompact-flag"]["summaries"] = 0
         self.assertEqual(verdict(outcomes(broken, expected), gating), "env-lead-autocompact-flag-never-compacted")
@@ -389,12 +404,12 @@ class CompactionWindowProbe(client_probe._ProbeCase, unittest.TestCase):
             self._settings(fixture, {"env": dict(case.user_env)}, str(target.relative_to(fixture.root)))
         # The launch's own process environment (the probe harness admits a
         # window from 100K; below it the flag settings alone carry it).
-        policy = (probe.ProbeCompactionPolicy(context.window, context.percent)
+        policy = (probe.ProbeCompactionPolicy(context.window, context.percent, context.scalar)
                   if process_env and context.window >= CLIENT_FLOOR else None)
         if case.user_overrides:
             # The user's own process environment, too (a launch replaces it;
             # the flag settings' value must win anyway).
-            policy = probe.ProbeCompactionPolicy(USER_WINDOW, context.percent)
+            policy = probe.ProbeCompactionPolicy(USER_WINDOW, context.percent, context.scalar)
         alternatives = {case.expected, trigger(context.window), trigger(profile.CLASS_STANDARD),
                         trigger(AGENT_WINDOW), trigger(USER_WINDOW), trigger(WIDE_AGENT_WINDOW),
                         trigger(CLIENT_FLOOR), trigger(SMALL_LEAD)}
@@ -429,8 +444,14 @@ class CompactionWindowProbe(client_probe._ProbeCase, unittest.TestCase):
             extra = (*extra, "--resume", session)
         result, responder = self._run(fixture, responder=responder, model=compiled["lead"].selector, extra=extra,
                                       document=flag_settings, compaction=policy, timeout=300)
-        self._complete(result)
-        row = responder.observation()
+        # Compaction turned off in the user's layer: from 2.1.98 the client
+        # holds the session to CLAUDE_CODE_MAX_CONTEXT_TOKENS instead (a [1m]
+        # lead included), so the turn may stop there; a recorded outcome.
+        stopped = (case.stop_allowed and not result.timed_out and result.returncode == 1
+                   and _TOO_LONG in (result.stdout or "").lower())
+        if not stopped:
+            self._complete(result)
+        row = {**responder.observation(), "stopped": stopped}
         self.evidence[case.name] = row
         return row
 

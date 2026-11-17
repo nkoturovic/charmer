@@ -189,9 +189,8 @@ def windows(lineup) -> dict[str, profile.RoleWindow]:
 class RoleWindowRuleTests(unittest.TestCase):
     POLICY = profile.WindowPolicy(window=800_000, percent=90)
 
-    def role(self, selector="x-high[1m]", bound=1_000_000, *, client=1_000_000, decide=True, policy=None):
-        return profile.role_window(selector, client_tokens=client, provider_tokens=bound,
-                                   policy=policy or self.POLICY, decide=decide)
+    def role(self, selector="x-high[1m]", bound=1_000_000, *, decide=True, policy=None):
+        return profile.role_window(selector, provider_tokens=bound, policy=policy or self.POLICY, decide=decide)
 
     def test_a_bound_below_equal_to_and_above_the_session_window(self) -> None:
         below = self.role(bound=799_999)
@@ -209,13 +208,17 @@ class RoleWindowRuleTests(unittest.TestCase):
     def test_a_selector_as_bound_is_never_narrowed(self) -> None:
         lead = self.role(bound=300_000, decide=False)
         self.assertEqual((lead.selector, lead.window, lead.narrowed), ("x-high[1m]", 800_000, False))
-        kept = self.role("x-high", bound=1_000_000, client=200_000, decide=False)
-        self.assertEqual((kept.selector, kept.client_class, kept.window), ("x-high", 200_000, 200_000))
+        # A bound selector without [1m] (a lead, a recorded binding) runs in
+        # the exported 200K class whatever its line declares: the client
+        # gives an id it does not know 1M, the scalar holds it to 200K.
+        for policy in (self.POLICY, profile.window_policy([(500_000, 500_000, None)], 90)):
+            kept = self.role("x-high", bound=500_000, decide=False, policy=policy)
+            self.assertEqual((kept.selector, kept.client_class, kept.window), ("x-high", 200_000, 200_000))
 
     def test_suffixless_agents_use_the_actual_200k_class_not_declared_capacity(self) -> None:
         for declared in (128_000, 258_400, 500_000, 1_000_000):
             with self.subTest(declared=declared):
-                role = self.role("y-high", bound=declared, client=declared)
+                role = self.role("y-high", bound=declared)
                 self.assertEqual((role.selector, role.client_class, role.window, role.narrowed),
                                  ("y-high", 200_000, 200_000, False))
 
@@ -227,13 +230,17 @@ class RoleWindowRuleTests(unittest.TestCase):
         self.assertEqual((wide.selector, wide.window), ("x-high[1m]", 320_032))
 
     def test_window_policy_over_the_lead_set(self) -> None:
+        # No declared scalar: every policy exports the 200K class.
+        standard = profile.CLASS_STANDARD
         rows = [(1_000_000, 1_000_000, None), (872_000, 1_000_000, None)]
-        self.assertEqual(profile.window_policy(rows, 90), profile.WindowPolicy(800_000, 90, None))
-        self.assertEqual(profile.window_policy(rows, 70, ceiling=500_000), profile.WindowPolicy(500_000, 70, None))
+        self.assertEqual(profile.window_policy(rows, 90), profile.WindowPolicy(800_000, 90, standard))
+        self.assertEqual(profile.window_policy(rows, 70, ceiling=500_000), profile.WindowPolicy(500_000, 70, standard))
         self.assertEqual(profile.window_policy(rows + [(600_000, 1_000_000, None)], 90).window, 600_000)
         sub = [(320_032, 320_032, None), (258_400, 258_400, 258_400)]
         self.assertEqual(profile.window_policy(sub, 90), profile.WindowPolicy(258_400, 90, 258_400))
-        self.assertEqual(profile.window_policy([], 90, ceiling=400_000), profile.WindowPolicy(400_000, 90, None))
+        self.assertEqual(profile.window_policy([], 90, ceiling=400_000),
+                         profile.WindowPolicy(400_000, 90, standard))
+        self.assertEqual(profile.default_policy().scalar, standard)
 
     def test_the_compiler_and_the_rule_share_the_policy(self) -> None:
         rows = [(1_000_000, 1_000_000, None), (900_000, 1_000_000, None)]
@@ -408,10 +415,12 @@ class MixedBoundsTests(unittest.TestCase):
         self.assertLess(bound, CEILING)
         self.assertEqual(lineup.policy.window, bound)
         rows = windows(lineup)
-        self.assertEqual(rows["cm-lead"].window, bound)
+        # The suffixless lead runs in the exported 200K class; [1m] agents
+        # at the session window.
+        self.assertEqual(rows["cm-lead"].window, min(profile.CLASS_STANDARD, bound))
         self.assertTrue(lineup.agents["cm-analyst"].binding.selector.endswith("[1m]"))
         self.assertEqual(rows["cm-analyst"].window, bound)
-        # A suffixless agent without a process scalar uses the client's 200K class.
+        # A suffixless agent uses the exported 200K class.
         self.assertEqual(lineup.agents[slot].binding.selector,
                          small_entry["efforts"][small_entry["default_effort"]]["selector"])
         self.assertEqual(rows[slot].window, min(profile.CLASS_STANDARD, bound))
@@ -513,7 +522,7 @@ class CompiledEnvTests(unittest.TestCase):
         document = copy.deepcopy(bundle.seed_profiles["balanced"])
         document["settings_overrides"] = {"compaction_percent": 70}
         lineup = profile.resolve(document, lcat, effective=eff)
-        self.assertEqual(lineup.policy, profile.WindowPolicy(800_000, 70, None))
+        self.assertEqual(lineup.policy, profile.WindowPolicy(800_000, 70, profile.CLASS_STANDARD))
         result = launch(bundle, bundle.docs, eff, lineup)
         for env in (result.env_set, result.scope_plan.settings["env"]):
             self.assertEqual((env[WINDOW_ENV], env[PERCENT_ENV]), ("800000", "70"))
@@ -722,8 +731,8 @@ class WindowCeilingRuntimeTests(_v4.V4Case):
         trigger = compiler.reactive_trigger(500_000, 90)
         self.assertTrue(all(line.endswith(f"window 500000 · compacts at {trigger}") for line in rows), rows)
         self.assertTrue(all("[1m] · 1M class" in line for line in rows), rows)
-        self.assertIn(f"compaction env (process and scope settings): {WINDOW_ENV}=500000 {PERCENT_ENV}=90\n",
-                      text)
+        self.assertIn(f"compaction env (process and scope settings): {WINDOW_ENV}=500000 {PERCENT_ENV}=90 "
+                      "CLAUDE_CODE_MAX_CONTEXT_TOKENS=200000\n", text)
         self.assertNotIn(_v4.FIXTURE_GATEWAY_TOKEN, text)
 
     def test_the_command_shows_sets_and_resets(self) -> None:

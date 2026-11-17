@@ -142,10 +142,11 @@ def oracle_context(lines, rows, percent):
     contexts = [lines[key]["context"] for key, _e, _s in rows]
     window = min(CEILING, min(c["provider_tokens"] for c in contexts))
     scalars = [c["scalar_tokens"] for c in contexts if c.get("scalar_tokens") is not None]
+    # Without a declared scalar every session exports the 200K class.
     scalar = (
         min(CEILING, min(scalars))
         if scalars and max(c["client_tokens"] for c in contexts) < 1_000_000
-        else None
+        else 200_000
     )
     budget = window - OUTPUT_RESERVE
     trigger = min(budget * percent // 100, budget - HEADROOM)

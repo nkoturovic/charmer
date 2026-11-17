@@ -1920,6 +1920,12 @@ _RADAR_SETTINGS_KEYS: dict[str, tuple[Callable[[Any], bool], str, str]] = {
 
 
 _RADAR_SUBAGENT_KEYS = ("CLAUDE_CODE_SUBAGENT_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL_FORCE")
+# Policy keys every managed scope states "0" in its flag settings: a user's
+# value reaches plain claude only.
+_RADAR_NEUTRALIZED_ENV = {
+    compiler.AUTO_COMPACT_ENV: "managed sessions re-enable compaction; plain claude does not compact",
+    compiler.ONE_M_CONTEXT_ENV: "managed sessions keep their 1M windows; plain claude holds 1M models to 200K",
+}
 
 
 def _radar_credential_keys() -> frozenset[str]:
@@ -1997,13 +2003,12 @@ def _settings_radar(runtime: runtime_mod.Runtime, records: list[dict[str, Any]])
                         "session's apiKeyHelper (token rotation would break those sessions) "
                         "— remove it (charmer doctor --rotate-token refuses while it is set)"
                     )
-                elif key == compiler.AUTO_COMPACT_ENV:
+                elif key in _RADAR_NEUTRALIZED_ENV:
                     # Every managed scope states it "0" in its flag settings,
                     # which outrank this layer; DISABLE_COMPACT stays
                     # a policy key (the pinned client lets nothing undo it).
                     if str(env[key]).strip().lower() not in ("", "0", "false", "no", "off"):
-                        info.append(f"{path}: env.{key}: managed sessions re-enable compaction; plain claude "
-                                    "does not compact")
+                        info.append(f"{path}: env.{key}: {_RADAR_NEUTRALIZED_ENV[key]}")
                 elif key in policy_keys and env[key] not in (None, ""):
                     attention.append(
                         f"{path}: env.{key} defeats the charmer session policy (claude "
