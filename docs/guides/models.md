@@ -75,7 +75,7 @@ Every managed session names the model for Claude Code's own background requests
 the haiku model, otherwise the lead, so a value in your own or your project's
 settings cannot send them outside the session's models.
 
-### Lines moved in this release
+### Lines moved in 2.3.0
 
 - `muse` uses Muse Wonder 1.0 (`muse-wonder-1.0`) on Meta's Model API.
   Smoke, low/medium/high/xhigh, automatic tool use and streaming passed on
@@ -90,7 +90,7 @@ settings cannot send them outside the session's models.
   contract-level support, not live-qualified efforts.
 
 Those measurements used Claude Code 2.1.310 and CLIProxyAPI 8.0.42; they
-are not new measurements on this release's pins. Earlier models keep
+have not been repeated on later pins. Earlier models keep
 serving running sessions until they resume. The first-party
 `deepseek-flash` line keeps DeepSeek's canonical alias: the provider's docs
 checked on 2026-10-27 say it serves V4.1-Flash-1017, but that snapshot has

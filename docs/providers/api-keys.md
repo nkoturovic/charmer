@@ -313,7 +313,7 @@ refuses `api.openai.com` and has its own availability
 `muse-contributor` stays on Spark 1.3 because Meta answered HTTP 404 for
 `muse-wonder-1.0-contributor` on 2026-10-27. Muse Wonder Full is restricted
 to Muse Code, not the public Model API; candidates and declarations name
-that limit. The [models guide](../guides/models.md#lines-moved-in-this-release)
+that limit. The [models guide](../guides/models.md#lines-moved-in-230)
 records the moved line's measurements and continuity for running sessions.
 
 Meta's route uses strict tool schemas: a tool whose `required` list omits
