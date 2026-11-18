@@ -128,6 +128,22 @@ session and gateway behavior on Linux, macOS and WSL2. Interactive
 onboarding is not established by those journeys; no particular first-run
 screen sequence is verified.
 
+The pinned Claude Code 2.1.326 also asks, at every launch and resume in a
+terminal, whether to add the session's scope folder ("Adding a new
+directory"; "No, exit" is preselected, and "Yes, add it" lasts for that
+session only). To answer once for every session, trust charmer's scopes
+folder (your first launch creates it) in a terminal outside Claude Code:
+
+```bash
+cd ~/.local/state/charmer/scopes                # or $XDG_STATE_HOME/charmer/scopes
+~/.local/share/charmer/claude/2.1.326/claude    # or $XDG_DATA_HOME/charmer/claude/2.1.326/claude
+```
+
+Choose "Yes, I trust this folder", then type `/exit`. charmer never writes
+Claude Code's configuration, so this step is yours. It covers every scope
+below that folder, unless the folder is inside a git repository. Headless
+runs (`-p`) never ask.
+
 ## 4. Change one agent
 
 Inside the session, type these yourself, using the agent and model you want:

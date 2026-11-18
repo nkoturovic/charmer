@@ -8,11 +8,119 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [2.6.0] — 2026-11-18
 
+### Upgrade notes
+
+2.6.0 changes the launcher, the gateway (CLIProxyAPI 8.0.76) and the pinned
+Claude Code, from 2.1.322 to 2.1.326; catalog 45 ships with it. State and
+record formats stay 4. After `charmer update`, restart the gateway between
+turns (`charmer gateway restart`, guarded) and check
+`charmer update --verify`. Running managed sessions keep their client,
+compiled settings and routes until their next launch or resume.
+
+Claude Code 2.1.326 asks in a terminal whether to add a session's scope
+folder ("Adding a new directory"; "No, exit" is preselected, and "Yes"
+holds for that session only) at every launch, resume and fork, until you
+trust charmer's scopes folder once: start the pinned Claude Code in that
+folder and answer its folder-trust question Yes
+([quickstart](docs/quickstart.md#3-launch)).
+charmer never writes Claude Code's configuration; `-p` never asks.
+
+### Added
+
+- `charmer doctor` reports `CLAUDE_CODE_DISABLE_1M_CONTEXT` in a settings
+  file's `env` as Info (managed sessions keep their 1M windows; plain
+  `claude` holds 1M models to 200K) and
+  `CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT` as Attention, with
+  the remedy to remove it.
+
+### Changed
+
+- Claude Code 2.1.326 is the pinned client (signed for all eight
+  platforms; settings keys added: `clawdFileProgressEnabled`,
+  `precomputeArmTokens`; none removed); catalog 45.
+- From Claude Code 2.1.323 a model id the client does not know gets a 1M
+  window even without `[1m]`. Managed sessions export
+  `CLAUDE_CODE_MAX_CONTEXT_TOKENS` (200000 unless the lead set declares its
+  own), so such an id runs in the 200K class again; `[1m]` selectors and
+  Claude's own ids keep 1M, also against a `CLAUDE_CODE_DISABLE_1M_CONTEXT`
+  in your settings, which managed sessions state `0`. A launch clears it
+  and `CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT` from the
+  inherited environment, and a lead's environment cannot set either.
+- When a managed session ends, Claude Code's exit hint reads
+  `Resume this session with: charmer --resume <id>` (it named `claude`), and
+  that command resumes it as a managed session.
+- Managed sessions no longer get charmer's subagent status line: Claude
+  Code 2.1.326 shows "subagentStatusLine is deprecated in favor of mods and
+  will stop working in a future release" at every start while any settings
+  layer sets it. `charmer statusline subagents` stays: to keep charmer's
+  rows, set `subagentStatusLine` in your own settings to the command
+  `charmer doctor` prints, and accept the notice. A session 2.5.0 compiled
+  with the line drops it at its next resume or `charmer doctor --repair`.
+- The gateway is CLIProxyAPI 8.0.76 with 30 local patches, built with Go
+  1.27.4 (golang.org/x/crypto 0.59.0, x/net 0.63.0, oauth2 0.38.0,
+  fsnotify 1.10.1).
+- A gateway that cannot load its configuration, store or service now exits
+  with status 1 at start. The supervised service starts it again and marks
+  it failed after five starts in five minutes; `charmer gateway status`
+  reports it stopped meanwhile, and the failure notice names the recovery.
+  `charmer gateway logs` shows why.
+- On a ChatGPT account on the Free, Free workspace or K-12 plan, the
+  gateway no longer offers the models charmer adds to the account's list
+  beyond its built-in ones (a GPT-6.2 model, for example): those plans do
+  not serve them. Every other plan, and an unknown one, keeps them.
+- The Nix channel lane follows a newer nixos-unstable revision, and the
+  release journey images (Ubuntu 22.04 and 24.04) and govulncheck (1.10.0)
+  their newest releases; the bundled CPython stays 3.15.2
+  (python-build-standalone 20261110).
+
 ### Fixed
 
 - The gateway identifies its requests on a ChatGPT account as Codex CLI
   0.169.0 (was 0.159.1); OpenAI requires at least 0.166.0 for GPT-6.2.
   `charmer discover openai` lists models as the same client.
+- When a catalog moves a session's line to a newer model, doctor checks the
+  session's scope against what it launched with also for lines whose effort
+  the gateway sets (every shipped line except the Anthropic ones); before,
+  unknown edits to such a scope went unreported.
+- A session started under 2.5.0 is no longer reported BLOCKED when its
+  scope differs only by charmer's former subagent status line and an agent
+  file difference doctor accepts on its own: both are Attention and apply
+  at the next resume or `charmer doctor --repair`.
+- `charmer doctor --help` no longer says plain doctor may refresh shared
+  helpers: plain doctor writes nothing.
+
+### Security
+
+- The gateway refuses the websocket tunnel (`/v1/tunnel`) and the Muse Code
+  relay (`/muse-code`) with 404, before any handler or key check.
+- `charmer providers sign-in openai` follows only same-origin redirects for
+  its user-code request and token poll, so a redirect cannot carry the
+  device id and user code to another host.
+- golang.org/x/crypto 0.59.0 fixes GO-2026-5932; the gateway carries no
+  reviewed vulnerability exception.
+- The non-use review of CPython CVE-2026-124249 is bound to the advisory's
+  text and affected versions as well as its revision: a re-publication with
+  unchanged text keeps it, and any other change asks for a new review.
+
+### Known limits
+
+- Stopping or restarting the gateway closes HTTP requests in flight instead
+  of draining them; refreshes of a sign-in already running are still
+  waited for, within the 30-second shutdown budget.
+- The gateway does not forward a provider's `x-should-retry`, and on Claude
+  routes its `Retry-After` is its own: 8–37 s measured against a provider's
+  7 s.
+- On Claude Code 2.1.326 a mod you install runs its own tool calls without
+  the session's deny rules, as its file access always could. Install only
+  mods you trust, and none that let the model drive arbitrary tool calls; in
+  a managed session the model still cannot write or turn on a mod.
+- Files a worktree-isolated agent leaves only in gitignored paths are
+  deleted with its worktree (upstream #110235; Claude Code 2.1.322 and
+  2.1.326 alike): an isolated `cm-*` writer commits its outputs, or writes
+  them outside gitignored paths, before it finishes.
+- With `DISABLE_COMPACT` in your Claude Code settings, a 1M gateway lead
+  stops with "Prompt is too long" near 200K instead of compacting.
+- The Nix development shell keeps GnuPG 2.4.9 (FreePG).
 
 ## [2.5.0] — 2026-11-13
 

@@ -513,7 +513,7 @@ def build_parser() -> argparse.ArgumentParser:
         "client's JSON document on stdin and always exits 0.",
     )
     kinds = statusline_parser.add_subparsers(dest="statusline_kind", metavar="KIND", required=True)
-    kinds.add_parser("subagents", help="the managed sessions' subagent rows (their compiled subagentStatusLine)")
+    kinds.add_parser("subagents", help="subagent rows for a subagentStatusLine setting of your own")
     kinds.add_parser("main", help="a one-line main status for a statusLine setting of your own")
 
     migrate_parser = _add_command(commands, "migrate")
@@ -681,9 +681,9 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser = _add_command(
         commands, "doctor",
         description="Check this installation and its sessions. The verdict is Ready, Attention or BLOCKED; "
-        "each finding names one fix. Plain doctor makes no repairs and fetches no release metadata; launcher "
-        "initialization may refresh shared helpers. Use charmer doctor --json for a report that does not write "
-        "local state. --repair, --prune and --rotate-token act.",
+        "each finding names one fix. Plain doctor makes no repairs, fetches no release metadata and writes "
+        "nothing. Use charmer doctor --json for the same check as a report that does not write local state. "
+        "--repair, --prune and --rotate-token act.",
     )
     doctor_actions = doctor_parser.add_mutually_exclusive_group()
     doctor_actions.add_argument("--json", action="store_true", help="read-only diagnostic report (one JSON document)")

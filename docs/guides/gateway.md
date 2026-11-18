@@ -62,6 +62,11 @@ starts within ten minutes pause automatic starts until you start it
 yourself (`charmer gateway start`), so a crashing gateway does not
 loop; `charmer gateway logs` shows why it stopped.
 
+A gateway that cannot load its configuration, its credential store or its
+service exits with status 1 at start. `charmer gateway start` (and a
+launch) then fails with “the gateway exited during its start” and the fix
+`charmer gateway logs`.
+
 ## The supervised service (Linux)
 
 On Linux with a user service manager, the gateway can run as a hardened
@@ -82,6 +87,17 @@ back. Run it again after an update: it refreshes the unit and says whether
 a restart is needed. It needs a release bundle or the Nix package, not a
 source checkout. There is no service on macOS.
 
+A gateway that fails to start exits with status 1, and the service starts
+it again five seconds later. After five starts within 300 seconds systemd
+stops trying and marks the unit failed; when `notify-send` was on your PATH
+at install, a desktop notice says “The gateway service stopped after
+repeated failures”. Meanwhile `charmer gateway status`
+reports the gateway stopped and doctor reports BLOCKED. Read why with
+`charmer gateway logs` (it reads the unit's journal), fix the cause, then
+run the command doctor's remedy names for a failed unit: it resets the unit
+and ends with `charmer gateway start`. The on-demand gateway's limit is the
+one in [after a crash](#after-a-crash).
+
 The hardened systemd user unit needs unprivileged user namespaces.
 Ubuntu 23.10 and later restrict them by default through AppArmor. With
 that restriction, the unit cannot start: `charmer gateway service install`
@@ -98,11 +114,15 @@ that change.
 | | On demand | Supervised service |
 | --- | --- | --- |
 | started by | a launch, a resume, a session's token helper, `gateway start` | the user service manager |
-| restarted on failure | no (the next launch starts it) | yes |
+| restarted on failure | no (the next launch starts it; three starts in ten minutes pause that) | yes, five starts in 300 seconds at most |
 | confinement | runs as you | a private temporary home, read-only configuration; only its credential, trace and working directories are writable |
 | logs | one file per start, `charmer gateway logs` | the service journal, `charmer gateway logs` |
 
 ## Reading the logs
+
+Read the gateway's log first when a start fails (“the gateway exited
+during its start”), when automatic starts are paused, when the supervised
+service stopped trying, and when doctor counts errors for a model.
 
 `charmer gateway logs` prints the gateway's own log lines, redacted:
 no key, token, cookie or account identifier the gateway logged is shown

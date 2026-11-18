@@ -203,7 +203,7 @@ restart.
 | `/cm` fails: `charmer` not found | `charmer` must be on the session's PATH |
 | /cm fallback: “no complete fallback profile is available” | create a profile with that primary provider binding every role the session binds |
 | doctor: “may shadow the session's /cm skill” | rename that `cm` skill |
-| the agent panel shows your own status line, not charmer's (doctor: “subagent status line: user-owned”) | remove `subagentStatusLine` from `~/.claude/settings.json` (or the project's `.claude/settings.json` or `.claude/settings.local.json`), then `charmer -r <id>` |
+| the agent panel shows only Claude Code's own rows (doctor: “subagent status line: not compiled”) | expected: managed sessions no longer get charmer's rows. To keep them, set `subagentStatusLine` in `~/.claude/settings.json` to the command that doctor row names, accept Claude Code's deprecation notice, then `charmer -r <id>` |
 
 ### Sessions
 
@@ -237,6 +237,7 @@ restart.
 | “is not set up for charmer” or “does not match the verified sha256” | `charmer setup --step claude` |
 | doctor: “managed Claude binary: <error>” | `charmer setup --step claude` |
 | doctor: “runs Claude” and “not the pinned” | `/exit`, then `charmer -r <id>` |
+| a launch or resume asks "Adding a new directory" for the session's scope folder | answer Yes (this session only), or trust charmer's scopes folder once ([quickstart](quickstart.md#3-launch)) |
 | doctor: “the contract override is invalid and was IGNORED” | remove the file doctor names |
 | doctor: “state marker:” | use the newer charmer the message names |
 | “profile is blocked:” at launch | `charmer profile show <name>`, then `charmer profile edit <name>` |
