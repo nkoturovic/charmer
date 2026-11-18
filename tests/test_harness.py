@@ -453,7 +453,170 @@ else:
             self.assertEqual(child.stderr.count("BLOCKED "), 2, child.stderr)
 
 
+def _fake_isolation_probe(root, kind, code):
+    """Run the real probe over fake suite seams, in a disposable child process."""
+    import argparse
+    import json
+    import time
+    from tests import check_fixture_isolation as isolation
+
+    root = Path(root)
+
+    def copy_tree(work):
+        component = work / "repo"
+        (component / "tests").mkdir(parents=True)
+        (component / "src/charmer").mkdir(parents=True)
+        for relative in ("tests/_tripwire.py", "src/charmer/legacy.py"):
+            shutil.copy2(REPO_ROOT / relative, component / relative)
+        return component
+
+    def run(command, **kwargs):
+        if "stdout" in kwargs:
+            assert kwargs["timeout"] == 5400
+            env = kwargs["env"]
+            (root / f"{kind}.json").write_text(json.dumps({
+                "cwd": str(kwargs["cwd"]), "home": env["HOME"], "tmp": env["TMPDIR"]}))
+            deadline = time.monotonic() + 10
+            while len(list(root.glob("*.json"))) != 3:
+                if time.monotonic() > deadline:
+                    raise RuntimeError("probes did not overlap")
+                time.sleep(0.01)
+            if code == 2:
+                raise OSError("fixture setup failed")
+            if code == 3:  # Must be stopped when another probe cannot be set up.
+                time.sleep(30)
+                (root / f"{kind}.escaped").touch()
+            kwargs["stdout"].write("Ran 1 test in 0.001s\n\n" + ("FAILED" if code else "OK") + "\n")
+        return subprocess.CompletedProcess(command, code, stdout="", stderr="")
+
+    fake = dict(id="fixture", cloned_from="fixture", provider="fixture", selector="fixture",
+                minimum_tested="0", pinned_client="0", contract="fixture", since_catalog=1,
+                line="fixture", files={})
+    with mock.patch.object(isolation, "_copy_tree", side_effect=copy_tree), \
+            mock.patch.object(isolation, "_add_fake_model", return_value=fake), \
+            mock.patch.object(isolation, "_add_fake_retired", return_value=fake), \
+            mock.patch.object(isolation, "_add_fake_operator", return_value=fake), \
+            mock.patch.object(isolation, "_operator_files", return_value={}), \
+            mock.patch.object(isolation, "_refresh_catalog_docs", return_value=True), \
+            mock.patch.object(isolation, "_goldens_snapshot", return_value={}), \
+            mock.patch.object(isolation.subprocess, "run", side_effect=run):
+        return isolation._run_probe(argparse.Namespace(keep=False, python_guard_only=True, only=[]), kind)
+
+
 class IsolationEnvironmentTests(unittest.TestCase):
+    def test_single_probe_selection_always_prints_overall(self) -> None:
+        import io
+        from tests import check_fixture_isolation as isolation
+
+        for kind in ("model", "retired", "operator"):
+            output = io.StringIO()
+            with self.subTest(kind=kind), mock.patch.object(isolation, "_run_probe", return_value=0) as run, \
+                    mock.patch("sys.stdout", output):
+                self.assertEqual(isolation.main([f"--{kind}-probe"]), 0)
+                self.assertEqual([call.args[1] for call in run.call_args_list], [kind])
+                self.assertIn(f"OVERALL: PASS ({kind} PASS)", output.getvalue())
+
+    def test_parallel_probes_finish_in_whole_blocks_with_private_roots(self) -> None:
+        self._parallel_probe_case({"model": 0, "retired": 1, "operator": 0}, 1)
+
+    def test_parallel_setup_failure_stops_other_probes(self) -> None:
+        self._parallel_probe_case({"model": 2, "retired": 3, "operator": 3}, 2)
+
+    def test_partial_probe_block_cannot_hide_the_parent_overall(self) -> None:
+        import io
+        import re
+        from tests import check_fixture_isolation as isolation
+
+        with tempfile.TemporaryDirectory(prefix="cm-probe-partial-") as tmp:
+            root = Path(tmp)
+            def command(args, kind):
+                if kind != "operator":
+                    script = f"from pathlib import Path; print('OVERALL: PASS ({kind} PASS)'); Path({str(root / kind)!r}).touch()"
+                else:
+                    # End last, without a newline, as an interrupted probe can.
+                    script = ("import sys, time; from pathlib import Path; "
+                              f"root = Path({tmp!r}); deadline = time.monotonic() + 5\n"
+                              "while not all((root / k).exists() for k in ('model', 'retired')):\n"
+                              "    assert time.monotonic() < deadline\n"
+                              "    time.sleep(.01)\n"
+                              "time.sleep(.2); sys.stdout.write('RESULT: FAIL partial'); sys.exit(1)")
+                return [sys.executable, "-c", script]
+            output = io.StringIO()
+            with mock.patch.object(isolation, "_probe_command", side_effect=command), mock.patch("sys.stdout", output):
+                self.assertEqual(isolation.main(["--jobs", "3", "--log-dir", tmp]), 1)
+            text = output.getvalue()
+            self.assertIn("RESULT: FAIL partial\n", text)
+            self.assertEqual(re.findall(r"(?m)^OVERALL[:\s]+(\w+)", text)[-1], "FAIL")
+            self.assertTrue(text.endswith("OVERALL: FAIL (model PASS, retired PASS, operator FAIL)\n"))
+
+    def _parallel_probe_case(self, codes, expected):
+        import io
+        import json
+        import time
+        from tests import check_fixture_isolation as isolation
+
+        with tempfile.TemporaryDirectory(prefix="cm-probe-parallel-") as tmp:
+            root = Path(tmp)
+            logs = root / "logs"
+            temps = root / "temps"
+            temps.mkdir()
+            def command(args, kind):
+                return [sys.executable, "-c", "from tests.test_harness import _fake_isolation_probe; "
+                        f"raise SystemExit(_fake_isolation_probe({tmp!r}, {kind!r}, {codes[kind]}))"]
+            output = io.StringIO()
+            before = time.monotonic()
+            with mock.patch.object(isolation, "_probe_command", side_effect=command), \
+                    mock.patch.dict(os.environ, {"TMPDIR": str(temps), "PYTHONPATH":
+                        os.pathsep.join((str(REPO_ROOT), str(REPO_ROOT / "src"), str(REPO_ROOT / "tests")))}), \
+                    mock.patch("sys.stdout", output):
+                self.assertEqual(isolation.main(["--jobs", "3", "--log-dir", str(logs)]), expected)
+            self.assertLess(time.monotonic() - before, 20, "set-up failure left a probe running")
+            facts = [json.loads((root / f"{kind}.json").read_text()) for kind in codes]
+            for field in ("cwd", "home", "tmp"):
+                self.assertEqual(len({f[field] for f in facts}), 3, field)
+                self.assertTrue(all(Path(f[field]).is_relative_to(temps) for f in facts), field)
+            text = output.getvalue()
+            for kind in codes:
+                block = (logs / f"{kind}.log").read_text()
+                self.assertIn(block, text)  # no lines from another probe in this block
+                self.assertFalse((root / f"{kind}.escaped").exists())
+            self.assertIn("OVERALL: FAIL (", text)
+            if expected == 1:
+                self.assertIn("OVERALL: FAIL (model PASS, retired FAIL, operator PASS)", text)
+
+    def test_setup_failure_does_not_start_a_queued_probe(self) -> None:
+        from tests import check_fixture_isolation as isolation
+
+        with tempfile.TemporaryDirectory(prefix="cm-probe-queue-") as tmp, \
+                mock.patch.object(isolation.subprocess, "Popen") as spawn, \
+                mock.patch.object(isolation, "_stop_probe") as stop, mock.patch("sys.stdout"):
+            failed, running = mock.Mock(), mock.Mock()
+            failed.poll.return_value = 2
+            running.poll.return_value = None
+            spawn.side_effect = [failed, running]
+            self.assertEqual(isolation.main(["--jobs", "2", "--log-dir", tmp]), 2)
+            self.assertEqual(spawn.call_count, 2)
+            self.assertNotIn("--operator-probe", repr(spawn.call_args_list))
+            stop.assert_any_call(running)
+
+    def test_temp_creation_failure_is_a_setup_failure(self) -> None:
+        from tests import check_fixture_isolation as isolation
+
+        with mock.patch.object(isolation.tempfile, "mkdtemp", side_effect=OSError("fixture no space")), \
+                mock.patch("sys.stdout"), mock.patch("sys.stderr"):
+            self.assertEqual(isolation.main(["--model-probe"]), 2)
+
+    def test_parallel_options_are_validated_before_probe_setup(self) -> None:
+        from tests import check_fixture_isolation as isolation
+
+        for argv in (["--jobs", "0"], ["--jobs", "2"], ["--model-probe", "--retired-probe"]):
+            with self.subTest(argv=argv), mock.patch.object(isolation, "_run_probe") as run, \
+                    mock.patch("sys.stderr"):
+                with self.assertRaises(SystemExit) as caught:
+                    isolation.main(argv)
+                self.assertEqual(caught.exception.code, 2)
+                run.assert_not_called()
+
     def test_namespace_preflight_uses_probe_environment_and_never_a_live_port(self) -> None:
         import json
         from tests import check_fixture_isolation as isolation
@@ -574,6 +737,7 @@ class IsolationEnvironmentTests(unittest.TestCase):
                 def run(command, **kwargs):
                     captured.append((command, dict(kwargs["env"])))
                     if "stdout" in kwargs:
+                        self.assertEqual(kwargs["timeout"], 5400)
                         kwargs["stdout"].write("Ran 1 test in 0.001s\n\nOK\n")
                     return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
