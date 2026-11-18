@@ -59,6 +59,11 @@ The shipped `openrouter` profile: OpenRouter only (billed per token): Opus lead 
 
 <!-- end of generated: openrouter-lines -->
 
+`or-gpt` moved to GPT-6.2 Sol in this release; its agent checks (smoke,
+high and xhigh, forced named tool, streaming) passed on 2026-10-02 on
+GPT-6.1 Sol, not on 6.2. A session running on GPT-6.1 Sol keeps it until
+it resumes ([models guide](../guides/models.md#lines-moved-in-this-release)).
+
 ## 3. Provider and model family
 
 On OpenRouter, the provider is OpenRouter but each model belongs to its

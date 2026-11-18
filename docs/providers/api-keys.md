@@ -235,10 +235,14 @@ serves nothing.
 
 **Only reviewed models.** The key route serves only the OpenAI lines
 reviewed for the OpenAI API, each with the context window, output limit
-and efforts from its API model page. This release reviews GPT-6.1 Sol
-(`sol`), GPT-6 Astra (`astra`) and GPT-6 Luna (`luna`). A line that is
+and efforts from its API model page. This release reviews GPT-6.2 Sol
+(`sol`), GPT-6.2 Astra (`astra`) and GPT-6 Luna (`luna`). A line that is
 not reviewed stops being served while the key is in use (doctor names
-it), and the switch is refused while no line is reviewed. With the key in
+it), and the switch is refused while no line is reviewed. The selectors a
+line kept for its earlier model (such as GPT-6.1 Sol's, after `sol` moved
+to GPT-6.2) are not served on the key either: a session still running on
+one needs a resume (`charmer -r <id>`), which moves it to the line's
+current model. With the key in
 use, **M** Models shows a reviewed line's key-route evidence: its
 documented bounds and the date they were checked.
 

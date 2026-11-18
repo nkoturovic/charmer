@@ -75,6 +75,33 @@ Every managed session names the model for Claude Code's own background requests
 the haiku model, otherwise the lead, so a value in your own or your project's
 settings cannot send them outside the session's models.
 
+### Lines moved in this release
+
+- `sol` uses GPT-6.2 Sol (`gpt-6.2-sol`) and `astra` uses GPT-6.2 Astra
+  (`gpt-6.2-astra`), on the ChatGPT account and on an OpenAI API key.
+  OpenAI's API documentation, checked on 2026-11-17, gives each 1,050,000
+  tokens of context, 922,000 of input and 128,000 of output. On the
+  account route charmer keeps GPT-6's bound of 872K, not measured for 6.2,
+  and a validated floor of 200,000 tokens, not a measurement of the new
+  models. Both keep efforts low to max with the default `high`. The
+  gateway's built-in model list does not include them; charmer adds them
+  to the account's list, except on the Free, Free workspace and K-12 plans
+  ([ChatGPT account](../providers/chatgpt-account.md#5-use-it)).
+- `or-gpt` uses GPT-6.2 Sol on OpenRouter (`openai/gpt-6.2-sol`, listed on
+  2026-11-17 with 1,050,000 tokens of context and up to 128,000 of output).
+  Its agent checks (smoke, high and xhigh, forced named tool, streaming)
+  passed on 2026-10-02 on GPT-6.1 Sol, not on 6.2.
+
+Their `/model` selectors name the generation:
+`gpt-multi-sol-6-2-<effort>[1m]`, `gpt-multi-astra-6-2-<effort>[1m]` and
+`charmer-or-gpt-6-2-<effort>[1m]`. Profiles and bindings that name the keys
+follow them without reseeding or effort changes. A session running on GPT-6.1
+Sol, GPT-6 Astra or GPT-6.1 Sol on OpenRouter keeps its model until it
+resumes, through the retired keys `sol@6.1`, `astra@6` and `or-gpt@6.1`.
+With an OpenAI API key in use those retired selectors are not served, so
+such a session needs its resume, onto GPT-6.2, right away
+([the GPT-6.2 lines](../update.md#the-gpt-62-lines)).
+
 ### Lines moved in 2.3.0
 
 - `muse` uses Muse Wonder 1.0 (`muse-wonder-1.0`) on Meta's Model API.
@@ -330,11 +357,15 @@ it. After a rollback to 2.4.0, which ignores such successors, those
 sessions need a model choice ([going back](../update.md#before-going-back-to-240)).
 
 A line you declared yourself that a later catalog ships (for example a
-`custom-fable-5-2` line once `fable` selects Fable 5.2) yields to the
+`custom-fable-5-2` line once `fable` selects Fable 5.2, or a
+`custom-gpt-6-2-sol` line once `sol` selects GPT-6.2 Sol) yields to the
 shipped line: the shipped line serves the model, and doctor and the models
 listing show one row with the remedy, `charmer models rm <line> --successor <line>`.
 Afterwards `charmer doctor --repair-all` brings the scopes of ended
-sessions recorded on your line up to date.
+sessions recorded on your line up to date. A GPT-6.2 line you declared on
+the ChatGPT account also leaves one doctor row for each alias the gateway
+captured for it (“the winning definition is served”) until
+`charmer doctor --prune-aliases` removes those aliases.
 
 ## Context windows
 

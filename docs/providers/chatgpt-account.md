@@ -51,6 +51,13 @@ slots of other profiles are connected. `charmer providers test
 openai` sends one small request after you agree. Which models your plan
 serves is up to OpenAI; a model the account cannot use fails its requests.
 
+On the Free, Free workspace and K-12 plans the gateway offers the account
+only the models of its built-in list for that plan. GPT-6.2 Sol and Astra,
+which `sol` and `astra` select, are not in that list, so neither line is
+served there; `luna` (GPT-6 Luna) is. A model you add on the account that
+is not in the list is not offered on those plans either. Every other plan,
+and an unknown one, gets the models charmer adds.
+
 GPT-6.1 Terra is not a shipped line. You can add `gpt-6.1-terra` by hand on
 the `openai` provider while the ChatGPT account is selected, with its
 documented context and five reasoning-effort contracts. Follow the

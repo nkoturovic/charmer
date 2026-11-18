@@ -100,6 +100,11 @@ Current default: the **`balanced` seed profile**
 (`catalog/profiles/balanced.json`): Opus 5.5 lead at ultracode, Sol high
 explorer/xhigh analyst, Opus analyst-strong, Luna max / Sol xhigh / Sol max
 implementer grades, Sol max reviewer and Opus reviewer-strong.
+`sol` and `astra` are GPT-6.2 Sol and Astra and `or-gpt` is GPT-6.2 Sol on
+OpenRouter (catalog 45, generation-tagged selectors); the retired keys
+`sol@6.1`, `astra@6` and `or-gpt@6.1` keep running sessions on their
+earlier models until resume (not on the OpenAI API-key route, which serves
+reviewed lines only). No seed changed for the move.
 The `haiku` line is Haiku 5.5 on the Claude account, agents only (explorer
 and light writer), not an independent reviewer of Opus, Sonnet or Fable.
 `muse` is Muse Wonder 1.0; `or-deepseek` is DeepSeek V4.1 Flash 1017 and
@@ -2198,7 +2203,11 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
   marker carries no thinking). The optional T1/retired `output` object matches
   T2 exactly: `declared_tokens` 1..2097152, `source` listing/docs/operator/registry,
   optional `source_ref` (1..256 chars). It is declared provenance, not measured
-  acceptance; absence emits no limit. The `gpt-6.1-sol` generation uses this form.
+  acceptance; absence emits no limit. The GPT-6.2 `sol` and `astra` lines use
+  this form, and their wires are absent from the pinned registry, so the overlay
+  registers them; the gateway gives no overlay entry to a codex credential on
+  the free, free_workspace or k12 plan. `sol@6.1` and `astra@6` carry no marker:
+  their wires are static there.
   **T2**, an operator pool line (`models add anthropic|openai <wire>`,
   `docs/guides/models.md`): no authored overlay field,
   `operator.overlay_projection` derives it. Precedence per (channel,
@@ -2670,20 +2679,30 @@ the operator's approval. Doctor never retires backups.
   change. The file only grows until `doctor --prune-aliases`. A record
   scan cannot see sessions under another state root: doctor flags a
   persisted set extended from a different root.
-- **GPT-6.1 Sol:** the stable `sol` key is at generation
-  6.1 with generation-tagged aliases; `sol@6` keeps all GPT-6 aliases on their
-  old wire until resume. Lead, agent and workflow-default selectors are `[1m]`
-  (the route bound is above the session window). The 0.159.1 operator listing proves
-  visibility only. Declared context is 1,050,000; the inherited GPT-6 route bound
-  872,000 is unverified for 6.1; validated floor is 200,000, not near-limit
-  acceptance. Output 128,000 is API-documented, not measured on the Codex route.
-  No real acceptance is claimed. Shared discover identity is 0.169.0
-  (`proxy.CODEX_CLIENT_VERSION`); patches #18 and #20 carry the same version. The move bumped the quality/max seeds to
+- **GPT-6.2 Sol and Astra (catalog 45):** the stable `sol` and `astra` keys
+  are at generation 6.2 with generation-tagged aliases
+  (`gpt-multi-<key>-6-2-<effort>[1m]`); `sol@6.1` (GPT-6.1 aliases), `sol@6`
+  (GPT-6) and `astra@6` keep running sessions on their old wire until resume,
+  and doctor defers such a session's repair to that resume. Lead, agent and
+  workflow-default selectors are `[1m]` (the route bound is above the
+  session window). Declared context is 1,050,000 (input 922,000); the
+  inherited GPT-6 route bound 872,000 is unverified for 6.2; validated
+  floor is 200,000, not near-limit acceptance. Output 128,000 is
+  API-documented, not measured on the Codex route; Astra lost its separate
+  provider-stated limit. OpenAI refuses GPT-6.2 to older Codex clients (a
+  2.5.0 gateway, at 0.159.1, until its restart); the gateway and discover
+  identity is 0.169.0 (`proxy.CODEX_CLIENT_VERSION`); patches #18 and #20
+  carry the same version.
+  The 6.2 move changed no seed. The 6.1 move bumped the quality/max seeds to
   version 2 and balanced/economy/openai to 3; role/effort adoption needs
   explicit reseeding. Stable-key generation movement does not reseed
   installed profiles; the quality seed's Sonnet row relies on its
   seed-version bump.
-- **GPT-6 lines (catalog 33; current for Luna/Astra):** the approved 2026-09-26 acceptance probe
+- **`or-gpt` (catalog 45):** GPT-6.2 Sol on OpenRouter
+  (`charmer-or-gpt-6-2-<effort>[1m]`, `openai/gpt-6.2-sol`); `or-gpt@6.1`
+  (family `openai`, 1M) keeps GPT-6.1 Sol sessions until resume. Its
+  2026-10-02 battery ran on GPT-6.1 Sol, not 6.2.
+- **GPT-6 lines (catalog 33; current for Luna):** the approved 2026-09-26 acceptance probe
   (through the gateway) set the context: 868,925 input tokens accepted on
   gpt-6-sol/luna/astra, ~985K rejected on luna, so `provider_tokens` =
   `provider_stated_limit_tokens` = 872,000 (the codex client template's

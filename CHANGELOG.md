@@ -17,6 +17,27 @@ turns (`charmer gateway restart`, guarded) and check
 `charmer update --verify`. Running managed sessions keep their client,
 compiled settings and routes until their next launch or resume.
 
+Catalog 45 moves `sol` and `astra` to GPT-6.2 Sol and Astra, and `or-gpt`
+to GPT-6.2 Sol on OpenRouter. Until the gateway restart, doctor also
+reports BLOCKED “the on-disk gateway config differs from a fresh render of
+the installed catalog”: restart rather than running the
+`charmer providers apply` it suggests, because on a ChatGPT account 2.5.0's
+gateway identifies itself as Codex 0.159.1, which OpenAI refuses for
+GPT-6.2. A session running on these lines keeps its model until its next
+resume; until then doctor names the move for it (“the installed catalog
+resolves …”) and defers its repair. With an OpenAI API key in use, the
+restarted gateway no longer serves GPT-6.1 Sol or GPT-6 Astra: exit such
+sessions before the restart and resume them after it
+([the GPT-6.2 lines](docs/update.md#the-gpt-62-lines)).
+
+Before `charmer update --rollback` to 2.5.0, exit the sessions running on
+the GPT-6.2 lines: the rollback check lists each as
+`session <id8> uses <selector>, which 2.5.0 does not serve`. After the
+rollback, 2.5.0's doctor names the move back for each session recorded on
+one (“the installed catalog resolves …”), and resuming it (`charmer -r`)
+moves it to 2.5.0's model for its line
+([before going back to 2.5.0](docs/update.md#before-going-back-to-250)).
+
 Claude Code 2.1.326 asks in a terminal whether to add a session's scope
 folder ("Adding a new directory"; "No, exit" is preselected, and "Yes"
 holds for that session only) at every launch, resume and fork, until you
@@ -38,6 +59,21 @@ charmer never writes Claude Code's configuration; `-p` never asks.
 - Claude Code 2.1.326 is the pinned client (signed for all eight
   platforms; settings keys added: `clawdFileProgressEnabled`,
   `precomputeArmTokens`; none removed); catalog 45.
+- `sol` and `astra` now select GPT-6.2 Sol and GPT-6.2 Astra, on the
+  ChatGPT account and on an OpenAI API key (OpenAI documents 1,050,000
+  tokens of context, 922,000 of input and 128,000 of output; on the account
+  route charmer keeps GPT-6's 872K bound, not measured for 6.2, and both
+  lines keep efforts low to max with the default `high`). Their selectors
+  name the generation: `gpt-multi-sol-6-2-<effort>[1m]` and
+  `gpt-multi-astra-6-2-<effort>[1m]`. Profiles and bindings follow the
+  stable keys without reseeding or effort changes; running GPT-6.1 Sol and
+  GPT-6 Astra sessions on the account keep their route until they are
+  resumed. A model you declared for GPT-6.2 Sol or Astra yourself yields to
+  the shipped line, with one Attention row and its remedy.
+- `or-gpt` now selects GPT-6.2 Sol on OpenRouter (`openai/gpt-6.2-sol`,
+  selectors `charmer-or-gpt-6-2-<effort>[1m]`); its agent checks of
+  2026-10-02 ran on GPT-6.1 Sol. Running GPT-6.1 Sol sessions on
+  OpenRouter keep their route until they are resumed.
 - From Claude Code 2.1.323 a model id the client does not know gets a 1M
   window even without `[1m]`. Managed sessions export
   `CLAUDE_CODE_MAX_CONTEXT_TOKENS` (200000 unless the lead set declares its
@@ -66,8 +102,10 @@ charmer never writes Claude Code's configuration; `-p` never asks.
   `charmer gateway logs` shows why.
 - On a ChatGPT account on the Free, Free workspace or K-12 plan, the
   gateway no longer offers the models charmer adds to the account's list
-  beyond its built-in ones (a GPT-6.2 model, for example): those plans do
-  not serve them. Every other plan, and an unknown one, keeps them.
+  beyond its built-in ones: GPT-6.2 Sol and Astra, which `sol` and `astra`
+  now select, and models you add there yourself. Those plans do not serve
+  them; `luna` (GPT-6 Luna) is in the built-in list. Every other plan, and
+  an unknown one, keeps them.
 - The Nix channel lane follows a newer nixos-unstable revision, and the
   release journey images (Ubuntu 22.04 and 24.04) and govulncheck (1.10.0)
   their newest releases; the bundled CPython stays 3.15.2

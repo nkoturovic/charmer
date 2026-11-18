@@ -65,7 +65,9 @@ charmer doctor
 Before the restart, `charmer gateway status` and doctor each show one
 restart row: `gateway restart pending: the running gateway runs <path>, this install provides <path> (different on-disk SHA-256 hashes)`.
 2.6.0 starts the gateway with 2.5.0's arguments and environment filter, so
-there is no second row, and one restart clears it. On Linux,
+there is no second restart row, and one restart clears it. Until then
+doctor also reports the lines this catalog moves
+([the GPT-6.2 lines](#the-gpt-62-lines)). On Linux,
 `charmer update --verify` reports `running-gateway: different-running-build`
 until the restart and `running-gateway: current-match` after it; on macOS
 running-byte verification reports `unavailable`. The restart checks
@@ -83,7 +85,9 @@ settings until its next launch or resume (`/exit`, then `charmer -r <id>`);
 until then doctor says
 `session <id8> runs Claude 2.1.322, not the pinned 2.1.326` and
 `fence/picker differ from the installed catalog (catalog changed since launch); applies at the next resume`
-for it. State and record formats remain 4; no record migration is needed.
+for it (a session on a line this catalog moved gets another row instead
+of the second: [the GPT-6.2 lines](#the-gpt-62-lines)). State and record
+formats remain 4; no record migration is needed.
 
 Managed sessions launched before the update pick up these changes at their
 next resume ([compatibility](reference/compatibility.md#verified-behavior-and-limits)):
@@ -92,7 +96,8 @@ next resume ([compatibility](reference/compatibility.md#verified-behavior-and-li
   shows a deprecation notice at every start while any settings layer sets
   `subagentStatusLine`. Until a session's next resume, doctor reports it as
   Attention, `its subagent status line differs from this release's compile`;
-  `charmer doctor --repair-all` drops the line from stopped sessions now.
+  `charmer doctor --repair-all` drops the line from stopped sessions now,
+  except those on a line this catalog moved.
   To keep charmer's rows, see
   [the agent panel](guides/sessions.md#the-agent-panels-rows).
 - A model id Claude Code does not know and that has no `[1m]` runs in the
@@ -112,6 +117,52 @@ shipped line serves it and yours yields, with one Attention row and its
 remedy: `charmer models rm <line> --successor <line>`
 ([models you added that now ship](#models-you-added-that-now-ship)).
 
+#### The GPT-6.2 lines
+
+Catalog 45 moves `sol` to GPT-6.2 Sol and `astra` to GPT-6.2 Astra, on the
+ChatGPT account and on an OpenAI API key, and `or-gpt` to GPT-6.2 Sol on
+OpenRouter ([models guide](guides/models.md#lines-moved-in-this-release)).
+Profiles and bindings that name them follow without reseeding or effort
+changes. On the Free, Free workspace and K-12 plans neither `sol` nor
+`astra` is served ([ChatGPT account](providers/chatgpt-account.md#5-use-it)).
+
+Until the gateway restart, the running gateway serves 2.5.0's lines, and
+doctor reports BLOCKED
+“the on-disk gateway config differs from a fresh render of the installed catalog”
+and the Attention “Pending served change: …”, which counts the selectors
+the restart adds. The guarded restart publishes the new configuration as
+the 2.6.0 gateway starts, and both rows clear. Restart rather than running
+the `charmer providers apply` the first row suggests: 2.5.0's gateway would
+then serve the GPT-6.2 selectors, but on a ChatGPT account it identifies
+itself as Codex 0.159.1, and OpenAI refuses GPT-6.2 to that client. A
+session launched or resumed on these lines before the restart gets
+selectors the running gateway does not serve.
+
+A session that was running on one of these lines keeps its model (GPT-6.1
+Sol, GPT-6 Astra, or GPT-6.1 Sol on OpenRouter) until its next resume
+(`/exit`, then `charmer -r <id>`), which moves it to GPT-6.2 at the same
+effort. On the ChatGPT account and on OpenRouter, the retired keys
+`sol@6.1`, `astra@6` and `or-gpt@6.1` keep its selectors served until
+then. With an OpenAI API key in use, the restarted gateway serves only the
+lines reviewed for the key, not those selectors: exit such a session before
+the restart and resume it after. Until the resume, doctor names the move
+instead of the `fence/picker differ …` row, for example
+`session <id8>: the installed catalog resolves lead to gpt-multi-sol-6-2-high[1m] (recorded gpt-multi-sol-6-1-high[1m]); it applies at the next resume (charmer -r <id>)`.
+`charmer doctor --repair <id>` waits for that resume (exit 3, “Repair
+deferred”), and `charmer doctor --repair-all` counts the session as
+deferred, so its subagent status line, too, goes at the resume.
+
+If you declared GPT-6.2 Sol or Astra on the ChatGPT account yourself (for
+example as `custom-gpt-6-2-sol`), the shipped line now serves it and yours
+yields ([models you added that now ship](#models-you-added-that-now-ship)):
+`charmer models rm custom-gpt-6-2-sol --successor sol` removes it. Doctor
+also shows one Attention row for each alias the gateway captured for your
+line,
+`oauth-extra-models: overlay codex/gpt-6.2-sol: captured alias <alias> differs from the winning catalog line sol; the winning definition is served`,
+until those aliases are pruned: once no running session uses them, review
+the plan with `charmer doctor --prune-aliases --preview`, then run
+`charmer doctor --prune-aliases`.
+
 #### Before going back to 2.5.0
 
 If 2.5.0 is the retained previous release, `charmer update --rollback`
@@ -125,9 +176,10 @@ Prepare first, between turns:
   it.
 - Exit the sessions it lists as
   `session <id8> uses <selector>, which 2.5.0 does not serve`: they run on
-  a selector only 2.6.0 serves, such as a line whose model 2.6.0's catalog
-  moved. After the rollback, `charmer -r <id>` resumes each on 2.5.0's
-  model for that line.
+  a selector only 2.6.0 serves, such as the GPT-6.2 selectors of `sol`,
+  `astra` and `or-gpt` (for example `gpt-multi-sol-6-2-high`). After the
+  rollback, `charmer -r <id>` resumes each on 2.5.0's model for that line:
+  GPT-6.1 Sol, GPT-6 Astra, or GPT-6.1 Sol on OpenRouter.
 
 After the rollback the running gateway is still 2.6.0's. Run the guarded
 `charmer gateway restart` between turns, then `charmer update --verify`:
@@ -141,7 +193,11 @@ doctor reports the sessions 2.6.0 launched
 or resumed as Attention, `its subagent status line differs from this release's compile`
 and `fence/picker differ from the installed catalog (catalog changed since launch); applies at the next resume`;
 `charmer doctor --repair-all` clears the first for stopped sessions. A
-session still running Claude Code 2.1.326 shows
+session recorded on a GPT-6.2 selector gets neither row; 2.5.0's doctor
+names the move back instead, for example
+`session <id8>: the installed catalog resolves lead to gpt-multi-sol-6-1-high[1m] (recorded gpt-multi-sol-6-2-high[1m]); it applies at the next resume (charmer -r <id>)`,
+and its repair waits for that resume (`charmer doctor --repair-all` counts
+it as deferred). A session still running Claude Code 2.1.326 shows
 `session <id8> runs Claude 2.1.326, not the pinned 2.1.322` until it
 resumes, on 2.1.322, from its summary.
 
