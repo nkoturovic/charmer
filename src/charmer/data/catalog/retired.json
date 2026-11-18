@@ -404,6 +404,26 @@
       "since_catalog": 42,
       "successor": "or-deepseek"
     },
+    "or-gemini@3.8": {
+      "capabilities": [
+        "lead",
+        "agents"
+      ],
+      "context_tokens": 1000000,
+      "display": "Gemini 3.8 Flash · OpenRouter",
+      "family": "google",
+      "generation": "3.8",
+      "last_wire": "google/gemini-3.8-flash",
+      "provider": "openrouter",
+      "reason": "OpenRouter Gemini move: the or-gemini line moved to Gemini 4 Hydrogen in catalog 45; Gemini 3.8 Flash aliases stay on their recorded wire for running sessions; resume resolves or-gemini to the current one.",
+      "roles": "all",
+      "selectors": {
+        "charmer-or-gemini-high[1m]": "output-config-high",
+        "charmer-or-gemini-xhigh[1m]": "output-config-xhigh"
+      },
+      "since_catalog": 45,
+      "successor": "or-gemini"
+    },
     "or-gpt@6.1": {
       "capabilities": [
         "lead",

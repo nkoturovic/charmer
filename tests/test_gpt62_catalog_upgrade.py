@@ -1,4 +1,4 @@
-"""GPT-6.2 moves against genuine 2.5.0 data; fake reloads, no provider calls."""
+"""Catalog generation moves against genuine 2.5.0 data; no provider calls."""
 from __future__ import annotations
 
 import copy
@@ -10,7 +10,7 @@ import test_rollback_preflight as rollback_tests
 from _catalog import SHIPPED_ROOT, uses_shipped_catalog
 from _layout import FIXTURES_ROOT
 from charmer import (catalog, endpoint, operator as operator_mod, proxy, render,
-                     rollback_preflight as rp)
+                     rollback_preflight as rp, state)
 from charmer.cli import doctor as doctor_mod
 
 OLD = FIXTURES_ROOT / "rollback-preflight" / "2.5.0"
@@ -153,6 +153,8 @@ class MovedGptOperatorLineTests(GptUpgradeCase):
     def test_rollback_shipped_selectors_are_findings_even_with_temporary_aliases(self) -> None:
         # A temporary selector is served by both catalogs, unlike a shipped
         # generation selector. Neither a declaration nor its capture masks it.
+        # Keyed routes must be configured in the fixture to be served in either view.
+        state.atomic_write(self.secret_file, rollback_tests.SECRETS)
         self.runtime.profiles.save({**copy.deepcopy(PROFILE), "lead": {"model": "sol", "effort": "max"}})
         self.runtime.bindings.update(lambda doc: doc["bindings"]["gpt-review"].update(model="sol"),
                                      cat=self.runtime.lineup_catalog())
@@ -164,7 +166,9 @@ class MovedGptOperatorLineTests(GptUpgradeCase):
                     schemas = operator_mod.load_schemas(SHIPPED_ROOT)
                     operator_mod.write_ledger(self.runtime.environ, operator_mod.apply_capture_prune(
                         operator_mod.ledger_document(self.ledger()), sorted(ALIASES), 45), schemas)
-                for selector, agent in (("gpt-multi-sol-6-2-high", False), ("gpt-multi-astra-6-2-max", True)):
+                for selector, agent in (("gpt-multi-sol-6-2-high", False), ("gpt-multi-astra-6-2-max", True),
+                                        ("charmer-or-gpt-6-2-high", True), ("charmer-or-gemini-4-high", True),
+                                        ("charmer-or-gemini-carbon-medium", False)):
                     with self.subTest(selector=selector):
                         rollback_tests.session(self.runtime.session_store.root, test_cli.OTHER_ID,
                                                "claude-opus-5-5[1m]" if agent else selector + "[1m]",
@@ -194,7 +198,7 @@ class MovedGptOperatorLineTests(GptUpgradeCase):
         self.assertEqual(current.lines["luna"], old.lines["luna"])
         for key in ("sol@6", "gpt55"):
             self.assertEqual(current.retired[key], old.retired[key])
-        for key in ("astra", "sol"):
+        for key in ("astra", "sol", "or-gpt", "or-gemini"):
             line = old.lines[key]
             retired = current.retired[f"{key}@{line['generation']}"]
             self.assertEqual(retired["selectors"], {spec["selector"]: spec["proxy_contract"]

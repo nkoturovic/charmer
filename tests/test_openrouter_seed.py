@@ -4,7 +4,7 @@ credential-to-profile table.
 
 Behaviour runs on the fixture (its aggregator lines mirror the shipped
 seed's slot families); the shipped-catalog classes assert invariants and
-never pin a shipped model id.
+the reviewed generation move of the seed's Gemini reviewer.
 """
 
 from __future__ import annotations
@@ -214,6 +214,10 @@ class ShippedSeedTests(unittest.TestCase):
         self.assertEqual(seed["primary_provider"], "openrouter")
         self.assertEqual(seed["seed"], {"id": "openrouter", "version": 1})
         lineup = profile.resolve(seed, bundle)
+        reviewer = lineup.agents["cm-reviewer"].binding
+        self.assertEqual((reviewer.key, reviewer.effort, reviewer.selector),
+                         ("or-gemini", "high", "charmer-or-gemini-4-high[1m]"))
+        self.assertEqual(bundle.lines[reviewer.key]["wire_model"], "google/gemini-4-hydrogen")
         bound = [lineup.lead.binding, *(agent.binding for agent in lineup.agents.values())]
         self.assertEqual({binding.provider for binding in bound}, {"openrouter"})
         self.assertGreaterEqual(len({binding.family for binding in bound}), 4)
@@ -221,20 +225,24 @@ class ShippedSeedTests(unittest.TestCase):
         self.assertNotIn("≈", views.review_sentence(lineup))
         for key, entry in _aggregator_lines(bundle.lines).items():
             with self.subTest(line=key):
-                self.assertEqual(entry["status"], "active")
+                self.assertEqual(entry["status"], "new" if key == "or-gemini-carbon" else "active")
                 self.assertNotIn(entry["family"], catalog.UNDECLARED_FAMILIES)
                 # Efforts limited to the provider's reviewed contracts.
                 self.assertLessEqual({spec["proxy_contract"] for spec in entry["efforts"].values()},
                                      set(provider["payload_contracts"]))
                 self.assertIn(f"Listing context_length {entry['context']['declared_tokens']:,} (OpenRouter models list",
                               entry["context"]["qualification"])
-                self.assertIn("admission smoke passed", entry["context"]["qualification"])
+                evidence = ("no live request, in this release by the operator's choice"
+                            if key in ("or-gemini", "or-gemini-carbon") else "admission smoke passed")
+                self.assertIn(evidence, entry["context"]["qualification"])
                 self.assertEqual(entry["context"]["validated_tokens"], 200000)
 
     def test_an_anthropic_family_line_names_its_tool_check(self) -> None:
         bundle = catalog.load_catalog(SHIPPED_ROOT)
         for key, entry in _aggregator_lines(bundle.lines).items():
             variant = "strict automatic tool use" if entry["family"] == "anthropic" else "forced named tool"
+            if key in ("or-gemini", "or-gemini-carbon"):
+                variant = "not measured on Gemini 4"
             with self.subTest(line=key):
                 self.assertIn(variant, entry["context"]["qualification"])
 

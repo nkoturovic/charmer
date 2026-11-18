@@ -113,6 +113,7 @@ REMOVED_PATTERNS = (
 )
 # OpenRouter generation moves can be held independently of the Codex lines.
 GENERATION_TAGGED_LINES["or-gpt"] = "6.1"
+GENERATION_TAGGED_LINES["or-gemini"] = "3.8"
 
 
 def _raw(root: Path = CATALOG_ROOT) -> dict:
@@ -3267,6 +3268,7 @@ class GenerationMoveTests(unittest.TestCase):
     # Previous generation, recorded wire, new wire, retirement catalog.
     MOVES = {
         "or-gpt": ("6.1", "openai/gpt-6.1-sol", "openai/gpt-6.2-sol", 45),
+        "or-gemini": ("3.8", "google/gemini-3.8-flash", "google/gemini-4-hydrogen", 45),
         "muse": ("1.3", "muse-spark-1.3", "muse-wonder-1.0", 42),
         "or-deepseek": ("4.1", "deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash-1017", 42),
         "or-kimi": ("3", "moonshotai/kimi-k3", "moonshotai/kimi-k3.1-pro", 42),
@@ -3327,6 +3329,48 @@ class GenerationMoveTests(unittest.TestCase):
         raw["docs"]["models"]["models"]["or-gpt"] = old
         del raw["docs"]["retired"]["retired"]["or-gpt@6.1"]
         self.assertEqual(catalog.validate_catalog(raw), [])
+
+    def test_gemini4_listing_facts_are_not_live_measurements(self) -> None:
+        from charmer import profile
+
+        bundle = catalog.load_catalog(SHIPPED_ROOT)
+        document = _shipped_render(bundle)
+        routes = _routes(document)
+        for key, name, created, levels, status, prefix in (
+            ("or-gemini", "Hydrogen", "2026-11-12", ("high", "xhigh"), "active", "charmer-or-gemini-4"),
+            ("or-gemini-carbon", "Carbon", "2026-11-10", ("low", "medium", "high"), "new", "charmer-or-gemini-carbon"),
+        ):
+            with self.subTest(line=key):
+                line = bundle.lines[key]
+                wire = f"google/gemini-4-{name.lower()}"
+                self.assertEqual((line["wire_model"], line["display"], line["generation"], line["family"]),
+                                 (wire, f"Gemini 4 {name} · OpenRouter", "4", "google"))
+                self.assertEqual((line["provider"], line["status"], line["default_effort"]),
+                                 ("openrouter", status, "high"))
+                self.assertEqual((line["capabilities"], line["roles"]), (["lead", "agents"], "all"))
+                self.assertEqual(line["minimum_tested"], {"claude_code": "2.1.286", "cliproxyapi": "7.3.15"})
+                context = line["context"]
+                self.assertEqual(context["declared_tokens"], 1048576)
+                self.assertEqual((context["provider_tokens"], context["client_tokens"], context["validated_tokens"]),
+                                 (1000000, 1000000, 200000))
+                for fact in (f"OpenRouter models list, 2026-11-18: {wire}, created {created}",
+                             "max_completion_tokens 943,718", "Not measured, and no live request",
+                             "in this release by the operator's choice", "not measured on Gemini 4",
+                             "minimum_tested describes the earlier Gemini line", "200,000 floor"):
+                    self.assertIn(fact, context["qualification"])
+                self.assertEqual(set(line["efforts"]), set(levels))
+                for level in levels:
+                    spec = line["efforts"][level]
+                    self.assertEqual(spec, {"selector": f"{prefix}-{level}[1m]",
+                                            "proxy_contract": f"output-config-{level}"})
+                    self.assertEqual(routes.get(f"{prefix}-{level}"), {wire})
+                    self.assertIn(json.dumps({"output_config.effort": level}, sort_keys=True),
+                                  _effort_params(document, f"{prefix}-{level}"))
+        for name, seed in bundle.seed_profiles.items():
+            lineup = profile.resolve(seed, bundle)
+            with self.subTest(seed=name):
+                self.assertNotIn("or-gemini-carbon", {lineup.lead.binding.key,
+                    *(agent.binding.key for agent in lineup.agents.values())})
 
     def test_or_kimi_keeps_xhigh_and_records_the_tool_choice(self) -> None:
         bundle = catalog.load_catalog(SHIPPED_ROOT)

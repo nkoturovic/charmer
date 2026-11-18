@@ -521,24 +521,24 @@
         "declared_tokens": 1048576,
         "ordinary_profile": "large",
         "provider_tokens": 1000000,
-        "qualification": "Listing context_length 1,048,576 (OpenRouter models list, 2026-10-02). Agent battery passed 2026-10-02: smoke, efforts high and xhigh, forced named tool, stream; admission smoke passed.",
+        "qualification": "Listing context_length 1,048,576 (OpenRouter models list, 2026-11-18: google/gemini-4-hydrogen, created 2026-11-12), max_completion_tokens 943,718. Not measured, and no live request, in this release by the operator's choice. provider_tokens=1000000 is listing-based, not measured on Gemini 4; validated_tokens stays at the conservative 200,000 floor. minimum_tested describes the earlier Gemini line: Gemini 3.8 Flash's 2026-10-02 battery (smoke, high, xhigh, forced named tool, stream) and admission smoke passed on Claude Code 2.1.286, CLIProxyAPI 7.3.15. Hydrogen lists low/medium/high/xhigh; high and xhigh stay for existing bindings.",
         "scalar_tokens": null,
         "validated_tokens": 200000
       },
       "default_effort": "high",
-      "display": "Gemini 3.8 Flash · OpenRouter",
+      "display": "Gemini 4 Hydrogen · OpenRouter",
       "efforts": {
         "high": {
           "proxy_contract": "output-config-high",
-          "selector": "charmer-or-gemini-high[1m]"
+          "selector": "charmer-or-gemini-4-high[1m]"
         },
         "xhigh": {
           "proxy_contract": "output-config-xhigh",
-          "selector": "charmer-or-gemini-xhigh[1m]"
+          "selector": "charmer-or-gemini-4-xhigh[1m]"
         }
       },
       "family": "google",
-      "generation": "3.8",
+      "generation": "4",
       "lead": {
         "effort": "ultracode",
         "env": {}
@@ -550,9 +550,56 @@
       "provider": "openrouter",
       "registry_overlay": null,
       "roles": "all",
-      "routing_note": "Gemini Flash through OpenRouter (billed per token): fast, independent Google-family reviewer.",
+      "routing_note": "Gemini 4 Hydrogen through OpenRouter (billed per token): Google-family reviewer. Not checked by a live request in this release. Retired or-gemini@3.8 keeps Gemini 3.8 Flash sessions until resume.",
       "status": "active",
-      "wire_model": "google/gemini-3.8-flash"
+      "wire_model": "google/gemini-4-hydrogen"
+    },
+    "or-gemini-carbon": {
+      "capabilities": [
+        "lead",
+        "agents"
+      ],
+      "context": {
+        "client_tokens": 1000000,
+        "declared_tokens": 1048576,
+        "ordinary_profile": "large",
+        "provider_tokens": 1000000,
+        "qualification": "Listing context_length 1,048,576 (OpenRouter models list, 2026-11-18: google/gemini-4-carbon, created 2026-11-10), max_completion_tokens 943,718. Not measured, and no live request, in this release by the operator's choice. provider_tokens=1000000 is listing-based, not measured on Gemini 4; validated_tokens stays at the conservative 200,000 floor. minimum_tested describes the earlier Gemini line: Gemini 3.8 Flash's 2026-10-02 battery (smoke, high, xhigh, forced named tool, stream) and admission smoke passed on Claude Code 2.1.286, CLIProxyAPI 7.3.15, not Carbon. Carbon lists low/medium/high; these are contract-level efforts only.",
+        "scalar_tokens": null,
+        "validated_tokens": 200000
+      },
+      "default_effort": "high",
+      "display": "Gemini 4 Carbon · OpenRouter",
+      "efforts": {
+        "high": {
+          "proxy_contract": "output-config-high",
+          "selector": "charmer-or-gemini-carbon-high[1m]"
+        },
+        "low": {
+          "proxy_contract": "output-config-low",
+          "selector": "charmer-or-gemini-carbon-low[1m]"
+        },
+        "medium": {
+          "proxy_contract": "output-config-medium",
+          "selector": "charmer-or-gemini-carbon-medium[1m]"
+        }
+      },
+      "family": "google",
+      "generation": "4",
+      "lead": {
+        "effort": "ultracode",
+        "env": {}
+      },
+      "minimum_tested": {
+        "claude_code": "2.1.286",
+        "cliproxyapi": "7.3.15"
+      },
+      "provider": "openrouter",
+      "registry_overlay": null,
+      "roles": "all",
+      "routing_note": "Gemini 4 Carbon through OpenRouter (billed per token): opt-in Google-family lead or agent, in no seed. Not checked by a live request in this release; low/medium/high are listing-based contracts.",
+      "status": "new",
+      "wire_model": "google/gemini-4-carbon"
     },
     "or-gpt": {
       "capabilities": [
