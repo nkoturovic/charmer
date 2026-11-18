@@ -2720,19 +2720,29 @@ def _agent_frontmatter(data: bytes) -> dict[str, str] | None:
 
 
 def _catalog_agent_drift(
-    runtime: runtime_mod.Runtime, record: Mapping[str, Any], live: Path, drifted: list[str]
+    runtime: runtime_mod.Runtime, record: Mapping[str, Any], live: Path, plan: scope_mod.ScopePlan,
+    drifted: list[str],
 ) -> list[str]:
     """The drifted agent files when
     the ONLY drift is agent-file content, the installed catalog differs from
     the one the record launched under (its catalog hash), and every drifted
     file parses as a cm-* agent file whose name, model and effort match the
-    record's binding. Anything else (another file, a mode, a missing or
-    unexpected file, a malformed or rebound agent file, an unchanged
-    catalog) returns [] and stays BLOCK: that is corruption, not lazy state."""
+    record's binding and whose every frontmatter field but the description
+    (``isolation`` and ``disallowedTools`` included, present or absent)
+    equals what ``plan`` compiles for that agent. Only the catalog's role
+    text (the description and the prompt body) may differ; the fields that
+    limit what the agent may do may not. Anything else (another file, a
+    mode, a missing or unexpected file, a malformed or rebound agent file,
+    a changed or removed policy field, an unchanged catalog) returns [] and
+    stays BLOCK: that is corruption, not lazy state."""
 
     if not drifted or record.get("catalog_hash") == runtime.catalog.bundle_sha256:
         return []
     agents = (record.get("applied") or {}).get("agents") or {}
+
+    def policy(fields: Mapping[str, str]) -> dict[str, str]:
+        return {key: value for key, value in fields.items() if key != "description"}
+
     files: list[str] = []
     for line in drifted:
         match = _AGENT_DRIFT.fullmatch(line)
@@ -2746,8 +2756,11 @@ def _catalog_agent_drift(
             fields = _agent_frontmatter(state.read_private(live / relpath))
         except (OSError, state.StateError):
             return []
-        if fields is None or (fields.get("name"), fields.get("model"), fields.get("effort")) != (
+        expected = _agent_frontmatter(plan.agent_files.get(relpath, b""))
+        if fields is None or expected is None or (fields.get("name"), fields.get("model"), fields.get("effort")) != (
                 name, binding.get("selector"), binding.get("effort")):
+            return []
+        if policy(fields) != policy(expected):
             return []
         files.append(name)
     return files
@@ -2932,14 +2945,25 @@ def _check_scope_integrity(
     elif drifted:
         settings_drift = f"{scope_mod.SETTINGS_RELPATH} content differs"
         agent_drift = [line for line in drifted if line != settings_drift]
-        agent_files = [] if recorded_ep is not None else _catalog_agent_drift(runtime, record, live, agent_drift)
+        agent_files = [] if recorded_ep is not None else _catalog_agent_drift(
+            runtime, record, live, ep.plan, agent_drift)
         policy_drift = drifted
         if agent_files and agent_drift != drifted:
             # A settings difference beside validated agent drift is lazy only
-            # when a released-policy recognizer proves it on its own; both
-            # findings are then reported. Anything else stays BLOCK.
+            # when it is exactly the subagent status line a release compiled
+            # (status_line_drift) and nothing else: not the default mode or
+            # mod-authoring denies that recognizer tolerates beside it, and no
+            # other released policy. Both findings are then reported; anything
+            # else stays BLOCK.
             policy_drift = [settings_drift]
-            if not _released_policy_drift(live, ep.plan, policy_drift):
+            key = scope_mod.SUBAGENT_STATUS_LINE_KEY
+            try:
+                on_disk = strict_json.loads(state.read_private(live / scope_mod.SETTINGS_RELPATH))
+            except (OSError, state.StateError, strict_json.StrictJSONError):
+                on_disk = None
+            if not (scope_mod.status_line_drift(live, ep.plan, policy_drift) and isinstance(on_disk, dict)
+                    and {k: v for k, v in on_disk.items() if k != key}
+                    == {k: v for k, v in ep.plan.settings.items() if k != key}):
                 agent_files, policy_drift = [], drifted
         agent_definitions = (
             f"session {m8}: agent definitions differ from the installed catalog "
