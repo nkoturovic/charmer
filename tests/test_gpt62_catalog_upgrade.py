@@ -9,8 +9,8 @@ import test_fable_catalog_upgrade as fable
 import test_rollback_preflight as rollback_tests
 from _catalog import SHIPPED_ROOT, uses_shipped_catalog
 from _layout import FIXTURES_ROOT
-from charmer import (catalog, endpoint, operator as operator_mod, proxy, render,
-                     rollback_preflight as rp, state)
+from charmer import (catalog, endpoint, operator as operator_mod, profile, proxy,
+                     render, rollback_preflight as rp, state)
 from charmer.cli import doctor as doctor_mod
 
 OLD = FIXTURES_ROOT / "rollback-preflight" / "2.5.0"
@@ -209,6 +209,102 @@ class MovedGptOperatorLineTests(GptUpgradeCase):
             self.assertNotIn("registry_overlay", retired)
         for name, document in old.seed_profiles.items():
             self.assertEqual(current.seed_profiles[name], document)
+
+
+@uses_shipped_catalog
+class OpenRouterListingUpgradeTests(GptUpgradeCase):
+    def test_listed_efforts_survive_displacement_resume_and_successor_removal(self) -> None:
+        state.atomic_write(self.secret_file, rollback_tests.SECRETS)
+        for key, wire, family, levels, checked, prefix in (
+            ("or-gemini", "google/gemini-4-hydrogen", "google", LEVELS[:-1], ("low", "medium"),
+             "charmer-or-gemini-4"),
+            ("or-gpt", "openai/gpt-6.2-sol", "openai", LEVELS, ("low", "medium", "max"),
+             "charmer-or-gpt-6-2"),
+        ):
+            for effort in checked:
+                with self.subTest(line=key, effort=effort):
+                    custom_key = f"custom-{key}-{effort}"
+                    declaration = {
+                        "wire_model": wire, "display": "Listed model", "family": family,
+                        "efforts": {level: f"output-config-{level}" for level in levels},
+                        "default_effort": "high",
+                        "context": {"declared_tokens": 1050000 if key == "or-gpt" else 1048576,
+                                    "source": "listing", "source_ref": "https://openrouter.ai/api/v1/models"},
+                    }
+                    # The declaration has every effort 2.5.0's discovery would add.
+                    rollback_tests.declare(self.runtime.environ, {custom_key: declaration})
+                    self.use_catalog(self.old_root)
+                    self.apply_and_serve()
+                    self.runtime.bindings.update(lambda doc: doc["bindings"].update({
+                        "router-review": {"model": custom_key, "effort": effort}}), cat=self.runtime.lineup_catalog())
+                    document = {**copy.deepcopy(PROFILE), "name": "router",
+                                "lead": {"model": custom_key, "effort": effort},
+                                "agents": {"cm-reviewer": {"use": "router-review"}}}
+                    self.runtime.profiles.save(document)
+                    self.assertEqual(self.resolved("router").lead.binding.key, custom_key)
+                    record = self.save_v4_session("router", write_scope=True, last_event_source="end")
+                    self.use_catalog(SHIPPED_ROOT)
+                    layer = self.runtime.operator_snapshot().layer
+                    self.assertIn(custom_key, layer.displaced)
+                    self.assertEqual(operator_mod.blocking_problems(layer), ())
+                    blocks, attention, _info = doctor_mod._doctor_operator_report(self.runtime, "fixture-token")
+                    self.assertFalse(blocks)
+                    remedy = f"charmer models rm {custom_key} --successor {key}"
+                    self.assertIn(f"operator line {custom_key} (openrouter/{wire}) is now provided by the catalog as "
+                                  f"{key}: yours yields to it — remove it: {remedy}; used by binding router-review, "
+                                  f"profile router lead: they move to {key} at their next launch or resume", attention)
+                    notices, _info = doctor_mod._doctor_record_report(self.runtime, [record])
+                    self.assertTrue(any(f"lead {custom_key} renamed → {key}" in row and
+                                        "applies at the next resume" in row for row in notices), notices)
+                    with self.subTest(action="resolve-and-resume"):
+                        evaluation = profile.evaluate(document, self.runtime.lineup_catalog(),
+                                                      bindings=self.runtime.bindings.load()["bindings"],
+                                                      effective=self.runtime.current_effective())
+                        self.assertEqual(evaluation.errors, ())
+                        for binding in (evaluation.lineup.lead.binding,
+                                        evaluation.lineup.agents["cm-reviewer"].binding):
+                            self.assertEqual((binding.key, binding.selector), (key, f"{prefix}-{effort}[1m]"))
+                        self.apply_and_serve()
+                        self.assertEqual(self.resume(record).record["applied"]["lead"]["selector"],
+                                         f"{prefix}-{effort}[1m]")
+                    with self.subTest(action="doctor-remedy"):
+                        code, out, err = self.op(["models", "rm", custom_key, "--successor", key, "--yes"])
+                        self.assertEqual(code, 0, out + err)
+                        expected = {"model": key, "effort": effort}
+                        self.assertEqual(self.runtime.profiles.load("router")["lead"], expected)
+                        self.assertEqual(self.runtime.bindings.load()["bindings"]["router-review"], expected)
+                        self.assertFalse(any(row.startswith(f"operator line {custom_key} ") for row in
+                                             doctor_mod._doctor_operator_report(self.runtime, "fixture-token")[1]))
+
+    def test_carbon_profile_and_named_binding_are_rollback_findings(self) -> None:
+        state.atomic_write(self.secret_file, rollback_tests.SECRETS)
+        self.use_catalog(SHIPPED_ROOT)
+        self.runtime.profiles.save({**copy.deepcopy(PROFILE), "name": "carbon",
+                                    "lead": {"model": "or-gemini-carbon", "effort": "low"}, "agents": {}})
+        self.runtime.bindings.update(lambda doc: doc["bindings"].update({
+            "carbon-review": {"model": "or-gemini-carbon", "effort": "medium"}}), cat=self.runtime.lineup_catalog())
+        self.assertEqual(self.resolved("carbon").lead.binding.key, "or-gemini-carbon")
+        report = self.rollback()
+        self.assertEqual(report.findings, (
+            rp.Finding(rp.PROFILES, "bindings.carbon-review.model: unknown model 'or-gemini-carbon'",
+                       "rebind it in the profile editor (charmer, then P)"),
+            rp.Finding(rp.PROFILES, "profile carbon: lead.model: unknown model 'or-gemini-carbon'",
+                       "charmer profile edit carbon"),
+        ))
+        self.assertEqual(report.unchanged, 0)
+
+    def test_shipped_carbon_advisory_does_not_require_an_openrouter_key(self) -> None:
+        for connected in (False, True):
+            with self.subTest(connected=connected):
+                if connected:
+                    state.atomic_write(self.secret_file, rollback_tests.SECRETS)
+                self.use_catalog(SHIPPED_ROOT)
+                rows = [row for row in doctor_mod._doctor_new_lines_report(self.runtime)
+                        if row.subject == "or-gemini-carbon"]
+                self.assertEqual(rows, [
+                    "New model: Gemini 4 Carbon · OpenRouter (or-gemini-carbon) — not admitted (optional badge): "
+                    "charmer models admit or-gemini-carbon (or Models, then Enter; use does not require it)"])
+                self.assertEqual(rows[0].level, doctor_mod.ADVISORY)
 
 
 if __name__ == "__main__":

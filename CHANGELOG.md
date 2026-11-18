@@ -19,15 +19,16 @@ compiled settings and routes until their next launch or resume.
 
 Catalog 45 moves `sol` and `astra` to GPT-6.2 Sol and Astra, `or-gpt`
 to GPT-6.2 Sol on OpenRouter, and `or-gemini` to Gemini 4 Hydrogen. Until the
-gateway restart, doctor also reports BLOCKED “the on-disk gateway config differs from a fresh render of
-the installed catalog”: restart rather than running the
-`charmer providers apply` it suggests, because on a ChatGPT account 2.5.0's
-gateway identifies itself as Codex 0.159.1, which OpenAI refuses for
-GPT-6.2. A session running on these lines keeps its model until its next
-resume; until then doctor names the move for it (“the installed catalog
-resolves …”) and defers its repair. With an OpenAI API key in use, the
-restarted gateway no longer serves GPT-6.1 Sol or GPT-6 Astra: exit such
-sessions before the restart and resume them after it
+gateway restart, doctor also reports BLOCKED “the on-disk gateway config
+differs from a fresh render of the installed catalog”: restart rather
+than running the `charmer providers apply` it suggests, because on a
+ChatGPT account 2.5.0's gateway identifies itself as Codex 0.159.1, which
+OpenAI refuses for GPT-6.2. A session running on these lines keeps its
+model until its next resume; until then doctor names the move for it
+(“the installed catalog resolves …”) and defers its repair. With an
+OpenAI API key in use, the restarted gateway no longer serves GPT-6.1 Sol
+or GPT-6 Astra: exit such sessions before the restart and resume them
+after it
 ([the GPT-6.2 lines](docs/update.md#the-gpt-62-lines)).
 
 Before `charmer update --rollback` to 2.5.0, exit the sessions running on
@@ -35,8 +36,17 @@ the GPT-6.2 lines or Gemini 4 Hydrogen: the rollback check lists each as
 `session <id8> uses <selector>, which 2.5.0 does not serve`. After the
 rollback, 2.5.0's doctor names the move back for each session recorded on
 one (“the installed catalog resolves …”), and resuming it (`charmer -r`)
-moves it to 2.5.0's model for its line
+moves it to 2.5.0's model for its line. First change any `or-gpt` or
+`or-gemini` binding at an added effort to high or xhigh, the only efforts
+2.5.0 serves on those lines. `or-gemini-carbon` has no model in 2.5.0:
+rebind any profile, named binding or session using it before going
+back, and exit any session still running on its selectors
 ([before going back to 2.5.0](docs/update.md#before-going-back-to-250)).
+
+Doctor shows an advisory beginning `New model: Gemini 4 Carbon` on every
+installation, even without an OpenRouter key, until you optionally admit
+the line. It is informational, not a blocker; neither admission nor use
+is required.
 
 Claude Code 2.1.326 asks in a terminal whether to add a session's scope
 folder ("Adding a new directory"; "No, exit" is preselected, and "Yes"
@@ -74,21 +84,28 @@ charmer never writes Claude Code's configuration; `-p` never asks.
   `gpt-multi-astra-6-2-<effort>[1m]`. Profiles and bindings follow the
   stable keys without reseeding or effort changes; running GPT-6.1 Sol and
   GPT-6 Astra sessions on the account keep their route until they are
-  resumed. Live-checked on 2026-11-18: Codex-route smoke and every effort
-  low to max passed on Claude Code 2.1.322 / CLIProxyAPI 8.0.67; a managed
-  high turn on each passed on 2.1.326 / 8.0.76. No context-limit test ran.
+  resumed. Live check #1 on 2026-11-18 accepted Codex-route smoke and every
+  effort low to max on 2.6.0's G0 candidate: Codex identity 0.169.0,
+  CLIProxyAPI 8.0.67 + 30 patches, Claude Code 2.1.322; temporary lines on
+  the same wire. Check #2 accepted a managed high turn on each on
+  2.1.326 / 8.0.76. No context-limit test ran.
   A model you declared for GPT-6.2 Sol or Astra yourself yields to
   the shipped line, with one Attention row and its remedy.
 - `or-gpt` now selects GPT-6.2 Sol on OpenRouter (`openai/gpt-6.2-sol`,
   selectors `charmer-or-gpt-6-2-<effort>[1m]`); its agent checks of
   2026-10-02 ran on GPT-6.1 Sol. Live-checked on 2026-11-18: a managed
   high turn passed on Claude Code 2.1.326 / CLIProxyAPI 8.0.76, not a new
-  full battery or context-limit test. Running GPT-6.1 Sol sessions on
+  full battery or context-limit test. The listing's low, medium and max
+  efforts join high and xhigh, with default `high`; the added efforts are
+  contract-level only, not measured. Running GPT-6.1 Sol sessions on
   OpenRouter keep their route until they are resumed.
 - `or-gemini` now selects Gemini 4 Hydrogen on OpenRouter
   (`google/gemini-4-hydrogen`, selectors `charmer-or-gemini-4-<effort>[1m]`),
-  not checked by a live request in this release. It keeps high and xhigh,
-  default `high`; the `openrouter` profile follows the key without reseeding.
+  not checked by a live request in this release. The listing's low and
+  medium join high and xhigh as contract-level efforts, not measurements;
+  default `high` stays. The `openrouter` profile follows the key without
+  reseeding. A Hydrogen or GPT-6.2 Sol line declared on OpenRouter under
+  2.5.0 keeps its listed efforts when it yields to the shipped line.
   Running Gemini 3.8 Flash sessions keep their old wire through
   `or-gemini@3.8` until resume. Context 1,048,576 and max completion 943,718
   are listing facts, not measurements; the validated floor stays 200,000.

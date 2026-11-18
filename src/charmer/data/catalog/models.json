@@ -10,7 +10,7 @@
         "declared_tokens": 1050000,
         "ordinary_profile": "large",
         "provider_tokens": 872000,
-        "qualification": "GPT-6.2 Astra (released 2026-11-17): API docs declare 1,050,000 context, 922,000 input and 128,000 output. provider_tokens=872000 is the inherited GPT-6 Codex-route bound, unverified for 6.2. validated_tokens=200000 is a conservative floor, not a new-model measurement. Lead, agents and workflow defaults use the 1M client class at the session window. Live checks 2026-11-18: #1 accepted Codex-route smoke and low/medium/high/xhigh/max (Claude Code 2.1.322, CLIProxyAPI 8.0.67); #2 managed high turn passed (HTTP 200, exit 0; Claude Code 2.1.326, CLIProxyAPI 8.0.76). No context-limit test.",
+        "qualification": "GPT-6.2 Astra (released 2026-11-17): API docs declare 1,050,000 context, 922,000 input and 128,000 output. provider_tokens=872000 is the inherited GPT-6 Codex-route bound, unverified for 6.2. validated_tokens=200000 is a conservative floor, not a new-model measurement. Lead, agents and workflow defaults use the 1M client class at the session window. Live checks 2026-11-18: #1 accepted Codex-route smoke and low/medium/high/xhigh/max (2.6.0's G0 candidate: Codex identity 0.169.0, CLIProxyAPI 8.0.67 + 30 patches, Claude Code 2.1.322; temporary lines on the same wire); #2 managed high turn passed (HTTP 200, exit 0; Claude Code 2.1.326, CLIProxyAPI 8.0.76). No context-limit test.",
         "scalar_tokens": null,
         "validated_tokens": 200000
       },
@@ -521,7 +521,7 @@
         "declared_tokens": 1048576,
         "ordinary_profile": "large",
         "provider_tokens": 1000000,
-        "qualification": "Listing context_length 1,048,576 (OpenRouter models list, 2026-11-18: google/gemini-4-hydrogen, created 2026-11-12), max_completion_tokens 943,718. Not measured, and no live request, in this release by the operator's choice. provider_tokens=1000000 is listing-based, not measured on Gemini 4; validated_tokens stays at the conservative 200,000 floor. minimum_tested describes the earlier Gemini line: Gemini 3.8 Flash's 2026-10-02 battery (smoke, high, xhigh, forced named tool, stream) and admission smoke passed on Claude Code 2.1.286, CLIProxyAPI 7.3.15. Hydrogen lists low/medium/high/xhigh; high and xhigh stay for existing bindings.",
+        "qualification": "Listing context_length 1,048,576 (OpenRouter models list, 2026-11-18: google/gemini-4-hydrogen, created 2026-11-12), max_completion_tokens 943,718. Not measured, and no live request, in this release by the operator's choice. provider_tokens=1000000 is listing-based, not measured on Gemini 4; validated_tokens stays at the conservative 200,000 floor. minimum_tested describes the earlier Gemini line: Gemini 3.8 Flash's 2026-10-02 battery (smoke, high, xhigh, forced named tool, stream) and admission smoke passed on Claude Code 2.1.286, CLIProxyAPI 7.3.15. Hydrogen lists low/medium/high/xhigh: low and medium are contract-level only (listing-advertised, not measured); high/xhigh were checked on Gemini 3.8 Flash, not Hydrogen.",
         "scalar_tokens": null,
         "validated_tokens": 200000
       },
@@ -531,6 +531,14 @@
         "high": {
           "proxy_contract": "output-config-high",
           "selector": "charmer-or-gemini-4-high[1m]"
+        },
+        "low": {
+          "proxy_contract": "output-config-low",
+          "selector": "charmer-or-gemini-4-low[1m]"
+        },
+        "medium": {
+          "proxy_contract": "output-config-medium",
+          "selector": "charmer-or-gemini-4-medium[1m]"
         },
         "xhigh": {
           "proxy_contract": "output-config-xhigh",
@@ -564,7 +572,7 @@
         "declared_tokens": 1048576,
         "ordinary_profile": "large",
         "provider_tokens": 1000000,
-        "qualification": "Listing context_length 1,048,576 (OpenRouter models list, 2026-11-18: google/gemini-4-carbon, created 2026-11-10), max_completion_tokens 943,718. Not measured, and no live request, in this release by the operator's choice. provider_tokens=1000000 is listing-based, not measured on Gemini 4; validated_tokens stays at the conservative 200,000 floor. minimum_tested describes the earlier Gemini line: Gemini 3.8 Flash's 2026-10-02 battery (smoke, high, xhigh, forced named tool, stream) and admission smoke passed on Claude Code 2.1.286, CLIProxyAPI 7.3.15, not Carbon. Carbon lists low/medium/high; these are contract-level efforts only.",
+        "qualification": "Listing context_length 1,048,576 (OpenRouter models list, 2026-11-18: google/gemini-4-carbon, created 2026-11-10), max_completion_tokens 943,718. Not measured, and no live request, in this release by the operator's choice. provider_tokens=1000000 is listing-based, not measured on Gemini 4; validated_tokens stays at the conservative 200,000 floor. minimum_tested is scaffold metadata: Claude Code 2.1.286 inherited from the earlier Gemini line, CLIProxyAPI 8.0.76 from the catalog's gateway baseline. Carbon has never been live-tested. Carbon lists low/medium/high; these are contract-level efforts only (listing-advertised, not measured).",
         "scalar_tokens": null,
         "validated_tokens": 200000
       },
@@ -592,7 +600,7 @@
       },
       "minimum_tested": {
         "claude_code": "2.1.286",
-        "cliproxyapi": "7.3.15"
+        "cliproxyapi": "8.0.76"
       },
       "provider": "openrouter",
       "registry_overlay": null,
@@ -611,7 +619,7 @@
         "declared_tokens": 1050000,
         "ordinary_profile": "large",
         "provider_tokens": 1000000,
-        "qualification": "Listing context_length 1,050,000 (OpenRouter models list, 2026-11-17: openai/gpt-6.2-sol, created 2026-11-17), max_completion_tokens 128,000. Live check #2, 2026-11-18: managed high turn passed (HTTP 200, exit 0; Claude Code 2.1.326, CLIProxyAPI 8.0.76). Moved from openai/gpt-6.1-sol in catalog 45: the 2026-10-02 battery (smoke, high, xhigh, forced named tool, stream) and admission smoke passed on GPT-6.1 Sol, not 6.2. No context-limit test on GPT-6.2 Sol: provider_tokens=1000000 is listing-based; validated_tokens stays at the conservative 200,000 floor.",
+        "qualification": "Listing context_length 1,050,000 (OpenRouter models list, 2026-11-17: openai/gpt-6.2-sol, created 2026-11-17), max_completion_tokens 128,000. Live check #2, 2026-11-18: managed high turn passed (HTTP 200, exit 0; Claude Code 2.1.326, CLIProxyAPI 8.0.76). Moved from openai/gpt-6.1-sol in catalog 45: the 2026-10-02 battery (smoke, high, xhigh, forced named tool, stream) and admission smoke passed on GPT-6.1 Sol, not 6.2. The listing advertises low/medium/high/xhigh/max: low, medium and max are contract-level only (listing-advertised, not measured); xhigh is listing-advertised but not live-checked on 6.2. No context-limit test on GPT-6.2 Sol: provider_tokens=1000000 is listing-based; validated_tokens stays at the conservative 200,000 floor.",
         "scalar_tokens": null,
         "validated_tokens": 200000
       },
@@ -621,6 +629,18 @@
         "high": {
           "proxy_contract": "output-config-high",
           "selector": "charmer-or-gpt-6-2-high[1m]"
+        },
+        "low": {
+          "proxy_contract": "output-config-low",
+          "selector": "charmer-or-gpt-6-2-low[1m]"
+        },
+        "max": {
+          "proxy_contract": "output-config-max",
+          "selector": "charmer-or-gpt-6-2-max[1m]"
+        },
+        "medium": {
+          "proxy_contract": "output-config-medium",
+          "selector": "charmer-or-gpt-6-2-medium[1m]"
         },
         "xhigh": {
           "proxy_contract": "output-config-xhigh",
@@ -893,7 +913,7 @@
         "declared_tokens": 1050000,
         "ordinary_profile": "large",
         "provider_tokens": 872000,
-        "qualification": "GPT-6.2 Sol (released 2026-11-17): API docs declare 1,050,000 context, 922,000 input and 128,000 output. provider_tokens=872000 is the inherited GPT-6 Codex-route bound, unverified for 6.2. validated_tokens=200000 is a conservative floor, not a new-model measurement. Lead, agents and workflow defaults use the 1M client class at the session window. Live checks 2026-11-18: #1 accepted Codex-route smoke and low/medium/high/xhigh/max (Claude Code 2.1.322, CLIProxyAPI 8.0.67); #2 managed high turn passed (HTTP 200, exit 0; Claude Code 2.1.326, CLIProxyAPI 8.0.76). No context-limit test.",
+        "qualification": "GPT-6.2 Sol (released 2026-11-17): API docs declare 1,050,000 context, 922,000 input and 128,000 output. provider_tokens=872000 is the inherited GPT-6 Codex-route bound, unverified for 6.2. validated_tokens=200000 is a conservative floor, not a new-model measurement. Lead, agents and workflow defaults use the 1M client class at the session window. Live checks 2026-11-18: #1 accepted Codex-route smoke and low/medium/high/xhigh/max (2.6.0's G0 candidate: Codex identity 0.169.0, CLIProxyAPI 8.0.67 + 30 patches, Claude Code 2.1.322; temporary lines on the same wire); #2 managed high turn passed (HTTP 200, exit 0; Claude Code 2.1.326, CLIProxyAPI 8.0.76). No context-limit test.",
         "scalar_tokens": null,
         "validated_tokens": 200000
       },

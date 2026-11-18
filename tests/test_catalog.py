@@ -1782,7 +1782,8 @@ class NativeContractTests(unittest.TestCase):
         # Fable 5.2: the exact-client and fake-upstream gateway checks ran on
         # 2.1.326 / 8.0.67; this is not a provider-capacity measurement.
         floors = {"opus": "2.1.280", "fable": "2.1.322", "sonnet": "2.1.286", "haiku": "2.1.310"}
-        # The OpenRouter lines record the pin their evidence ran on.
+        # OpenRouter lines retain their earlier evidence's client floor;
+        # the untested Carbon scaffold inherits that floor, not a live check.
         floors.update({key: "2.1.286" for key, line in bundle.lines.items()
                        if line["provider"] in catalog.AGGREGATOR_PROVIDERS})
         # These generation moves had managed live turns on the release pair.
@@ -3301,7 +3302,8 @@ class GenerationMoveTests(unittest.TestCase):
                 self.assertNotIn("activation acceptance is still required", line["routing_note"])
                 if key != "or-gpt":
                     self.assertIn("Codex-route smoke and low/medium/high/xhigh/max", text)
-                    self.assertIn("Claude Code 2.1.322, CLIProxyAPI 8.0.67", text)
+                    self.assertIn("2.6.0's G0 candidate: Codex identity 0.169.0, CLIProxyAPI 8.0.67 + 30 patches, "
+                                  "Claude Code 2.1.322; temporary lines on the same wire", text)
                 else:
                     self.assertIn("2026-10-02 battery (smoke, high, xhigh, forced named tool, stream)", text)
                     self.assertIn("passed on GPT-6.1 Sol, not 6.2", text)
@@ -3313,7 +3315,11 @@ class GenerationMoveTests(unittest.TestCase):
         line = raw["docs"]["models"]["models"]["or-gpt"]
         self.assertEqual((line["wire_model"], line["display"], line["generation"], line["family"]),
                          ("openai/gpt-6.2-sol", "GPT-6.2 Sol · OpenRouter", "6.2", "openai"))
-        self.assertEqual(set(line["efforts"]), {"high", "xhigh"})
+        self.assertEqual(set(line["efforts"]), {"low", "medium", "high", "xhigh", "max"})
+        self.assertEqual(line["default_effort"], "high")
+        self.assertIn("low, medium and max are contract-level only (listing-advertised, not measured)",
+                      line["context"]["qualification"])
+        self.assertIn("xhigh is listing-advertised but not live-checked on 6.2", line["context"]["qualification"])
         self.assertEqual(line["context"]["declared_tokens"], 1050000)
         self.assertEqual(line["context"]["provider_tokens"], 1000000)
         self.assertEqual(line["context"]["client_tokens"], 1000000)
@@ -3337,7 +3343,7 @@ class GenerationMoveTests(unittest.TestCase):
         document = _shipped_render(bundle)
         routes = _routes(document)
         for key, name, created, levels, status, prefix in (
-            ("or-gemini", "Hydrogen", "2026-11-12", ("high", "xhigh"), "active", "charmer-or-gemini-4"),
+            ("or-gemini", "Hydrogen", "2026-11-12", ("low", "medium", "high", "xhigh"), "active", "charmer-or-gemini-4"),
             ("or-gemini-carbon", "Carbon", "2026-11-10", ("low", "medium", "high"), "new", "charmer-or-gemini-carbon"),
         ):
             with self.subTest(line=key):
@@ -3348,16 +3354,26 @@ class GenerationMoveTests(unittest.TestCase):
                 self.assertEqual((line["provider"], line["status"], line["default_effort"]),
                                  ("openrouter", status, "high"))
                 self.assertEqual((line["capabilities"], line["roles"]), (["lead", "agents"], "all"))
-                self.assertEqual(line["minimum_tested"], {"claude_code": "2.1.286", "cliproxyapi": "7.3.15"})
+                self.assertEqual(line["minimum_tested"], {
+                    "claude_code": "2.1.286",
+                    "cliproxyapi": bundle.docs["gateway"]["gateway"]["cliproxyapi_baseline"] if status == "new" else "7.3.15",
+                })
                 context = line["context"]
                 self.assertEqual(context["declared_tokens"], 1048576)
                 self.assertEqual((context["provider_tokens"], context["client_tokens"], context["validated_tokens"]),
                                  (1000000, 1000000, 200000))
                 for fact in (f"OpenRouter models list, 2026-11-18: {wire}, created {created}",
                              "max_completion_tokens 943,718", "Not measured, and no live request",
-                             "in this release by the operator's choice", "not measured on Gemini 4",
-                             "minimum_tested describes the earlier Gemini line", "200,000 floor"):
+                             "in this release by the operator's choice", "not measured on Gemini 4", "200,000 floor"):
                     self.assertIn(fact, context["qualification"])
+                if status == "new":
+                    self.assertIn("minimum_tested is scaffold metadata", context["qualification"])
+                    self.assertIn("Carbon has never been live-tested", context["qualification"])
+                else:
+                    self.assertIn("minimum_tested describes the earlier Gemini line", context["qualification"])
+                    self.assertIn("low and medium are contract-level only (listing-advertised, not measured)",
+                                  context["qualification"])
+                    self.assertIn("high/xhigh were checked on Gemini 3.8 Flash, not Hydrogen", context["qualification"])
                 self.assertEqual(set(line["efforts"]), set(levels))
                 for level in levels:
                     spec = line["efforts"][level]

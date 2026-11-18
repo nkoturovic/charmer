@@ -112,12 +112,24 @@ next resume ([compatibility](reference/compatibility.md#verified-behavior-and-li
 
 These do not change your own settings or plain `claude`.
 
+Doctor shows an advisory beginning `New model: Gemini 4 Carbon` on every
+installation, even without an OpenRouter key, until you optionally admit
+the line. It is informational, not a blocker; neither admission nor use
+is required.
+
 If you declared a model yourself that this release now ships as a line, the
 shipped line serves it and yours yields, with one Attention row and its
 remedy: `charmer models rm <line> --successor <line>`
-([models you added that now ship](#models-you-added-that-now-ship)).
+([models you added that now ship](#models-you-added-that-now-ship)). For
+OpenRouter declarations of `google/gemini-4-hydrogen` or
+`openai/gpt-6.2-sol`, the successor is `or-gemini` or `or-gpt`, respectively.
+Both shipped lines carry every effort the listing advertised, so bindings
+at low or medium (and max for `or-gpt`) still resolve after the update.
+These added efforts are contract-level only, not measurements.
 
 #### The GPT-6.2 lines
+
+This section also covers `or-gemini`'s move to Gemini 4 Hydrogen.
 
 Catalog 45 moves `sol` to GPT-6.2 Sol and `astra` to GPT-6.2 Astra, on the
 ChatGPT account and on an OpenAI API key, and `or-gpt` to GPT-6.2 Sol on
@@ -148,7 +160,8 @@ OpenRouter, the retired keys `sol@6.1`, `astra@6`, `or-gpt@6.1` and
 `or-gemini@3.8` keep its selectors served until then. With an OpenAI API key
 in use, the restarted gateway serves only the lines reviewed for the key,
 not `sol@6.1` and `astra@6` (`or-gpt@6.1` and `or-gemini@3.8` stay served on
-OpenRouter): exit such a session before the restart and resume it after. Until the resume, doctor names the move instead of both the
+OpenRouter): exit such a session before the restart and resume it after.
+Until the resume, doctor names the move instead of both the
 `fence/picker differ …` row and the status-line row, for example
 `session <id8>: the installed catalog resolves lead to gpt-multi-sol-6-2-high[1m] (recorded gpt-multi-sol-6-1-high[1m]); it applies at the next resume (charmer -r <id>)`.
 `charmer doctor --repair <id>` waits for that resume (exit 3, “Repair
@@ -183,12 +196,14 @@ Prepare first, between turns:
   `session <id8> uses <selector>, which 2.5.0 does not serve`: they run on
   a selector only 2.6.0 serves, such as the GPT-6.2 selectors of `sol`,
   `astra` and `or-gpt` (for example `gpt-multi-sol-6-2-high`), or
-  `or-gemini`'s Hydrogen selectors (`charmer-or-gemini-4-high` and
-  `charmer-or-gemini-4-xhigh`). After the rollback, `charmer -r <id>` resumes
-  each on 2.5.0's model for that line: GPT-6.1 Sol, GPT-6 Astra, GPT-6.1 Sol
-  on OpenRouter, or Gemini 3.8 Flash.
+  `or-gemini`'s Hydrogen selectors (`charmer-or-gemini-4-<effort>`). After
+  the rollback, `charmer -r <id>` resumes each on 2.5.0's model for that
+  line: GPT-6.1 Sol, GPT-6 Astra, GPT-6.1 Sol on OpenRouter, or Gemini 3.8
+  Flash. Before going back, change any `or-gpt` or `or-gemini` binding at an
+  added effort to high or xhigh: 2.5.0 serves only those two efforts on
+  these OpenRouter lines.
 - `or-gemini-carbon` is new in 2.6.0 and has no line in 2.5.0. Before going
-  back, choose another model for any profile or session using it; exit any
+  back, rebind any profile, named binding or session using it; exit any
   session still running on its selectors.
 
 After the rollback the running gateway is still 2.6.0's. Run the guarded

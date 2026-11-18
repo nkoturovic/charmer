@@ -29,18 +29,20 @@ saved as `OPENROUTER_CLAUDE_API_KEY` and sent only to
    charmer --profile openrouter
    ```
 
-The OpenRouter catalog lines are usable once the provider is connected;
-admission is optional. Their evidence differs: the Gemini 4 lines were
-not checked by a live request in this release, as detailed below.
-The `models qualify` command is for lines you declare yourself, not catalog lines.
+The OpenRouter catalog lines are usable once the provider is connected.
+Only the New line, Carbon, has an optional admission badge; the Active
+lines do not need admission. Their evidence differs: the Gemini 4 lines
+were not checked by a live request in this release, as detailed below.
+The `models qualify` command is for lines you declare yourself, not
+catalog lines.
 
 <!-- generated: openrouter-lines (tools/docs_gen.py) -->
 
 | Key | Model | OpenRouter model | Family | Efforts | Context |
 | --- | --- | --- | --- | --- | --- |
 | `or-deepseek` | DeepSeek V4.1 Flash 1017 · OpenRouter | `deepseek/deepseek-v4.1-flash-1017` | deepseek | high, xhigh | 1M class, provider window 1M |
-| `or-gemini` | Gemini 4 Hydrogen · OpenRouter | `google/gemini-4-hydrogen` | google | high, xhigh | 1M class, provider window 1M |
-| `or-gpt` | GPT-6.2 Sol · OpenRouter | `openai/gpt-6.2-sol` | openai | high, xhigh | 1M class, provider window 1M |
+| `or-gemini` | Gemini 4 Hydrogen · OpenRouter | `google/gemini-4-hydrogen` | google | low, medium, high, xhigh | 1M class, provider window 1M |
+| `or-gpt` | GPT-6.2 Sol · OpenRouter | `openai/gpt-6.2-sol` | openai | low, medium, high, xhigh, max | 1M class, provider window 1M |
 | `or-grok` | Grok 4.7 · OpenRouter | `x-ai/grok-4.7` | x-ai | high, xhigh | 200K class, provider window 500K |
 | `or-kimi` | Kimi K3.1 Pro · OpenRouter | `moonshotai/kimi-k3.1-pro` | moonshot | low, high, xhigh, max | 1M class, provider window 1M |
 | `or-opus` | Opus 5.5 · OpenRouter | `anthropic/claude-opus-5.5` | anthropic | high, xhigh | 1M class, provider window 1M |
@@ -65,31 +67,39 @@ The shipped `openrouter` profile: OpenRouter only (billed per token): Opus lead 
 high and xhigh, forced named tool, streaming) passed on 2026-10-02 on
 GPT-6.1 Sol, not on 6.2. A managed high turn on 6.2 passed on 2026-11-18
 (HTTP 200, exit 0; Claude Code 2.1.326 / CLIProxyAPI 8.0.76), not a new
-full battery or context-limit test. A session running on GPT-6.1 Sol keeps
-it until it resumes ([models guide](../guides/models.md#lines-moved-in-this-release)).
+full battery or context-limit test. Low, medium and max are contract-level
+only (listing-advertised, not measured); xhigh has not been live-checked
+on 6.2. Default `high` stays. A session running on GPT-6.1 Sol keeps it
+until it resumes
+([models guide](../guides/models.md#lines-moved-in-this-release)).
 
 `or-gemini` now selects Gemini 4 Hydrogen (`google/gemini-4-hydrogen`),
-keeping high and xhigh, default `high`. The `openrouter` profile follows
-the key without reseeding. Its new selectors are
+with low, medium, high and xhigh, default `high`. Low and medium are
+contract-level only (listing-advertised, not measured); the earlier
+high/xhigh battery ran on Gemini 3.8 Flash, not Hydrogen. The `openrouter`
+profile follows the key without reseeding. Its new selectors are
 `charmer-or-gemini-4-<effort>[1m]`; a running Gemini 3.8 Flash session keeps
-its old wire through `or-gemini@3.8` until resume. Hydrogen also lists low
-and medium, but the shipped line keeps its existing effort set.
+its old wire through `or-gemini@3.8` until resume.
 
 `or-gemini-carbon` is a New line on `google/gemini-4-carbon`, with low,
 medium and high, default `high`, and selectors
-`charmer-or-gemini-carbon-<effort>[1m]`. It goes in no shipped profile;
-choose it explicitly in Models or the profile editor.
+`charmer-or-gemini-carbon-<effort>[1m]`. It goes in no shipped profile:
+bind it in the profile editor, or select it in the Direct picker. Enter
+in Models only adds the optional admission badge; it does not bind the
+line.
 
-Both Gemini 4 lines are not checked by a live request in this release,
+Neither Gemini 4 line was checked by a live request in this release,
 by the operator's choice. OpenRouter's public models list, read 2026-11-18,
 gives each 1,048,576 context tokens and 943,718 max completion tokens
 (Hydrogen created 2026-11-12; Carbon created 2026-11-10). It lists tools,
 `tool_choice`, `reasoning`, `reasoning_effort` and `structured_outputs`;
 these are advertised support, not gateway acceptance. The provider bound
 stays 1M and the validated floor 200,000; neither is a Gemini 4 capacity
-measurement. Their `minimum_tested` pair (Claude Code 2.1.286 /
-CLIProxyAPI 7.3.15) describes Gemini 3.8 Flash's 2026-10-02 tests, not
-Hydrogen or Carbon.
+measurement. Hydrogen's inherited `minimum_tested` pair (Claude Code
+2.1.286 / CLIProxyAPI 7.3.15) describes Gemini 3.8 Flash's 2026-10-02 tests.
+Carbon's pair is scaffold metadata: the inherited client floor 2.1.286
+and the current gateway baseline 8.0.76, not test evidence. Carbon has
+never been live-tested; its efforts are listing-based contracts only.
 
 ## 3. Provider and model family
 
