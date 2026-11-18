@@ -98,9 +98,10 @@ Their `/model` selectors name the generation:
 follow them without reseeding or effort changes. A session running on GPT-6.1
 Sol, GPT-6 Astra or GPT-6.1 Sol on OpenRouter keeps its model until it
 resumes, through the retired keys `sol@6.1`, `astra@6` and `or-gpt@6.1`.
-With an OpenAI API key in use those retired selectors are not served, so
-such a session needs its resume, onto GPT-6.2, right away
-([the GPT-6.2 lines](../update.md#the-gpt-62-lines)).
+With an OpenAI API key in use, the key's route does not serve `sol@6.1`
+and `astra@6`, so such a session needs its resume, onto GPT-6.2, right away
+([the GPT-6.2 lines](../update.md#the-gpt-62-lines)); `or-gpt@6.1` stays
+served on OpenRouter.
 
 ### Lines moved in 2.3.0
 
@@ -361,11 +362,14 @@ A line you declared yourself that a later catalog ships (for example a
 `custom-gpt-6-2-sol` line once `sol` selects GPT-6.2 Sol) yields to the
 shipped line: the shipped line serves the model, and doctor and the models
 listing show one row with the remedy, `charmer models rm <line> --successor <line>`.
-Afterwards `charmer doctor --repair-all` brings the scopes of ended
-sessions recorded on your line up to date. A GPT-6.2 line you declared on
-the ChatGPT account also leaves one doctor row for each alias the gateway
-captured for it (“the winning definition is served”) until
-`charmer doctor --prune-aliases` removes those aliases.
+A session recorded on your line moves to the shipped line at its next
+resume (`charmer -r <id>`); `charmer doctor --repair-all` waits for that
+resume rather than changing the session's model. A GPT-6.2 line you declared
+on the ChatGPT account can also leave aliases the gateway captured for it:
+doctor shows a row (“the winning definition is served”) for each one whose
+recorded limits differ from the shipped line's, and
+`charmer doctor --prune-aliases --preview` lists them all, rows or not,
+before `charmer doctor --prune-aliases` removes them.
 
 ## Context windows
 

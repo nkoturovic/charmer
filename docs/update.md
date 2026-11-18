@@ -144,23 +144,26 @@ Sol, GPT-6 Astra, or GPT-6.1 Sol on OpenRouter) until its next resume
 effort. On the ChatGPT account and on OpenRouter, the retired keys
 `sol@6.1`, `astra@6` and `or-gpt@6.1` keep its selectors served until
 then. With an OpenAI API key in use, the restarted gateway serves only the
-lines reviewed for the key, not those selectors: exit such a session before
-the restart and resume it after. Until the resume, doctor names the move
-instead of the `fence/picker differ …` row, for example
+lines reviewed for the key, not `sol@6.1` and `astra@6` (`or-gpt@6.1` stays
+served on OpenRouter): exit such a session before the restart and resume it
+after. Until the resume, doctor names the move instead of both the
+`fence/picker differ …` row and the status-line row, for example
 `session <id8>: the installed catalog resolves lead to gpt-multi-sol-6-2-high[1m] (recorded gpt-multi-sol-6-1-high[1m]); it applies at the next resume (charmer -r <id>)`.
 `charmer doctor --repair <id>` waits for that resume (exit 3, “Repair
-deferred”), and `charmer doctor --repair-all` counts the session as
-deferred, so its subagent status line, too, goes at the resume.
+deferred”). `charmer doctor --repair-all` skips a session that is still
+running and counts a stopped one as deferred, so its subagent status line,
+too, goes at the resume.
 
 If you declared GPT-6.2 Sol or Astra on the ChatGPT account yourself (for
 example as `custom-gpt-6-2-sol`), the shipped line now serves it and yours
 yields ([models you added that now ship](#models-you-added-that-now-ship)):
 `charmer models rm custom-gpt-6-2-sol --successor sol` removes it. Doctor
-also shows one Attention row for each alias the gateway captured for your
-line,
+also shows an Attention row for each alias the gateway captured for your
+line whose recorded limits differ from the shipped line's,
 `oauth-extra-models: overlay codex/gpt-6.2-sol: captured alias <alias> differs from the winning catalog line sol; the winning definition is served`,
 until those aliases are pruned: once no running session uses them, review
-the plan with `charmer doctor --prune-aliases --preview`, then run
+the plan with `charmer doctor --prune-aliases --preview` (it lists every
+captured alias, with a row or without), then run
 `charmer doctor --prune-aliases`.
 
 #### Before going back to 2.5.0
