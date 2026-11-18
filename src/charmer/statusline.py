@@ -1,7 +1,8 @@
 """The status lines charmer renders for Claude Code (standard library only).
 
-``charmer statusline subagents`` is the managed sessions' compiled
-``subagentStatusLine`` (Claude Code 2.1.293+). The client writes one JSON
+``charmer statusline subagents`` is the command a ``subagentStatusLine``
+setting of the user's own may name (Claude Code 2.1.293+; charmer no longer
+compiles the key, which 2.1.326 deprecates). The client writes one JSON
 object to stdin, with ``columns`` and a ``tasks`` array, and reads one JSON
 line ``{"id": ..., "content": ...}`` per row it should draw instead of its
 own: an omitted row keeps the native default (an empty ``content`` would

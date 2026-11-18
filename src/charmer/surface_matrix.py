@@ -1157,8 +1157,8 @@ OPERATIONS: tuple[Op, ...] = (
        cli=("session-event",), absent={"tui": "Claude Code runs them; a person never does"}, stream="stdout",
        exit="hook"),
     Op("interface.status-lines", "interface",
-       "the status lines Claude Code runs: the managed sessions' subagent rows and the main line a "
-       "statusLine setting of the user's own may name", audience="internal",
+       "the status lines Claude Code runs: the subagent rows and the main line a subagentStatusLine "
+       "or statusLine setting of the user's own may name", audience="internal",
        cli=("statusline subagents", "statusline main"),
        absent={"tui": "Claude Code runs them; a person never does"}, stream="stdout", exit="hook"),
 )
