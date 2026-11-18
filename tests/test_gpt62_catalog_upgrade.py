@@ -1,4 +1,4 @@
-"""Catalog generation moves against genuine 2.5.0 data; no provider calls."""
+"""Catalog upgrades against genuine 2.5.0 and 2.6.0 data; no provider calls."""
 from __future__ import annotations
 
 import copy
@@ -215,11 +215,14 @@ class MovedGptOperatorLineTests(GptUpgradeCase):
 class OpenRouterListingUpgradeTests(GptUpgradeCase):
     def test_listed_efforts_survive_displacement_resume_and_successor_removal(self) -> None:
         state.atomic_write(self.secret_file, rollback_tests.SECRETS)
-        for key, wire, family, levels, checked, prefix in (
-            ("or-gemini", "google/gemini-4-hydrogen", "google", LEVELS[:-1], ("low", "medium"),
+        root_260 = rp.compose_root(SHIPPED_ROOT, rp.read_target(rollback_tests.DATA_260), self.root / "assets-260")
+        for previous, key, wire, family, levels, checked, prefix in (
+            (self.old_root, "or-gemini", "google/gemini-4-hydrogen", "google", LEVELS[:-1], ("low", "medium"),
              "charmer-or-gemini-4"),
-            ("or-gpt", "openai/gpt-6.2-sol", "openai", LEVELS, ("low", "medium", "max"),
+            (self.old_root, "or-gpt", "openai/gpt-6.2-sol", "openai", LEVELS, ("low", "medium", "max"),
              "charmer-or-gpt-6-2"),
+            (root_260, "or-gemini-neon", "google/gemini-4-neon", "google", LEVELS[:-1], LEVELS[:-1],
+             "charmer-or-gemini-neon"),
         ):
             for effort in checked:
                 with self.subTest(line=key, effort=effort):
@@ -231,9 +234,9 @@ class OpenRouterListingUpgradeTests(GptUpgradeCase):
                         "context": {"declared_tokens": 1050000 if key == "or-gpt" else 1048576,
                                     "source": "listing", "source_ref": "https://openrouter.ai/api/v1/models"},
                     }
-                    # The declaration has every effort 2.5.0's discovery would add.
+                    # The declaration has every effort the previous release's discovery would add.
                     rollback_tests.declare(self.runtime.environ, {custom_key: declaration})
-                    self.use_catalog(self.old_root)
+                    self.use_catalog(previous)
                     self.apply_and_serve()
                     self.runtime.bindings.update(lambda doc: doc["bindings"].update({
                         "router-review": {"model": custom_key, "effort": effort}}), cat=self.runtime.lineup_catalog())
@@ -273,6 +276,9 @@ class OpenRouterListingUpgradeTests(GptUpgradeCase):
                         expected = {"model": key, "effort": effort}
                         self.assertEqual(self.runtime.profiles.load("router")["lead"], expected)
                         self.assertEqual(self.runtime.bindings.load()["bindings"]["router-review"], expected)
+                        applied = self.resume(record).record["applied"]
+                        self.assertEqual((applied["lead"]["selector"], applied["agents"]["cm-reviewer"]["selector"]),
+                                         (f"{prefix}-{effort}[1m]", f"{prefix}-{effort}[1m]"))
                         self.assertFalse(any(row.startswith(f"operator line {custom_key} ") for row in
                                              doctor_mod._doctor_operator_report(self.runtime, "fixture-token")[1]))
 
