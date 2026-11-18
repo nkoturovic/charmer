@@ -1312,6 +1312,20 @@ class PageAnchorTests(unittest.TestCase):
         self.assertIn("presets are not vendor-tested", text)
         self.assertIn("only in the Nix channel", text)
 
+    def test_the_trust_step_starts_the_pinned_client_as_a_session_does(self) -> None:
+        # Run bare, the pinned client updates the user's own installation:
+        # the page's command carries both updater guards a launch owns.
+        from charmer import catalog
+
+        text = _text("quickstart.md")
+        (command,) = re.findall(r"^env -u CLAUDE_CONFIG_DIR [^\n]*(?:\\\n[^\n]*)*/claude$", text, re.M)
+        for name in ("DISABLE_AUTOUPDATER", "DISABLE_UPDATES"):
+            self.assertIn(name, catalog.RESERVED_LEAD_ENV_KEYS)
+            self.assertIn(f" {name}=1 ", _flat(command))
+        flat = _flat(text)
+        self.assertIn("replaces your own Claude Code installation", flat)
+        self.assertIn("If no question appears, a folder above it", flat)
+
     def test_publication_status_and_private_reporting(self) -> None:
         readme = _flat(_text("README.md"))
         self.assertIn(f"**Latest release:** {_released_version()}", readme)

@@ -136,11 +136,19 @@ folder (your first launch creates it) in a terminal outside Claude Code:
 
 ```bash
 cd ~/.local/state/charmer/scopes                # or $XDG_STATE_HOME/charmer/scopes
-env -u CLAUDE_CONFIG_DIR ~/.local/share/charmer/claude/2.1.326/claude
+env -u CLAUDE_CONFIG_DIR DISABLE_AUTOUPDATER=1 DISABLE_UPDATES=1 \
+  ~/.local/share/charmer/claude/2.1.326/claude
 ```
 
-Choose "Yes, I trust this folder", then type `/exit`. The `env -u` makes the
-trust land where managed sessions read it: charmer launches them without a
+Choose "Yes, I trust this folder", then type `/exit`. If no question
+appears, a folder above it (your home directory, for example) is already
+trusted and nothing is left to do: type `/exit`.
+
+Keep all three settings of that command. `DISABLE_AUTOUPDATER=1` and
+`DISABLE_UPDATES=1` are what charmer sets for every session; without them
+this copy of Claude Code runs its own updater and replaces your own Claude
+Code installation with the newest release. The `env -u` makes the trust
+land where managed sessions read it: charmer launches them without a
 `CLAUDE_CONFIG_DIR` of your own. charmer never writes
 Claude Code's configuration, so this step is yours. It covers every scope
 below that folder, unless the folder is inside a git repository. Headless
