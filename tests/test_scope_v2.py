@@ -757,7 +757,9 @@ class SettingsTests(unittest.TestCase):
                     self.assertEqual({key: plan.settings["env"][key] for key in keys if key in plan.settings["env"]},
                                      {key: result.env_set[key] for key in keys if key in result.env_set})
                     self.assertEqual(plan.settings["env"][keys[1]], str(percent))
-                    self.assertEqual(keys[2] in plan.settings["env"], scalar is not None and client_tokens < 1000000)
+                    # A declared scalar below the 1M class, else the 200K class.
+                    self.assertEqual(plan.settings["env"][keys[2]],
+                                     str(scalar if scalar is not None and client_tokens < 1000000 else 200000))
 
     def test_explore_cap_setting(self) -> None:
         bundle, lcat, eff, lineup = _seed("balanced")
@@ -1640,12 +1642,12 @@ class LeadContextTests(unittest.TestCase):
         self.assertEqual(
             context.scalar, min(800_000, lines[key]["context"]["provider_tokens"] - 1000)
         )
-        # A 1M lead class never exports a scalar (the fixture large class
-        # has a scalar line).
+        # A 1M lead class never exports a declared scalar (the fixture large
+        # class has a scalar line): it exports the 200K class.
         _, lcat2, eff2, lineup2 = _seed("balanced")
         fence2 = scope.compile_fence(lineup2, lcat2, eff2)
         self.assertTrue(any(row.scalar_tokens is not None for row in fence2.lead_set))
-        self.assertIsNone(compiler.lead_set_context(fence2, 90).scalar)
+        self.assertEqual(compiler.lead_set_context(fence2, 90).scalar, profile.CLASS_STANDARD)
 
 
 class CatalogMetaV2Tests(unittest.TestCase):
@@ -2030,7 +2032,8 @@ class LineupDefaultEnvTests(unittest.TestCase):
 
     def test_the_lineup_default_env(self) -> None:
         self.assertEqual(compiler.lineup_default_env("lead[1m]", ()),
-                         {"ANTHROPIC_DEFAULT_HAIKU_MODEL": "lead[1m]", "DISABLE_AUTO_COMPACT": "0"})
+                         {"ANTHROPIC_DEFAULT_HAIKU_MODEL": "lead[1m]", "DISABLE_AUTO_COMPACT": "0",
+                          "CLAUDE_CODE_DISABLE_1M_CONTEXT": "0"})
         bound = (("sonnet", "s[1m]"), ("haiku", "h[1m]"), ("haiku", "h[1m]"))
         self.assertEqual(compiler.lineup_default_env("lead[1m]", bound)["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "h[1m]")
         # Another line on the same wire is not the haiku line.
@@ -2139,6 +2142,55 @@ class LineupDefaultEnvSessionTests(V4Case):
         self.assertEqual(resumed, {compiler.HAIKU_DEFAULT_ENV: "claude-haiku-5-5[1m]",
                                    compiler.AUTO_COMPACT_ENV: "0"})
         self.assertNotEqual(launched, resumed)
+
+
+class GatewayEffortMoveTests(unittest.TestCase):
+    """A recorded binding on a gateway-effort line the installed catalog moved
+    to its next generation: the comparison catalog restores the earlier
+    per-effort selectors from the retired entry, matched by proxy contract."""
+
+    def setUp(self) -> None:
+        self.docs = copy.deepcopy(catalog.load_catalog(FIXTURE_ROOT).docs)
+        line = self.docs["models"]["models"]["sol"]
+        self.before = copy.deepcopy(line)
+        self.retired = {
+            "capabilities": line["capabilities"], "context_tokens": line["context"]["provider_tokens"],
+            "display": line["display"], "generation": line["generation"], "last_wire": line["wire_model"],
+            "provider": line["provider"], "reason": "fixture generation move", "roles": line["roles"],
+            "selectors": {spec["selector"]: spec["proxy_contract"] for spec in line["efforts"].values()},
+            "since_catalog": 1, "successor": "sol"}
+        self.docs["retired"]["retired"]["sol@prev"] = self.retired
+        line.update(generation="next", wire_model="gpt-next-sol", display="GPT-next Sol")
+        for effort, spec in line["efforts"].items():
+            spec["selector"] = f"gpt-multi-sol-next-{effort}[1m]"
+
+    def record(self, effort: str = "high") -> dict[str, Any]:
+        binding = {"key": "sol", "selector": self.before["efforts"][effort]["selector"],
+                   "generation": self.before["generation"]}
+        return {"scope_lead": dict(binding), "applied": {"lead": dict(binding), "agents": {}}}
+
+    def test_the_earlier_efforts_come_back_by_contract(self) -> None:
+        for effort in self.before["efforts"]:
+            with self.subTest(effort=effort):
+                restored = scope.recorded_catalog_resolution(self.record(effort), self.docs, {})
+                self.assertIsNotNone(restored)
+                line = restored["models"]["models"]["sol"]
+                self.assertEqual(line["efforts"], self.before["efforts"])
+                self.assertEqual((line["wire_model"], line["generation"], line["display"]),
+                                 (self.before["wire_model"], self.before["generation"], self.before["display"]))
+
+    def test_a_mapping_that_is_not_one_to_one_is_refused(self) -> None:
+        contracts = sorted(self.retired["selectors"].values())
+        selectors = sorted(self.retired["selectors"])
+        for name, history in (
+            ("unknown contract", {**self.retired["selectors"], selectors[0]: "reasoning-effort-fixture"}),
+            ("one contract twice", {selectors[0]: contracts[0], selectors[1]: contracts[0]}),
+            ("an effort without history", {selectors[0]: self.retired["selectors"][selectors[0]]}),
+            ("history without its effort", {**self.retired["selectors"], "gpt-multi-sol-extra[1m]": "reasoning-effort-max"}),
+        ):
+            with self.subTest(name=name):
+                self.docs["retired"]["retired"]["sol@prev"] = {**self.retired, "selectors": history}
+                self.assertIsNone(scope.recorded_catalog_resolution(self.record(), self.docs, {}))
 
 
 if __name__ == "__main__":

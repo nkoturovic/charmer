@@ -548,12 +548,9 @@ def expected_plan(
         # A live scope keeps its own on-disk presence/absence of
         # permissions.defaultMode; only launch and resume decide from layers.
         default_mode=scope.live_default_mode(live),
-        # The subagent status line is decided like a launch decides it, so a
-        # scope another release compiled converges at repair (a running one
-        # at its next resume), and a user-owned key wins there too.
-        subagent_status_line=(
-            None if environ and environ.get("HOME") and managed.subagent_status_line_configured(environ, record["cwd"])
-            else scope.status_line_setting(scope.status_line_shim_path(state_root))),
+        # No subagent status line, as a launch compiles none: a scope an
+        # earlier release compiled with it converges at repair (a running one
+        # at its next resume).
     )
     catalog_plan = _compile(record, lineup, lcat, eff, **compile_kw)
     fence = record.get("launch_fence")

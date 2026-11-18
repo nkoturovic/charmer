@@ -1,22 +1,27 @@
 """Client check S17 against the pinned Claude Code: the subagent status line.
 
-Managed scopes compile ``subagentStatusLine`` into the flag settings
-(``--settings``) unless a user, project or local settings layer defines the
-key (``scope.compile_lineup_scope``, ``Runtime.subagent_status_line``). S17
-pins the client behaviour that rule rests on, in a terminal (the client
-runs the command only for the agent panel of an interactive session):
+Managed scopes compiled ``subagentStatusLine`` into the flag settings
+(``--settings``) through 2.5.0. From Claude Code 2.1.326 the client shows
+"subagentStatusLine is deprecated in favor of mods and will stop working in
+a future release" at every start while any layer sets the key, so a launch
+compiles none; the stable shim and ``charmer statusline subagents`` stay for
+a key of the user's own. S17 pins the client behaviour, in a terminal (the
+client runs the command only for the agent panel of an interactive
+session):
 
 - (a) a ``--settings`` document's ``subagentStatusLine`` is run when the
   user layer has none, and the rows it prints replace the native rows;
-  end to end, the compiled value (the stable shim, a release-shaped
-  launcher over this checkout and ``charmer statusline subagents``) draws
-  the shipped row, ``requested: <selector>`` included;
+  end to end, the shim's value (the stable shim, a release-shaped launcher
+  over this checkout and ``charmer statusline subagents``) draws the
+  shipped row, ``requested: <selector>`` included;
 - (b) with none in the flag settings, the user layer's own key is run;
 - control: when both define it, the flag settings' command runs and the
-  user's never does: the reason charmer compiles none over a user-owned key;
+  user's never does;
 - (c) the document on the command's stdin has ``columns`` and ``tasks[]``
   with the fields the shipped renderer reads; the observed field set is
-  printed (names only).
+  printed (names only);
+- (d) the deprecation notice, recorded per key; ``S17-notice`` measures it
+  on a second start of the same machine and without the key.
 
 Real-binary runs only, through the probe harness: disposable fixture HOME,
 the loopback fake provider, the live-daemon-domain tripwire and the
@@ -69,6 +74,9 @@ _DIRECTIVE = "CLIENTCHECK-SPAWN-1"
 _TOOL_ID = "toolu_check_s17"
 _PROMPT_GLYPH = "❯".encode("utf-8")
 _LIVE_DOMAIN_TOUCHED = "live daemon domain touched"
+# The startup notice a user reported on 2.1.326 ("subagentStatusLine is
+# deprecated in favor of mods and will stop working in a future release").
+_NOTICE = "deprecated"
 # The task fields the shipped renderer reads (charmer.statusline).
 RENDERER_TASK_FIELDS = frozenset({"id", "agentType", "type", "name", "model", "effort", "status", "label",
                                   "description", "tokenCount", "contextWindowSize"})
@@ -251,6 +259,7 @@ class _Run:
     documents: tuple[dict[str, Any], ...]  # recorded metadata, in order
     lines: frozenset[str]  # every terminal line the session drew
     responder: _Responder
+    fixture: probe.ProbeFixture | None = None  # for a later start on the same machine
 
     def drew(self, text: str) -> bool:
         return any(text in line for line in self.lines)
@@ -288,15 +297,23 @@ class SubagentStatusLineClientTests(unittest.TestCase):
         self.recorder.chmod(0o700)
 
     def run_case(self, name: str, session: str, *, flag: str | dict[str, str] | None,
-                 user: str | None, hold: float | None = None) -> _Run:
+                 user: str | None, hold: float | None = None,
+                 fixture: probe.ProbeFixture | None = None) -> _Run:
         """One terminal session that spawns one background agent. ``flag`` is
         a recorder label or a literal ``subagentStatusLine`` for the flag
-        settings; ``user`` a recorder label for the user layer."""
+        settings; ``user`` a recorder label for the user layer; ``fixture`` an
+        earlier run's machine, started again."""
 
-        fixture = probe.build_fixture(self.root / name, environ=self.environ)
-        # The user layer IS $HOME/.claude/settings.json (a managed launch
-        # unsets CLAUDE_CONFIG_DIR).
-        fixture = dataclasses.replace(fixture, claude_config_dir=state.ensure_private_dir(fixture.home / ".claude"))
+        # A machine started before has its onboarding done.
+        onboarding = [probe.PTYInteraction(b"Choose", b"2\r"), probe.PTYInteraction(b"Press", b"\r")]
+        if fixture is not None:
+            onboarding = []
+        else:
+            fixture = probe.build_fixture(self.root / name, environ=self.environ)
+            # The user layer IS $HOME/.claude/settings.json (a managed launch
+            # unsets CLAUDE_CONFIG_DIR).
+            fixture = dataclasses.replace(fixture,
+                                          claude_config_dir=state.ensure_private_dir(fixture.home / ".claude"))
         records = state.ensure_private_dir(fixture.root / "records")
         scope_dir = state.ensure_private_dir(fixture.root / "scope")
         agents = state.ensure_private_dir(state.ensure_private_dir(scope_dir / ".claude") / "agents")
@@ -317,7 +334,7 @@ class SubagentStatusLineClientTests(unittest.TestCase):
         flag_path = fixture.root / "flag-settings.json"
         state.atomic_write(flag_path, strict_json.canonical_file_bytes(settings))
         responder = _Responder(records, hold)
-        steps = [probe.PTYInteraction(b"Choose", b"2\r"), probe.PTYInteraction(b"Press", b"\r"),
+        steps = [*onboarding,
                  probe.PTYInteraction(_PROMPT_GLYPH, f"{_DIRECTIVE} go\r".encode()),
                  probe.PTYInteraction(b"CLIENTCHECK-NOTIFIED-spawn1", b"/exit\r")]
         try:
@@ -338,7 +355,7 @@ class SubagentStatusLineClientTests(unittest.TestCase):
         self.assertTrue(result.daemon.unchanged)
         self.assertTrue(responder.spawned and responder.agent_requests >= 1, name)
         documents = tuple(json.loads(path.read_text(encoding="utf-8")) for path in sorted(records.iterdir()))
-        return _Run(documents, frozenset(seen_lines(result.stdout)), responder)
+        return _Run(documents, frozenset(seen_lines(result.stdout)), responder, fixture)
 
     def test_s17_subagent_status_line_precedence_and_document(self) -> None:
         # (a) the flag settings' key, with no user key.
@@ -371,6 +388,11 @@ class SubagentStatusLineClientTests(unittest.TestCase):
         self.assertTrue({"id", "agentType", "type", "status", "description", "label", "model", "tokenCount",
                          "contextWindowSize", "effort"} <= set(task["keys"]), sorted(task["keys"]))
         self.assertEqual("name" in task["keys"], flag.responder.named)  # a named agent's name is sent
+        # (d) the startup notice ("subagentStatusLine is deprecated in favor
+        # of mods", 2.1.326): recorded for each key (client check S17-notice
+        # measures whether it repeats).
+        notices = {name: run.drew(_NOTICE) for name, run in
+                   (("flag", flag), ("user", user), ("both", both), ("shipped", shipped))}
         print("client check S17: PASS "
               f"flag-settings key runs ({len(flag.documents)} document(s)) and its rows replace the native ones; "
               f"user key runs without one ({len(user.documents)}); both -> flag only; "
@@ -378,7 +400,25 @@ class SubagentStatusLineClientTests(unittest.TestCase):
               f"document top={','.join(document['top'])} columns={document['columns']} "
               f"task fields={','.join(task['keys'])} (renderer reads "
               f"{','.join(sorted(RENDERER_TASK_FIELDS & set(task['keys'])))}) status={task['status']} "
+              f"deprecation-notice={','.join(name for name, seen in notices.items() if seen) or 'none'} "
               f"{self.evidence_label}")
+
+
+    def test_s17_notice_on_each_start(self) -> None:
+        """The deprecation notice for a --settings key: shown at the first
+        start of a machine, and again at the next start of the same machine
+        (its config kept) or not. Measured, printed as ``client check
+        S17-notice: MEASURED``."""
+
+        first = self.run_case("notice", "17171717-0005-4005-8005-000000000005", flag="flag", user=None)
+        again = self.run_case("notice", "17171717-0006-4006-8006-000000000006", flag="flag", user=None,
+                              fixture=first.fixture)
+        control = self.run_case("notice-none", "17171717-0007-4007-8007-000000000007", flag=None, user=None)
+        shown = {"first": first.drew(_NOTICE), "again": again.drew(_NOTICE), "without-key": control.drew(_NOTICE)}
+        self.assertFalse(shown["without-key"], shown)
+        print("client check S17-notice: MEASURED "
+              + " ".join(f"{name}={'shown' if seen else 'absent'}" for name, seen in shown.items())
+              + f" {self.evidence_label}")
 
 
 if __name__ == "__main__":

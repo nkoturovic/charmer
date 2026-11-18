@@ -936,6 +936,21 @@ class SettingsRadarTests(_DoctorCase):
         _problems, info, attention = _doctor(self)
         self.assertFalse([line for line in (*info, *attention) if "DISABLE_AUTO_COMPACT" in line])
 
+    def test_the_window_switches_in_settings_env(self) -> None:
+        # Every managed scope states CLAUDE_CODE_DISABLE_1M_CONTEXT "0" over
+        # a user's "1" (Info); nothing undoes the unknown-model switch.
+        user = self._write(Path(self.env["HOME"]) / ".claude" / "settings.json", {"env": {
+            "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1", "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT": "1"}})
+        _problems, info, attention = _doctor(self)
+        self.assertIn(f"{user}: env.CLAUDE_CODE_DISABLE_1M_CONTEXT: managed sessions keep their 1M windows; plain "
+                      "claude holds 1M models to 200K", info)
+        self.assertFalse([line for line in attention if "DISABLE_1M_CONTEXT" in line])
+        self.assertIn(f"{user}: env.CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT defeats the charmer session "
+                      "policy (claude merges it after the launcher's env cleanup) — remove it", attention)
+        self._write(user, {"env": {"CLAUDE_CODE_DISABLE_1M_CONTEXT": "0"}})
+        _problems, info, attention = _doctor(self)
+        self.assertFalse([line for line in (*info, *attention) if "DISABLE_1M_CONTEXT" in line])
+
     def test_a_credential_key_is_attention_and_blocks_rotate_token(self) -> None:
         user = self._write(Path(self.env["HOME"]) / ".claude" / "settings.json",
                            {"env": {"ANTHROPIC_AUTH_TOKEN": "tok-value-never-printed"}})

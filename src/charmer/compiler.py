@@ -304,6 +304,10 @@ HAIKU_DEFAULT_ENV = "ANTHROPIC_DEFAULT_HAIKU_MODEL"
 HAIKU_LINE = "haiku"
 AUTO_COMPACT_ENV = "DISABLE_AUTO_COMPACT"
 AUTO_COMPACT_ON = "0"
+ONE_M_CONTEXT_ENV = "CLAUDE_CODE_DISABLE_1M_CONTEXT"
+ONE_M_CONTEXT_ON = "0"
+RESUME_HINT_ENV = "CLAUDE_CODE_RESUME_HINT_COMMAND"
+RESUME_HINT_COMMAND = "charmer"
 
 
 def lineup_default_env(lead_selector: str, bound: Iterable[tuple[str, str]]) -> dict[str, str]:
@@ -318,10 +322,13 @@ def lineup_default_env(lead_selector: str, bound: Iterable[tuple[str, str]]) -> 
     layer. So the variable is the ``haiku`` line's selector when the lineup
     binds it, else the lead's selector. ``DISABLE_AUTO_COMPACT`` is ``"0"``:
     a user's ``1`` never stops the managed compaction.
+    ``CLAUDE_CODE_DISABLE_1M_CONTEXT`` is ``"0"``: a user's ``1`` would hold
+    every ``[1m]`` role to 200K and drop the lead's own picker row.
     """
 
     haiku = sorted({selector for key, selector in bound if key == HAIKU_LINE})
-    return {HAIKU_DEFAULT_ENV: haiku[0] if haiku else lead_selector, AUTO_COMPACT_ENV: AUTO_COMPACT_ON}
+    return {HAIKU_DEFAULT_ENV: haiku[0] if haiku else lead_selector, AUTO_COMPACT_ENV: AUTO_COMPACT_ON,
+            ONE_M_CONTEXT_ENV: ONE_M_CONTEXT_ON}
 
 
 @dataclass(frozen=True)
@@ -674,11 +681,12 @@ def generate_session_appendix(
             "smallest provider bound by local operating policy; it is not a "
             "route-capability claim."
         )
-    if context.scalar is not None:
-        lines.append(
-            f"- Process scalar: CLAUDE_CODE_MAX_CONTEXT_TOKENS={context.scalar} is exported "
-            "for this lead class."
-        )
+    lines.append(
+        f"- Process scalar: CLAUDE_CODE_MAX_CONTEXT_TOKENS={context.scalar} is exported. "
+        "It is the window class Claude Code gives a model id it does not recognise and that "
+        "has no [1m] suffix; Claude's own ids keep their windows, and a smaller compaction "
+        "window above still applies."
+    )
     if context.custom_bound:
         lines.append(
             "- Context qualification: the lead set includes an operator-declared custom "
@@ -777,6 +785,10 @@ POLICY_DEFEATING_ENV_KEYS = (
     "CLAUDE_CODE_DISABLE_THINKING",
     "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING",
     "CLAUDE_CODE_COORDINATOR_FORCE_WORKER_INHERIT_MODEL",
+    # Hold every 1M model to 200K; and turn the client's window check for
+    # ids it does not know off.
+    ONE_M_CONTEXT_ENV,
+    "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT",
 )
 
 # Gateway-only secrets never enter a managed or direct session.
@@ -970,9 +982,8 @@ def compile_lineup_launch(
     (``CompilerError``/``ScopeError``) on every gap. ``default_mode`` is the
     launch's permission-mode decision (``scope.PERMISSION_DEFAULT_MODE``
     when no settings layer configures one, else None);
-    ``subagent_status_line`` the launch's status-line decision (the stable
-    shim's ``scope.status_line_setting`` unless a settings layer of the
-    user's own defines ``subagentStatusLine``, else None).
+    ``subagent_status_line`` an explicit status-line value
+    (``scope.status_line_setting``; a launch passes none).
     """
 
     from . import profile as profile_mod
@@ -1052,9 +1063,13 @@ def compile_lineup_launch(
         # No background service (agent view, /background, the exit dialog's
         # background choice, the on-demand daemon); reserved against lead.env.
         "CLAUDE_CODE_DISABLE_AGENT_VIEW": "1",
+        # The exit hint names the launcher ("charmer --resume <id>"), whose
+        # resume takes the client's own session id; reserved against lead.env.
+        RESUME_HINT_ENV: RESUME_HINT_COMMAND,
+        # The class of every model id without [1m] (the client assumes 1M
+        # for an id it does not know); reserved against lead.env.
+        "CLAUDE_CODE_MAX_CONTEXT_TOKENS": str(context.scalar),
     }
-    if context.scalar is not None:
-        env_set["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(context.scalar)
     env_set.update(lineup.lead.env)
     env_set["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = str(context.window)
     env_set["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"] = str(context.percent)

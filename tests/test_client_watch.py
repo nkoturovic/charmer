@@ -496,9 +496,10 @@ _MCP_TOOL = f"mcp__{_MCP_SERVER}__big"
 _PARTS = ("one", "two", "three", "four")
 _PART_CHARS = 160_000
 _MCP_TRIALS = 3
-# Measured on the pin (re-recorded on a re-pin): parallel results are handed
-# one saved file (2.1.310 the same).
-_MCP_MEASURED = "ML-same-file"
+# Measured on the pin (re-recorded on a re-pin): each parallel result gets its
+# own saved file on 2.1.326 (upstream #105138, fixed in 2.1.326); 2.1.310
+# to 2.1.322 handed them one saved file.
+_MCP_MEASURED = "ML-own-results"
 
 
 def _part_marker(part: str) -> str:

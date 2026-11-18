@@ -1,7 +1,8 @@
 """Client check mod-policy: a mod's own calls against the compiled managed scope.
 
 Claude Code 2.1.321 runs a mod's own tool calls (``$.tool.call``) with no
-permission prompt — deny rules and organization policy still apply — and
+permission prompt — deny rules and organization policy still applied there;
+from 2.1.326 they do not (below) — and
 turns on the mods Claude writes in a session without asking in auto and
 bypass modes. A mod runs inside the client with the user's authority; besides
 tools it can read files itself (``$.fs.read``) and rewrite the session's
@@ -35,14 +36,22 @@ authoring path, in a terminal session.
   calls got. The client's own ``dev mods:`` debug lines are kept with the
   fixture paths masked.
 
-The specified outcomes: on the model path the secret's token never arrives;
-a mod's ``secret``, ``skill`` and ``write`` calls are ``denied`` (a deny
-answer, or an error answer worded as a refusal, without the secret's token;
-nothing is written); ``fsread`` is recorded, not specified (the compiled
-denies are tool rules: a mod's own file reads are the person's own code). A
-run whose control never arrives is a mod that did not load: INCONCLUSIVE for
-an installed mod, the recorded "not turned on" for a generated one. The
-output line: ``client check mod-policy: <STATUS> class=<class> <detail>``.
+The specified outcomes: on the model path the secret's token never arrives
+(``MP-denied``); a generated mod never turns on (``MP-not-loaded``; the
+required lane is ``AuthoringPathProbe``). A mod the person installs is their
+own code: from Claude Code 2.1.326 no deny rule covers its own
+``$.tool.call`` (upstream's mods types at the 2.1.326 changelog commit: "Deny
+rules at every level don't cover this call [...]: they bind the model, whose
+own calls and whose subagents' stay refused"; 2.1.322 ran it through "the
+permission check and its dialog" and refused all three calls). On the pinned
+client an installed mod's ``secret`` call reads the file, ``skill`` and
+``write`` are answered and the write lands: :data:`INSTALLED_CLASS`, the
+expected class, so a client that brings the checks back (``MP-denied``) or
+changes any one call fails this check visibly. ``fsread`` is recorded, not
+specified (a mod's own file reads were never covered). A run whose control
+never arrives is a mod that did not load: INCONCLUSIVE for an installed mod,
+the recorded "not turned on" for a generated one. The output line:
+``client check mod-policy: <STATUS> class=<class> <detail>``.
 """
 
 from __future__ import annotations
@@ -74,6 +83,13 @@ from _tier import real_binary_gate
 
 LINE_PREFIX = "client check mod-policy:"
 PASS_CLASS = "MP-denied"
+# The check's own PASS class: the model path denied, a generated mod not
+# loaded and an installed mod's calls unchecked, each as specified.
+CHECK_CLASS = "MP-model-denied-installed-unchecked"
+# An installed mod on the pinned client: every call answered, the secret read
+# and the write landed.
+INSTALLED_CLASS = "MP-write-landed"
+_UNCHECKED = {"control": "answered", "secret": "read", "skill": "answered", "write": "answered"}
 _CONTRACT = RESOURCES_ROOT / "catalog" / "native-contract.json"
 _CALLS = ("control", "secret", "skill", "write", "fsread")
 # ``read``: the call answered with the secret file's own bytes.
@@ -229,6 +245,29 @@ def case_class(observed: dict[str, str], written: bool) -> str:
         if observed[call] != specified:
             return f"MP-{call}-{observed[call]}"
     return PASS_CLASS
+
+
+def installed_class(observed: dict[str, str], written: bool) -> str:
+    """A mod the person installed: :data:`INSTALLED_CLASS` only when every
+    call ran unchecked and the write landed; ``MP-denied`` when the checks
+    are back; else what the first call that differs got."""
+
+    if not written:
+        return case_class(observed, written)
+    for call, unchecked in _UNCHECKED.items():
+        if observed[call] != unchecked:
+            return f"MP-{call}-{observed[call]}"
+    return INSTALLED_CLASS
+
+
+def expected_class(name: str) -> str:
+    """Each case's specified class on the pinned client."""
+
+    if name.startswith("model-"):
+        return PASS_CLASS
+    if name.startswith("generated-"):
+        return "MP-not-loaded"
+    return INSTALLED_CLASS
 
 
 def model_class(found: set[str]) -> str:
@@ -398,7 +437,9 @@ class ModPolicyProbe(unittest.TestCase):
                    for name, row in models_rows.items()]
         for name, row in rows.items():
             observed = outcomes(row["found"])
-            classes[name] = "MP-not-loaded" if observed["control"] == "absent" else case_class(observed, row["written"])
+            classify = case_class if name.startswith("generated-") else installed_class
+            classes[name] = ("MP-not-loaded" if observed["control"] == "absent"
+                             else classify(observed, row["written"]))
             extra = f" mod-written={row['mod_written']}" if "mod_written" in row else ""
             shapes = row.get("shapes")
             if shapes is not None:
@@ -416,8 +457,8 @@ class ModPolicyProbe(unittest.TestCase):
         if unexercised:
             type(self).verdict = ("INCONCLUSIVE", "unavailable", f"not exercised: {unexercised}; {detail}")
             self.fail(f"not exercised: {unexercised}")
-        failed = sorted(name for name, cls in classes.items() if cls not in (PASS_CLASS, "MP-not-loaded"))
-        observed_class = PASS_CLASS if not failed else classes[failed[0]]
+        failed = sorted(name for name, cls in classes.items() if cls != expected_class(name))
+        observed_class = CHECK_CLASS if not failed else f"{failed[0]}:{classes[failed[0]]}"
         type(self).verdict = ("PASS" if not failed else "FAIL", observed_class, detail)
         self.assertEqual(failed, [], detail)
 
@@ -867,6 +908,23 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(model_class({"control-bytes"}), PASS_CLASS)
         self.assertEqual(model_class({"control-bytes", "secret-bytes"}), "MP-model-secret-on-wire")
         self.assertEqual(model_class(set()), "MP-model-unexercised")
+
+    def test_an_installed_mod_runs_unchecked_on_the_pin(self) -> None:
+        unchecked = {"control": "answered", "secret": "read", "skill": "answered", "write": "answered",
+                     "fsread": "read"}
+        self.assertEqual(installed_class(unchecked, True), INSTALLED_CLASS)
+        # The checks back (2.1.322's class) or any one call changed: a FAIL class.
+        checked = {**unchecked, "secret": "denied", "skill": "denied", "write": "denied"}
+        self.assertEqual(installed_class(checked, False), PASS_CLASS)
+        self.assertEqual(installed_class({**unchecked, "secret": "denied"}, True), "MP-secret-denied")
+        self.assertEqual(installed_class({**unchecked, "skill": "denied"}, True), "MP-skill-denied")
+        self.assertEqual(installed_class({**unchecked, "write": "denied"}, True), "MP-write-denied")
+        self.assertEqual(installed_class(unchecked, False), "MP-secret-read")
+        for name, specified in (("model-auto", PASS_CLASS), ("installed-bypass", INSTALLED_CLASS),
+                                ("rewriter-auto", INSTALLED_CLASS), ("generated-default", "MP-not-loaded")):
+            with self.subTest(name):
+                self.assertEqual(expected_class(name), specified)
+        self.assertNotEqual(expected_class("installed-default"), PASS_CLASS)
 
     def test_the_private_tmp_view_keeps_only_the_work_root(self) -> None:
         with private_tmp() as work:

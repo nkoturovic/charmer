@@ -137,8 +137,13 @@ class V2LaunchGoldenTests(unittest.TestCase):
     def test_golden_highlights(self) -> None:
         env = strict_json.loads((GOLDENS_ROOT / "v2" / "managed" / "env.json").read_bytes())
         self.assertFalse([key for key in env["set"] if key in FAMILY_KEYS])
-        self.assertNotIn("CLAUDE_CODE_MAX_CONTEXT_TOKENS", env["set"])
-        self.assertIn("CLAUDE_CODE_MAX_CONTEXT_TOKENS", env["unset"])
+        # The window class of ids without [1m]: the 200K class unless a line
+        # declares a scalar (never left to the client's 1M default).
+        self.assertEqual(env["set"]["CLAUDE_CODE_MAX_CONTEXT_TOKENS"], "200000")
+        self.assertNotIn("CLAUDE_CODE_MAX_CONTEXT_TOKENS", env["unset"])
+        self.assertEqual(env["set"]["CLAUDE_CODE_RESUME_HINT_COMMAND"], "charmer")
+        self.assertIn("CLAUDE_CODE_DISABLE_1M_CONTEXT", env["unset"])
+        self.assertIn("CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT", env["unset"])
         for kind in bless.V2_SEEDS:
             data = b"".join(
                 (GOLDENS_ROOT / "v2" / kind / name).read_bytes()
@@ -268,7 +273,6 @@ class EnvTests(unittest.TestCase):
                 self.assertTrue(secrets)
                 expected = [
                     *compiler.V2_ENV_UNSET,
-                    "CLAUDE_CODE_MAX_CONTEXT_TOKENS",  # the fixture large class has no scalar
                     *compiler.POLICY_DEFEATING_ENV_KEYS,
                     *compiler.GATEWAY_SECRET_ENV_KEYS,
                     *secrets,
@@ -285,6 +289,12 @@ class EnvTests(unittest.TestCase):
                 self.assertEqual(result.env_set["CHARMER_SESSION_ID"], FIXED_SESSION)
                 self.assertEqual(result.env_set["CHARMER_LAUNCH_EPOCH"], "0")
                 self.assertEqual(result.env_set["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"], "90")
+                # The fixture large class declares no scalar: the 200K class.
+                self.assertEqual(result.env_set["CLAUDE_CODE_MAX_CONTEXT_TOKENS"], "200000")
+                self.assertEqual(result.env_set["CLAUDE_CODE_RESUME_HINT_COMMAND"], "charmer")
+                for key in ("CLAUDE_CODE_DISABLE_1M_CONTEXT", "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT"):
+                    self.assertIn(key, compiler.POLICY_DEFEATING_ENV_KEYS)
+                    self.assertIn(key, catalog.RESERVED_LEAD_ENV_KEYS)
                 window = int(result.env_set["CLAUDE_CODE_AUTO_COMPACT_WINDOW"])
                 self.assertEqual(
                     window, strict_json.loads(result.scope_plan.other_files["lead-set.json"])["context"]["window"]
@@ -1058,7 +1068,9 @@ class AppendixTests(unittest.TestCase):
             "- Operating ceiling" in appendix, context.window < context.min_provider_tokens
         )
         self.assertEqual("Context qualification" in appendix, not context.validated)
-        self.assertNotIn("Process scalar", appendix)
+        self.assertIn("- Process scalar: CLAUDE_CODE_MAX_CONTEXT_TOKENS=200000 is exported. It is the window "
+                      "class Claude Code gives a model id it does not recognise and that has no [1m] suffix; "
+                      "Claude's own ids keep their windows, and a smaller compaction window above still applies.", appendix)
         # Lower-context class with a native agent on: the inheritance line.
         bundle = _bundle()
         lcat = _lcat(bundle.docs)
@@ -1332,9 +1344,7 @@ class WorktreeSeamTests(unittest.TestCase):
 class LoopbackProxyCompileTests(unittest.TestCase):
     def test_no_proxy_bytes_match_the_existing_golden(self):
         bundle, lcat, eff, lineup = _seed("balanced")
-        # As a launch compiles it: the shipped subagent status line included.
-        plan = _launch(lineup, eff, bundle=bundle, launch_environ={},
-                       subagent_status_line=bless.V2_STATUS_LINE).scope_plan
+        plan = _launch(lineup, eff, bundle=bundle, launch_environ={}).scope_plan
         assertGolden(self, GOLDENS_ROOT / "v2/managed/scope/settings.json",
                      strict_json.canonical_file_bytes(plan.settings))
         self.assertNotIn("NO_PROXY", plan.settings["env"])

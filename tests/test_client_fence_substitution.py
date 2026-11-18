@@ -14,8 +14,10 @@ records through (``PreModelSwitch``/``PostModelSwitch``):
   ineffective ``[1m]`` and sends no beta to refuse (``client check
   one-m-suffix``);
 * ``above-200k`` (2.1.299): a gateway model name the client does not know
-  (200K assumed) past 200K tokens: the next turn compacts and answers on the
-  same model instead of failing with "Prompt is too long";
+  (200K: the compiled ``CLAUDE_CODE_MAX_CONTEXT_TOKENS``, without which the
+  client gives it 1M from 2.1.323) past 200K tokens: the next turn compacts
+  and answers on the same model instead of failing with "Prompt is too
+  long";
 * ``response-model`` (2.1.301): every response names another model than the
   one requested: three turns, one request each, every one on the requested
   model, no compaction loop, never the response's model;
@@ -51,7 +53,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from charmer import probe, scope, state
+from charmer import probe, profile, scope, state
 from charmer.probe import ProbeError
 
 from _layout import RESOURCES_ROOT
@@ -252,8 +254,11 @@ class FenceSubstitutionProbe(unittest.TestCase):
                   extra: dict[str, Any] | None = None) -> Path:
         document: dict[str, Any] = {"availableModels": fence, "model": lead,
                                     "permissions": {"defaultMode": scope.PERMISSION_DEFAULT_MODE},
-                                    # The compiled window variable, so a 1M lead does not compact at 200K.
-                                    "env": {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "800000"}}
+                                    # The compiled window variable, so a 1M lead does not compact at 200K,
+                                    # and the compiled window class of ids without [1m] (from 2.1.323 the
+                                    # client alone gives an unknown one 1M).
+                                    "env": {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "800000",
+                                            "CLAUDE_CODE_MAX_CONTEXT_TOKENS": str(profile.CLASS_STANDARD)}}
         document.update(extra or {})
         return probe.write_fixture_settings(fixture, "scope/settings.json", document)
 

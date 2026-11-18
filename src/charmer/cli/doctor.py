@@ -1982,6 +1982,12 @@ def _settings_radar(runtime: runtime_mod.Runtime, records: list[dict[str, Any]])
     credential_hits: list[str] = []
     subagent: dict[str, list[str]] = {key: [] for key in _RADAR_SUBAGENT_KEYS}
     policy_keys = frozenset(compiler.POLICY_DEFEATING_ENV_KEYS)
+    # Policy keys every managed scope states "0" in its flag settings: a
+    # user's value reaches plain claude only.
+    neutralized = {
+        compiler.AUTO_COMPACT_ENV: "managed sessions re-enable compaction; plain claude does not compact",
+        compiler.ONE_M_CONTEXT_ENV: "managed sessions keep their 1M windows; plain claude holds 1M models to 200K",
+    }
     credential_keys = _radar_credential_keys()
     for path in _radar_settings_files(runtime, records):
         document = _read_settings_file(path)
@@ -1997,13 +2003,12 @@ def _settings_radar(runtime: runtime_mod.Runtime, records: list[dict[str, Any]])
                         "session's apiKeyHelper (token rotation would break those sessions) "
                         "— remove it (charmer doctor --rotate-token refuses while it is set)"
                     )
-                elif key == compiler.AUTO_COMPACT_ENV:
+                elif key in neutralized:
                     # Every managed scope states it "0" in its flag settings,
                     # which outrank this layer; DISABLE_COMPACT stays
                     # a policy key (the pinned client lets nothing undo it).
                     if str(env[key]).strip().lower() not in ("", "0", "false", "no", "off"):
-                        info.append(f"{path}: env.{key}: managed sessions re-enable compaction; plain claude "
-                                    "does not compact")
+                        info.append(f"{path}: env.{key}: {neutralized[key]}")
                 elif key in policy_keys and env[key] not in (None, ""):
                     attention.append(
                         f"{path}: env.{key} defeats the charmer session policy (claude "
@@ -2093,13 +2098,13 @@ def _doctor_user_settings_report(
     layers = runtime.subagent_status_line_layers(str(runtime.cwd))
     if layers.defined:
         info.append("subagent status line: user-owned (subagentStatusLine in settings.json; charmer compiles none)")
-    elif layers.unreadable:
-        where = "; ".join(f"{product_paths.display(layer, runtime.environ)} {reason}"
-                          for layer, reason in layers.unreadable)
-        info.append(f"subagent status line: a settings layer could not be read ({where}); charmer's subagent "
-                    "status line was not compiled — fix or remove that file, then it applies at the next resume")
     else:
-        info.append("subagent status line: charmer (compiled into managed sessions)")
+        # Claude Code 2.1.326 shows a deprecation notice at every start while
+        # any layer sets the key (client check S17-notice): none is compiled.
+        shim = product_paths.display(scope_mod.status_line_shim_path(sessions.state_root(runtime.environ)),
+                                     runtime.environ)
+        info.append("subagent status line: not compiled (Claude Code shows a deprecation notice at every start "
+                    f"while subagentStatusLine is set; for charmer's rows set it in your own settings to {shim})")
     if isinstance(document, dict):
         known = _charmer_selector_set(runtime)
         hits: list[tuple[str, Any]] = []
@@ -2900,10 +2905,9 @@ def _check_scope_integrity(
 
     default_mode = (cli_text.DEFAULT_MODE_DRIFT.format(m8=m8, mid=mid), "default-mode", cli_text.DEFAULT_MODE_DRIFTS)
     status_line = (
-        f"session {m8}: its subagent status line differs from this release's compile (a scope another release "
-        "compiled, or your own settings since launch: a subagentStatusLine added or removed, or a layer that "
-        f"cannot be read; lazy state); applies at the next resume (charmer -r {mid}) — or charmer doctor "
-        f"--repair {mid} now",
+        f"session {m8}: its subagent status line differs from this release's compile (a scope an earlier "
+        "release compiled with charmer's subagent status line, which this release compiles into no session; "
+        f"lazy state); applies at the next resume (charmer -r {mid}) — or charmer doctor --repair {mid} now",
         "status-line",
         "{n} sessions: the subagent status line differs from this release's compile (lazy state); each applies "
         "at its next resume — or charmer doctor --repair-all now (stopped sessions)",

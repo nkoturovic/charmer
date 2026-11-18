@@ -1426,12 +1426,19 @@ _HAIKU_MARKER = "client-check-marker-haiku"
 
 
 def _measured_turn(case: _SpikeTestCase, selector: str, *, fence: tuple[str, ...] | None,
-                   child_env: dict[str, str] | None = None) -> dict[str, Any]:
+                   child_env: dict[str, str] | None = None,
+                   settings_env: dict[str, str] | None = None,
+                   user_env: dict[str, str] | None = None) -> dict[str, Any]:
     """One headless turn on ``selector``: the wire, the 1M beta, the output
-    cap and the context window the client books (``modelUsage``)."""
+    cap and the context window the client books (``modelUsage``);
+    ``user_env`` is a user settings layer's ``env``."""
 
-    result, rows = case._run("1M", selector, responder=_SpikeResponder(), fence=fence,
-                             child_env=child_env, extra=("--output-format", "json"))
+    fixture = case._fixture()
+    if user_env:
+        probe.write_fixture_settings(fixture, str(fixture.claude_config_dir.relative_to(fixture.root) / "settings.json"),
+                                     {"env": dict(user_env)})
+    result, rows = case._run("1M", selector, responder=_SpikeResponder(), fence=fence, child_env=child_env,
+                             extra=("--output-format", "json"), settings_env=settings_env, fixture=fixture)
     main = [row for row in rows if row["tool_count"]] or rows
     try:
         usage = json.loads(result.stdout or "{}").get("modelUsage") or {}
@@ -1452,6 +1459,13 @@ class OneMillionSuffixProbe(_SpikeTestCase):
     compaction and window accounting) and reaches the wire without the
     suffix. The 1M beta is recorded per selector, not required: a canonical
     id that is 1M on its own needs none.
+
+    From Claude Code 2.1.323 an unknown id without the suffix books 1M too;
+    ``CLAUDE_CODE_MAX_CONTEXT_TOKENS`` (the compile states the 200K class in
+    the flag settings env) brings it back to 200K and leaves every ``[1m]``
+    selector and canonical id at 1M (the ``scalar`` rows). A user's
+    ``CLAUDE_CODE_DISABLE_1M_CONTEXT=1`` holds a ``[1m]`` selector to 200K;
+    the compiled flag settings state it ``0``, which restores 1M.
     """
 
     def test_every_compiled_1m_selector_books_1m(self) -> None:
@@ -1459,16 +1473,30 @@ class OneMillionSuffixProbe(_SpikeTestCase):
                  for selector in (family, _wire(family))}
         cases.update({_HAIKU: (_HAIKU,), f"{_HAIKU}[1m]": (f"{_HAIKU}[1m]",)})
         observed = {selector: _measured_turn(self, selector, fence=fence) for selector, fence in cases.items()}
-        for selector, row in observed.items():
+        scalar = {"CLAUDE_CODE_MAX_CONTEXT_TOKENS": str(profile.CLASS_STANDARD)}
+        bounded = {selector: _measured_turn(self, selector, fence=(selector,), settings_env=scalar)
+                   for selector in (_MULTI_OPUS, _wire(_MULTI_OPUS), _OPUS, _wire(_OPUS))}
+        for selector, row in (*observed.items(), *bounded.items()):
             self.assertEqual(row["rc"], 0, selector)
             self.assertEqual(row["wire"], _wire(selector), selector)
         # Every compiled 1M selector books 1M.
         for selector in (_OPUS, _FABLE, _SONNET, _MULTI_OPUS):
             self.assertEqual(observed[selector]["window"], [1000000], selector)
-        # An unknown id is 200K without the suffix and needs the beta for 1M.
-        self.assertEqual(observed[_wire(_MULTI_OPUS)]["window"], [200000])
+        # An unknown id without the suffix: the client's own 1M, the
+        # compiled scalar's 200K; the suffix keeps 1M under the scalar.
+        self.assertEqual(observed[_wire(_MULTI_OPUS)]["window"], [1000000])
+        self.assertEqual(bounded[_wire(_MULTI_OPUS)]["window"], [200000])
+        for selector in (_MULTI_OPUS, _OPUS, _wire(_OPUS)):
+            self.assertEqual(bounded[selector]["window"], [1000000], selector)
         self.assertTrue(observed[_MULTI_OPUS]["beta"])
-        self.assertFalse(observed[_wire(_MULTI_OPUS)]["beta"])
+        self.assertFalse(bounded[_wire(_MULTI_OPUS)]["beta"])
+        # A user's CLAUDE_CODE_DISABLE_1M_CONTEXT=1 holds a [1m] selector to
+        # 200K; the compiled flag settings state it "0", which restores 1M.
+        user_off = {"CLAUDE_CODE_DISABLE_1M_CONTEXT": "1"}
+        held = _measured_turn(self, _MULTI_OPUS, fence=(_MULTI_OPUS,), settings_env=scalar, user_env=user_off)
+        kept = _measured_turn(self, _MULTI_OPUS, fence=(_MULTI_OPUS,), user_env=user_off,
+                              settings_env={**scalar, "CLAUDE_CODE_DISABLE_1M_CONTEXT": "0"})
+        self.assertEqual((held["window"], kept["window"]), ([200000], [1000000]))
         # A canonical id is 1M on its own: with or without the suffix the
         # request is the same (2.1.310 still added the beta for the suffix).
         for family in (_OPUS, _FABLE, _SONNET, f"{_HAIKU}[1m]"):
@@ -1478,7 +1506,74 @@ class OneMillionSuffixProbe(_SpikeTestCase):
             f"{selector}->{row['wire']}:window={'/'.join(map(str, row['window'])) or '?'}"
             f"{'+1m-beta' if row['beta'] else ''}:max={row['max_tokens']}"
             for selector, row in observed.items())
+        detail += " scalar " + " ".join(
+            f"{selector}:window={'/'.join(map(str, row['window'])) or '?'}" for selector, row in bounded.items())
+        detail += (f" user-1M-off {_MULTI_OPUS}:window={'/'.join(map(str, held['window']))}"
+                   f" flag-1M-on:window={'/'.join(map(str, kept['window']))}")
         print(f"client check one-m-suffix: PASS class=1M-booked {detail} {self._identity()}")
+
+
+_HINT_LINE = re.compile(r"Resume this session with:\s*(\S+) --resume (\S+)")
+
+
+def _screen(raw: str) -> str:
+    """A PTY capture as plain text: escape sequences dropped, cursor-column
+    jumps as spaces, whitespace runs folded."""
+
+    text = re.sub(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)", "", raw)
+    text = re.sub(r"\x1b\[\d*G", " ", text)
+    text = re.sub(r"\x1b\[[0-9;?]*[ -/]*[@-~]", "", text)
+    return " ".join(text.split())
+
+
+class ResumeHintProbe(_SpikeTestCase):
+    """The exit hint of a managed terminal session.
+
+    The pinned client prints ``Resume this session with: <command> --resume
+    <id>`` when a session ends; ``CLAUDE_CODE_RESUME_HINT_COMMAND`` in the
+    process environment (a bare command name; the flag settings env does not
+    reach it) replaces ``claude``. Every launch states it ``charmer``
+    (``compiler.RESUME_HINT_ENV``), and ``charmer --resume <id>`` takes the
+    client's session id. The probe's child-environment allowlist does not
+    carry the variable: this check admits it, as a bounded name, for its own
+    runs. A control without it names ``claude``. The line is ``client check
+    resume-hint: PASS class=RH-charmer <detail>``.
+    """
+
+    def _hint(self, child: dict[str, str] | None) -> tuple[int, str | None]:
+        fixture = self._fixture()
+        managed = compiled_managed_scope(fixture, "balanced")
+        session = str(uuid.uuid4())
+        argv = ("--session-id", session, "--settings", str(managed["settings"]), "--model", managed["lead"],
+                "--effort", managed["effort"], "--add-dir", str(managed["live"]))
+        steps = (probe.PTYInteraction(b"Choose", b"2\r"), probe.PTYInteraction(b"Press", b"\r"),
+                 probe.PTYInteraction("❯".encode("utf-8"), b"client check hint\r",
+                                      before_send=lambda: time.sleep(1.0)),
+                 probe.PTYInteraction(b"PROBE-OK", b"/exit\r", before_send=lambda: time.sleep(1.0)))
+        rules = {compiler.RESUME_HINT_ENV: ("model", 0, 0)}
+        with probe.FakeAnthropicProvider() as provider, mock.patch.dict(probe._PROBE_ENV_RULES, rules):
+            try:
+                result = probe.run_native_pty(argv, steps, trusted=self.trusted, fixture=fixture,
+                                              provider=provider, timeout=120, allow_real=True,
+                                              environ=self.environ, rows=50, columns=200, child_env=child)
+            except ProbeError as exc:
+                if _TRIPWIRE in str(exc):
+                    self.skipTest("BOUNDARY: live daemon-domain tripwire hit")
+                raise
+        found = _HINT_LINE.search(_screen(result.stdout))
+        if found is None or found.group(2) != session:
+            return result.returncode, None
+        return result.returncode, found.group(1)
+
+    def test_the_hint_names_charmer(self) -> None:
+        self.assertEqual(compiler.RESUME_HINT_COMMAND, "charmer")
+        rc, command = self._hint({compiler.RESUME_HINT_ENV: compiler.RESUME_HINT_COMMAND})
+        control_rc, control = self._hint(None)
+        detail = f"compiled={command} control={control} {self._identity()}"
+        self.assertEqual((rc, control_rc), (0, 0), detail)
+        self.assertEqual(control, "claude", detail)
+        self.assertEqual(command, "charmer", detail)
+        print(f"client check resume-hint: PASS class=RH-charmer {detail}")
 
 
 class HaikuNativeProbe(_SpikeTestCase):
@@ -1702,7 +1797,7 @@ sys.exit(done.returncode)
 
 def compiled_managed_scope(fixture: probe.ProbeFixture, seed: str, *,
                            flag_env: dict[str, str] | None = None, without_counter: bool = False,
-                           anthropic_extra: tuple[str, ...] = ()) -> dict[str, Any]:
+                           anthropic_extra: tuple[str, ...] = (), trust_scope: bool = True) -> dict[str, Any]:
     """A fixture-only managed session of a shipped seed: the v3 record and the
     v2 scope (the managed compile, with its six lifecycle hooks, the
     permission default and the refusal-switch capability table) under the
@@ -1713,8 +1808,9 @@ def compiled_managed_scope(fixture: probe.ProbeFixture, seed: str, *,
     table (the client's own behaviour, measured). ``anthropic_extra`` adds
     canonical Anthropic selectors to the fence as lead-set rows of the
     ``anthropic`` provider (which the compiled table never names), the fence
-    a lineup binding them compiles. Nothing outside the fixture is read or
-    written."""
+    a lineup binding them compiles. The scope is trusted in the fixture's
+    client config unless ``trust_scope`` is false. Nothing outside the
+    fixture is read or written."""
 
     # A git work tree with one commit: the writable roles are worktree-isolated.
     git_env = {"HOME": str(fixture.home), "PATH": "/usr/bin:/bin", "GIT_CONFIG_NOSYSTEM": "1",
@@ -1758,7 +1854,8 @@ def compiled_managed_scope(fixture: probe.ProbeFixture, seed: str, *,
         lineup, lcat, eff, _SHIPPED.prompt_bodies, scope.catalog_meta_v2(_SHIPPED.docs), lineup_generation=1,
         managed_id=managed, hook_command=str(shim), launch_epoch=1, default_mode=scope.PERMISSION_DEFAULT_MODE)
     live = scope.write_scope(state_root, managed, plan)
-    probe.seed_fixture_project_trust(fixture, live)
+    if trust_scope:
+        probe.seed_fixture_project_trust(fixture, live)
     settings = json.loads(json.dumps(plan.settings))
     settings["env"].pop("ANTHROPIC_BASE_URL")
     anthropic = {row.selector for row in fence.lead_set if row.provider == "anthropic"} | set(fence.fallback_only)

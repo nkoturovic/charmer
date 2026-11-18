@@ -7,7 +7,8 @@
   (this release back to the previous one) is the pair that is proven.
 * The fallback control, named by ``CHARMER_TEST_FALLBACK_CONTROL_CLAUDE``: an
   older client that still has the behaviours the gateway-fallback checks
-  show the pin removed (the caching beta, the resent changing MCP call).
+  show the pin removed (the caching beta, the resent changing MCP call), and
+  SendFeedback behind a gateway (probe FD; withheld there from 2.1.319).
 
 Each control is an absolute path accepted only at its recorded sha256; the
 runner checks a named control before any test runs, and the tests check it
@@ -24,7 +25,7 @@ from typing import Mapping
 PREVIOUS_ENV = "CHARMER_TEST_PREVIOUS_CLAUDE"
 FALLBACK_CONTROL_ENV = "CHARMER_TEST_FALLBACK_CONTROL_CLAUDE"
 CONTROL_CLIENTS = {
-    "CHARMER_TEST_PREVIOUS_CLAUDE": ("2.1.312", "4f4178ce41d83e23341ebfbaecdbcf8ea6bf7baea0690025abe49eeec3a5d01d"),
+    "CHARMER_TEST_PREVIOUS_CLAUDE": ("2.1.322", "bfb3703ad5380242328459bc62ada4bde8ae7ba57c6e1eeadb9c00e08874c478"),
     "CHARMER_TEST_FALLBACK_CONTROL_CLAUDE": (
         "2.1.302", "60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5"),
 }

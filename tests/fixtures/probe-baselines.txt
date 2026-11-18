@@ -25,8 +25,10 @@ client probe SK: PASS class=SK-kept
 client probe OC: PASS class=OC-untouched
 client probe FL: PASS class=FL-ok
 client probe CC: PASS class=CC-bash-child
-client probe FD: PASS class=FD-env-off-subagent-withheld
-# FD: notify restores the lead; the subagent notify control is unavailable.
+client probe FD: PASS class=FD-client-gateway-withheld
+# FD: from 2.1.319 the client offers SendFeedback to nobody behind a gateway;
+# the fallback control 2.1.302 still offers it to the lead under notify
+# (2.1.326, 2026-11-18). On 2.1.312: FD-env-off-subagent-withheld.
 client probe XC: PASS class=XC-exact
 client probe DG: PASS class=DG-resumable
 # DG: a 2.1.312 tool turn + /compact resumes on 2.1.311 (the previous
@@ -359,3 +361,34 @@ client probe FM-layers: PASS class=FM-flag-settings
 # message-only prefix can vary in length. The Claude key and compat routes
 # keep SendMessage only in top-level tools. The placement controls reject
 # the old Codex placement, duplicate placement and a displaced input item.
+#
+# The re-pin to Claude Code 2.1.326 (sha256 b6b3647d9811), 2026-11-18, with
+# the previous pin 2.1.322 and the fallback control 2.1.302 as controls.
+client check directory-trust: MEASURED class=T2
+# A terminal launch asks before it adds an --add-dir folder nobody trusted
+# (fresh, resume and fork alike); No exits 1, Yes holds for that session and
+# stores nothing. A trust entry for the scope or for a folder above it
+# outside a git repository (charmer's scopes folder) skips the question; -p
+# never asks. Terminal fixtures trust each added folder.
+client check mod-policy: PASS class=MP-model-denied-installed-unchecked
+# A mod the user installs: its own $.tool.call runs past every deny rule
+# (the secret read, Skill answered, the write lands); 2.1.322 refused all
+# three. The model path stays denied, and a model-written mod never loads
+# (mod-authoring AP-closed).
+client check one-m-suffix: PASS class=1M-booked
+# An unknown id without [1m] books 1M (2.1.322: 200K). The compiled
+# CLAUDE_CODE_MAX_CONTEXT_TOKENS=200000 holds it to 200K; [1m] and canonical
+# ids keep 1M. A user's CLAUDE_CODE_DISABLE_1M_CONTEXT=1 holds a [1m] id to
+# 200K; the compiled flag settings 0 restore 1M.
+client check resume-hint: PASS class=RH-charmer
+# CLAUDE_CODE_RESUME_HINT_COMMAND=charmer (process environment) makes the
+# exit hint read charmer --resume <id>; without it, claude.
+client check S17-notice: MEASURED
+# subagentStatusLine is deprecated in favor of mods and will stop working
+# in a future release: shown at every start while any layer sets the key,
+# --settings included, absent without it. The compile states none.
+client check watch-mcp-large: NOT-REPRODUCED class=ML-own-results
+# Fixed upstream in 2.1.326 (#105138): each parallel result has its own file.
+client probe S14: PASS class=S14-model-deny
+# security-review asks before the model runs it from 2.1.323: an ask-gated
+# entry (a CLI allow makes its negative control load); still denied.

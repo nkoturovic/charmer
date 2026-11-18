@@ -166,6 +166,11 @@ RESERVED_LEAD_ENV_KEYS = frozenset(
         "CLAUDE_CODE_DISABLE_THINKING",
         "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING",
         "CLAUDE_CODE_COORDINATOR_FORCE_WORKER_INHERIT_MODEL",
+        "CLAUDE_CODE_DISABLE_1M_CONTEXT",
+        "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT",
+        # Compiled into every managed launch env: the exit hint names the
+        # launcher's resume.
+        "CLAUDE_CODE_RESUME_HINT_COMMAND",
         # Compiled into every managed launch env so
         # the client never prefetches fast-mode availability with the
         # gateway key; a lead env must never switch it back on.

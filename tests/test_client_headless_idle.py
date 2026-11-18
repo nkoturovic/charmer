@@ -19,12 +19,14 @@ Hermetic like every real-client check (loopback fixture provider, fixture
 homes); only counts, timings and fixed marker strings are kept. The output
 lines: ``client check headless-output: <STATUS> class=<class> <detail>`` and
 ``client check stream-idle: <STATUS> class=<class> <detail>``. The idle case
-takes about ten minutes: it is not part of the essential evidence.
+takes about ten minutes and is not part of the essential evidence: it runs
+only when asked for (``CHARMER_TEST_STREAM_IDLE=1``) and skips otherwise.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 import unittest
@@ -37,6 +39,7 @@ import test_client_gateway_fallbacks as fallbacks
 _LEAD = fallbacks._LEAD
 OUTPUT_PASS_CLASS = "HO-every-turn"
 IDLE_PASS_CLASS = "SI-limit-then-retry"
+IDLE_OPT_IN_ENV = "CHARMER_TEST_STREAM_IDLE"
 # The client's stream idle limit behind a custom base URL, and the two
 # silences that straddle it.
 IDLE_LIMIT = 300.0
@@ -280,6 +283,17 @@ class HeadlessOutputProbe(fallbacks._GatedCase):
 
 class StreamIdleProbe(fallbacks._GatedCase):
     probe_id = "stream-idle"
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        if os.environ.get(IDLE_OPT_IN_ENV) != "1" and not cls.gate.boundary:
+            cls.verdict = ("SKIPPED", "opt-in", f"set {IDLE_OPT_IN_ENV}=1 (about ten minutes)")
+
+    def setUp(self) -> None:
+        super().setUp()
+        if os.environ.get(IDLE_OPT_IN_ENV) != "1":
+            self.skipTest(f"opt-in: set {IDLE_OPT_IN_ENV}=1 (about ten minutes)")
 
     def test_the_idle_limit_then_one_retry(self) -> None:
         compiled_env = fallbacks.compiled_watchdog_env()

@@ -15,7 +15,10 @@ policy (the window ceiling over a 1M-class lead set, at the default percent):
   process environment nor the compiled settings) does not compact there;
 * ``bounded``: an agent whose line's provider bound is below the session
   window runs on the alias without ``[1m]`` and compacts at the 200K class's
-  trigger, below its bound.
+  trigger, below its bound. From Claude Code 2.1.323 an unknown id without
+  ``[1m]`` gets a 1M window; the compile states the 200K class as
+  ``CLAUDE_CODE_MAX_CONTEXT_TOKENS`` (the window of every id without
+  ``[1m]``), which this run carries.
 
 Every run must reach its intended model: the requests of its target name the
 role's selector as the client sends it (without ``[1m]``), so an agent that
@@ -234,9 +237,11 @@ class ProductionCompileTests(unittest.TestCase):
         self.assertEqual(context.percent, settings.COMPACTION_PERCENT_DEFAULT)
         self.assertEqual(plan.settings["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], str(context.window))
         self.assertEqual(plan.settings["env"]["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"], str(context.percent))
-        self.assertEqual(probe.ProbeCompactionPolicy(context.window, context.percent).environ(),
+        self.assertEqual(plan.settings["env"]["CLAUDE_CODE_MAX_CONTEXT_TOKENS"], str(context.scalar))
+        self.assertEqual(probe.ProbeCompactionPolicy(context.window, context.percent, context.scalar).environ(),
                          {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": str(context.window),
-                          "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": str(context.percent)})
+                          "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": str(context.percent),
+                          "CLAUDE_CODE_MAX_CONTEXT_TOKENS": str(profile.CLASS_STANDARD)})
 
     def test_a_1m_agent_runs_at_the_session_window(self) -> None:
         case = production_compile()
@@ -259,6 +264,12 @@ class ProductionCompileTests(unittest.TestCase):
                                                                          case["context"].percent))
         self.assertLess(agent.trigger, case["bound"])
         self.assertIn(agent.selector, case["plan"].settings["availableModels"])
+        # The class the client gives an id without [1m] is the compiled
+        # scalar's (from 2.1.323 it is 1M otherwise), with the 1M ids kept.
+        env = case["plan"].settings["env"]
+        self.assertEqual(env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"], str(profile.CLASS_STANDARD))
+        self.assertEqual(env["CLAUDE_CODE_DISABLE_1M_CONTEXT"], "0")
+        self.assertIn("CLAUDE_CODE_MAX_CONTEXT_TOKENS", _WINDOW_ENV)
 
     def test_the_schedules_straddle_each_trigger(self) -> None:
         for trigger, top in ((702_000, 800_000), (162_000, 180_000)):
@@ -379,7 +390,8 @@ class AgentWindowProbe(client_probe._ProbeCase, unittest.TestCase):
         fixture = self._fixture()
         live = scope.write_scope(fixture.root / "state", str(uuid.uuid4()), plan)
         responder = _WindowResponder(target, schedule)
-        policy = probe.ProbeCompactionPolicy(context.window, context.percent) if window else None
+        # The launch's process environment, as the production launch states it.
+        policy = probe.ProbeCompactionPolicy(context.window, context.percent, context.scalar) if window else None
         result, responder = self._run(fixture, responder=responder, model=compiled["lead"].selector,
                                       extra=("--add-dir", str(live)), document=document,
                                       compaction=policy, timeout=240)

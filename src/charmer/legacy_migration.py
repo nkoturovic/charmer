@@ -1661,12 +1661,17 @@ def _earlier_env_name(name: str) -> str:
 # pinned client knows none of the first four; then the lineup's
 # background-request model, the compaction counter, the refusal-fallback
 # capability table, whose ``;``-joined selector names no selector rename
-# translates, and the background-service switch): a scope handed back leaves
-# them out.
+# translates, the background-service switch and the 1M counter): a scope
+# handed back leaves them out.
 LATER_ENV_KEYS = frozenset({scope.WORKFLOW_MODEL_ENV, scope.AUTO_MODE_MODEL_ENV,
                             scope.compiler.FORK_SUBAGENT_ENV, scope.RETRY_WATCHDOG_SCOPE_ENV,
                             scope.compiler.HAIKU_DEFAULT_ENV, scope.compiler.AUTO_COMPACT_ENV,
-                            scope.MODEL_CAPABILITIES_ENV, scope.AGENT_VIEW_ENV})
+                            scope.MODEL_CAPABILITIES_ENV, scope.AGENT_VIEW_ENV, scope.compiler.ONE_M_CONTEXT_ENV})
+# The window class of ids without [1m] that every later compile exports (in
+# the env and ``lead-set.json``); the earlier release exported only a
+# scalar a line declared, so a handed-back scope leaves this default out.
+LATER_DEFAULT_SCALAR = scope.profile.CLASS_STANDARD
+_SCALAR_ENV = "CLAUDE_CODE_MAX_CONTEXT_TOKENS"
 
 
 def _earlier_launch_items(settings: dict[str, Any], renamed: Mapping[str, Any]) -> dict[str, Any]:
@@ -1700,8 +1705,20 @@ def _earlier_launch_items(settings: dict[str, Any], renamed: Mapping[str, Any]) 
     env = settings.get("env")
     if isinstance(env, dict):
         updated["env"] = {_earlier_env_name(key): earlier_selector(renamed, value) for key, value in env.items()
-                          if key not in LATER_ENV_KEYS}
+                          if key not in LATER_ENV_KEYS
+                          and not (key == _SCALAR_ENV and value == str(LATER_DEFAULT_SCALAR))}
     return updated
+
+
+def _earlier_lead_set(document: dict[str, Any], renamed: Mapping[str, Any]) -> dict[str, Any]:
+    """``lead-set.json`` as the earlier release compiles it: the earlier
+    selector names, and no scalar where the later default stands."""
+
+    earlier = _earlier_names(document, renamed)
+    context = earlier.get("context")
+    if isinstance(context, dict) and context.get("scalar") == LATER_DEFAULT_SCALAR:
+        earlier["context"] = {**context, "scalar": None}
+    return earlier
 
 
 def _charmer_compiled(layout: Layout, settings: Any) -> bool:
@@ -1750,7 +1767,7 @@ def _restore_sessions(layout: Layout) -> list[str]:
         if _charmer_compiled(layout, settings) and lead_set is not None:
             lead_document = _json_file(live / scope.LEAD_SET_JSON)
             earlier_settings = _earlier_launch_items(settings, renamed)
-            earlier_lead_set = (strict_json.canonical_file_bytes(_earlier_names(lead_document, renamed))
+            earlier_lead_set = (strict_json.canonical_file_bytes(_earlier_lead_set(lead_document, renamed))
                                 if isinstance(lead_document, dict) else lead_set)
             if earlier_settings != settings:
                 files[scope.SETTINGS_RELPATH] = strict_json.canonical_file_bytes(earlier_settings)

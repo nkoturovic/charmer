@@ -437,9 +437,9 @@ class ObservationTests(unittest.TestCase):
         self.assertEqual(_ESSENTIAL_CLASSES["FD"],
                          ("FD-env-off", "FD-env-off-subagent-withheld", "FD-client-gateway-withheld"))
 
-    def test_feedback_without_the_previous_release_control_is_a_named_boundary(self):
+    def test_feedback_without_the_fallback_control_is_a_named_boundary(self):
         """A pin that offers SendFeedback to nobody under notify needs the
-        previous release's control: without it the check is a BOUNDARY that
+        fallback control: without it the check is a BOUNDARY that
         names it, never a FAIL; with it the class is decided; a pin that
         offers the tool never asks for it."""
 
@@ -447,8 +447,8 @@ class ObservationTests(unittest.TestCase):
         with self.assertRaises(unittest.SkipTest) as raised:
             _feedback_outcome(nobody, lambda: None)
         self.assertTrue(str(raised.exception).startswith("BOUNDARY: "))
-        self.assertIn(_client_roles.PREVIOUS_ENV, str(raised.exception))
-        self.assertIn(_client_roles.PREVIOUS[0], str(raised.exception))
+        self.assertIn(_client_roles.FALLBACK_CONTROL_ENV, str(raised.exception))
+        self.assertIn(_client_roles.FALLBACK_CONTROL[0], str(raised.exception))
         offers = {"version": "fixture", "lead_offered": True}
         self.assertEqual(_feedback_outcome(nobody, lambda: offers), ("FD-client-gateway-withheld", offers))
         with self.assertRaises(_Inconclusive):
@@ -461,9 +461,9 @@ class ObservationTests(unittest.TestCase):
 
         self.assertEqual(_feedback_outcome(notify, unused), ("FD-env-off", None))
 
-    def test_feedback_gateway_withheld_needs_the_previous_release_control(self):
+    def test_feedback_gateway_withheld_needs_the_fallback_control(self):
         """Offered to nobody under either value is the client's gateway
-        boundary only when the previous release's pin, run the same way,
+        boundary only when the fallback control, run the same way,
         still offers SendFeedback to the lead."""
 
         nobody = {case: {"lead_offered": False, "child_offered": False} for case in _FEEDBACK_CASES}
@@ -653,6 +653,13 @@ with os.fdopen(fd, 'w') as out: out.write(json.dumps(r) + '\\n')
         argv = ("--model", model, "--settings", str(settings), *extra)
         if steps is None:
             argv = ("-p", prompt, "--dangerously-skip-permissions", *argv)
+        else:
+            # From 2.1.326 a terminal launch asks before it adds a folder
+            # nobody trusted (``-p`` never asks): each added fixture folder is
+            # trusted, as after the user's one-time answer.
+            for flag, value in zip(extra, extra[1:]):
+                if flag == "--add-dir":
+                    probe.seed_fixture_project_trust(fixture, value)
         responder = responder or _Recorder()
         with probe.FakeAnthropicProvider(responder=responder) as provider:
             common = dict(trusted=trusted or self.trusted, fixture=fixture, provider=provider,
@@ -1877,7 +1884,7 @@ def _feedback_class(observations, control=None):
     boundary: the subagent's absence is not caused by the preference);
     FD-client-gateway-withheld when the client offers the tool to nobody
     under either value, behind the fixture gateway, while ``control`` (the
-    same notify run on the previous release's pin) still offers it to the
+    same notify run on the fallback control) still offers it to the
     lead: the client withholds it behind a gateway, so the preference has
     nothing to suppress."""
 
@@ -1888,9 +1895,9 @@ def _feedback_class(observations, control=None):
     if not any(row["lead_offered"] or row["child_offered"] for row in notify):
         if control is None:
             raise _Inconclusive("control: the notify run never offered SendFeedback to the lead, and no "
-                                "previous-release client tells a client boundary from a missing stimulus")
+                                "fallback control tells a client boundary from a missing stimulus")
         if not control.get("lead_offered"):
-            raise _Inconclusive("control: neither the pin nor the previous release offered SendFeedback")
+            raise _Inconclusive("control: neither the pin nor the fallback control offered SendFeedback")
         return "FD-client-gateway-withheld"
     if not all(row["lead_offered"] for row in notify):
         raise _Inconclusive("control: the notify run never offered SendFeedback to the lead")
@@ -1900,7 +1907,7 @@ def _feedback_class(observations, control=None):
 
 
 def _feedback_outcome(observations, previous_control):
-    """``(class, control)`` of the FD matrix. The previous release's notify
+    """``(class, control)`` of the FD matrix. The fallback control's notify
     run (``previous_control()``, None when that client is not named) is
     needed only when the pin offered SendFeedback to nobody under notify;
     without it the outcome cannot be told (a client boundary or a missing
@@ -1914,9 +1921,9 @@ def _feedback_outcome(observations, previous_control):
         control = previous_control()
         if control is None:
             raise unittest.SkipTest(
-                f"BOUNDARY: the pin offered SendFeedback to nobody under notify, and the previous-release "
-                f"control ({_client_roles.PREVIOUS[0]}, named by {_client_roles.PREVIOUS_ENV}) that tells "
-                f"a client boundary from a missing stimulus is not available")
+                f"BOUNDARY: the pin offered SendFeedback to nobody under notify, and the fallback "
+                f"control ({_client_roles.FALLBACK_CONTROL[0]}, named by {_client_roles.FALLBACK_CONTROL_ENV}) "
+                f"that tells a client boundary from a missing stimulus is not available")
     return _feedback_class(observations, control), control
 
 
@@ -1977,7 +1984,7 @@ class FeedbackDraftsProbe(_ProbeCase, unittest.TestCase):
                 "lead_offered": any(responder.lead), "child_offered": any(responder.child),
             }
         self.evidence["feedback_drafts"] = observations
-        outcome, control = _feedback_outcome(observations, self._previous_release_control)
+        outcome, control = _feedback_outcome(observations, self._fallback_control)
         self.evidence["feedback_control"] = control
         detail = "; ".join(f"{case} lead={observations[case]['lead_offered']} "
                            f"child={observations[case]['child_offered']}" for case in _FEEDBACK_CASES)
@@ -1985,25 +1992,27 @@ class FeedbackDraftsProbe(_ProbeCase, unittest.TestCase):
         if outcome == "FD-env-off-subagent-withheld":
             detail += " (subagent notify control unavailable: the client withholds SendFeedback from subagents)"
         if outcome == "FD-client-gateway-withheld":
-            detail += (f" (behind the gateway the pin offers SendFeedback to nobody; the previous release "
+            detail += (f" (behind the gateway the pin offers SendFeedback to nobody; the fallback control "
                        f"{control['version']} still offers it to the lead under notify)")
         return outcome, detail
 
-    def _previous_release_control(self):
-        """The notify run on the previous release's pin (``_client_roles``),
+    def _fallback_control(self):
+        """The notify run on the fallback control (``_client_roles``): an
+        older client that still offers SendFeedback behind a gateway (from
+        2.1.319 a client withholds it there, the previous release's pin too);
         None when that control is not named."""
 
-        previous = _client_roles.named_control(_client_roles.PREVIOUS_ENV)
-        if previous is None:
+        older = _client_roles.named_control(_client_roles.FALLBACK_CONTROL_ENV)
+        if older is None:
             return None
         fixture = self._fixture()
         _seed_feature_cache(fixture, {_FEEDBACK_FLAG: True})
         self._agent(fixture)
         result, responder = self._run(
-            fixture, responder=_FeedbackResponder(), steps=self._turns(), trusted=previous,
+            fixture, responder=_FeedbackResponder(), steps=self._turns(), trusted=older,
             document={"env": scope.feedback_drafts_env("notify"), "availableModels": [_LEAD, _AGENT]})
         self._complete(result)
-        return {"version": _client_roles.PREVIOUS[0], "lead_offered": any(responder.lead)}
+        return {"version": _client_roles.FALLBACK_CONTROL[0], "lead_offered": any(responder.lead)}
 
 
 class FeedbackRetryTests(unittest.TestCase):

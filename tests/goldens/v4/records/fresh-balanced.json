@@ -55,7 +55,7 @@
         "client_tokens": 1000000,
         "percent": 90,
         "provider_tokens": 1000000,
-        "scalar": null,
+        "scalar": 200000,
         "trigger": 702000,
         "window": 800000
       },
@@ -93,7 +93,7 @@
     "settings_overrides": {},
     "workflows": "native"
   },
-  "applied_hash": "sha256:6171264be9985f8eb85ee0b3bd433a73b6c8f6d3cba9988232efb890e1ce4791",
+  "applied_hash": "sha256:db1002b3efbae26de3ea5dc49d99f42c26c6c9e19712782634431ff028011fd4",
   "catalog_hash": "sha256:437040dbc5bb7096e3a9b558de39ed3389a089d9d46c865619d8c5e6b4bfe7ce",
   "catalog_version": 31,
   "created_at": "2026-09-25T00:00:00Z",
@@ -104,7 +104,7 @@
   "last_event_source": null,
   "last_seen_at": "2026-09-25T00:00:00Z",
   "launch_epoch": 1,
-  "launch_fence": "sha256:429ee95dedc562e29ed955186db2b59cc72198f4428cbaf1973d4b1264fa9ed0",
+  "launch_fence": "sha256:9c34ce02aef37bdd47743533c052829b5472a0568b7a8d737a21c9637ac89d4e",
   "launcher_version": "2.25.1",
   "lead_class": "large",
   "lineup_generation": 1,

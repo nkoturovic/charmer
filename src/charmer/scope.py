@@ -238,7 +238,10 @@ def ensure_token_helper_command(
 
 # Claude Code's ``subagentStatusLine`` setting (2.1.293+; client check S17):
 # a command the client runs through a shell every few seconds while a
-# subagent row is visible, with the row document on stdin.
+# subagent row is visible, with the row document on stdin. From 2.1.326 the
+# client shows a deprecation notice at every start while any layer sets it
+# (client check S17-notice), so a launch compiles none; the stable shim stays
+# for scopes an earlier release compiled and for a user's own key.
 SUBAGENT_STATUS_LINE_KEY = managed.SUBAGENT_STATUS_LINE_KEY
 
 
@@ -725,7 +728,8 @@ SKILL_POLICY: tuple[tuple[str, str, str], ...] = (
     ("pr", "opens a pull request", "absent"),
     ("run-skill-generator", "writes a project skill", "user"),
     ("schedule", "schedules remote agents", "absent"),
-    ("security-review", "launches review sub-tasks outside the lineup", "model"),
+    # Ask-gated since Claude Code 2.1.323 ("asks before Claude runs it").
+    ("security-review", "launches review sub-tasks outside the lineup", "ask"),
     ("simplify", "applies cleanup edits and launches review agents", "model"),
     ("update-config", "edits Claude settings and hooks", "ask"),
     ("verify", "conditional bundled entry (runs a verification)", "user"),
@@ -1033,8 +1037,7 @@ def _agent_forms(line: OfferedLine, policy: profile.WindowPolicy) -> list[str]:
     forms: list[str] = []
     for _effort, selector in _line_selectors_v2(line):
         decided = profile.role_window(
-            selector, client_tokens=context["client_tokens"], provider_tokens=context["provider_tokens"],
-            policy=policy, decide=True,
+            selector, provider_tokens=context["provider_tokens"], policy=policy, decide=True,
         ).selector
         forms += [selector, decided]
     return forms
@@ -1390,8 +1393,7 @@ def _workflow_default_window(
     context = entry["context"]
     return profile.role_window(
         profile.binding_selector(entry, line.provider, effort, lead=False)[0],
-        client_tokens=context["client_tokens"], provider_tokens=context["provider_tokens"],
-        policy=policy, decide=True,
+        provider_tokens=context["provider_tokens"], policy=policy, decide=True,
     )
 
 
@@ -1458,8 +1460,7 @@ def workflow_default_warnings(
             known_families=cat.known_families,
             admitted=entry.get("status", "active") != "new" or key in eff.admitted_lines))
         problem = profile.agent_window_problem(
-            profile.binding_agent_selector(entry, effort), entry["context"]["provider_tokens"],
-            policy=policy, client_tokens=entry["context"]["client_tokens"])
+            profile.binding_agent_selector(entry, effort), entry["context"]["provider_tokens"], policy=policy)
         if problem:
             warnings.append(profile.Finding("context-risk", None, f"{key}: {problem}", "workflow context overflow risk"))
     return tuple(profile.Finding(finding.code, finding.slot, f"workflow default: {finding.message}",
@@ -1868,11 +1869,10 @@ def compile_lineup_scope(
     ``feedback_drafts`` is the explicit feedback-draft policy input (the current
     ``preferences.json`` value; absent = ``off``).
 
-    ``subagent_status_line`` is the explicit status-line decision: the
+    ``subagent_status_line`` is an explicit status-line value: the
     :func:`status_line_setting` of the stable shim compiles
-    ``subagentStatusLine``; None compiles nothing (a settings layer of the
-    user's own defines the key, or a caller that compiles no managed
-    session). Launch, resume and repair decide it from the settings layers.
+    ``subagentStatusLine`` (the shape an earlier release compiled); None
+    compiles nothing. Launch, resume and repair compile none.
 
     ``default_mode`` is the explicit permission-mode decision:
     :data:`PERMISSION_DEFAULT_MODE` compiles ``permissions.defaultMode``,
@@ -1941,8 +1941,7 @@ def compile_lineup_scope(
     # Flag settings win over user/project env and survive takeover.
     env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = str(context.window)
     env["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"] = str(context.percent)
-    if context.scalar is not None:
-        env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(context.scalar)
+    env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(context.scalar)
     if eff.explore_inherit_cap_disabled:
         env["CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP"] = "1"
     if workflow_default is not None:
@@ -2445,6 +2444,34 @@ def live_drift(live: Path, plan: ScopePlan) -> list[str]:
     return problems
 
 
+def _historical_gateway_efforts(efforts: Any, selectors: Any) -> dict[str, Any] | None:
+    """A gateway-effort line's earlier ``efforts`` table: each historical
+    selector at the effort whose declared proxy contract it carries.
+
+    Only a one-to-one match counts (every declared contract has exactly one
+    historical selector and every historical selector one declared effort);
+    anything else is None, never a table guessed from the successor's
+    selectors.
+    """
+
+    if not isinstance(efforts, Mapping) or not isinstance(selectors, Mapping) or not efforts:
+        return None
+    by_contract: dict[str, str] = {}
+    for selector, contract in selectors.items():
+        if not isinstance(selector, str) or not isinstance(contract, str) or contract in by_contract:
+            return None
+        by_contract[contract] = selector
+    declared = {}
+    for effort, spec in efforts.items():
+        contract = spec.get("proxy_contract") if isinstance(spec, Mapping) else None
+        if not isinstance(contract, str) or contract in declared.values():
+            return None
+        declared[effort] = contract
+    if set(declared.values()) != set(by_contract):
+        return None
+    return {effort: {**efforts[effort], "selector": by_contract[contract]} for effort, contract in declared.items()}
+
+
 def recorded_catalog_resolution(
     record: Mapping[str, Any], docs: Mapping[str, Any], displaced: Mapping[str, Any],
 ) -> dict[str, Any] | None:
@@ -2505,17 +2532,21 @@ def recorded_catalog_resolution(
             if len(candidates) != 1:
                 return None
             historical = candidates[0]
-            # A native line's historical selector has the same effort grammar.
-            # Other historical shapes are not guessed from the successor.
-            if not isinstance(current.get("efforts"), list):
-                return None
-            matching = [value for value in historical["selectors"] if base(value) == base(selector)]
-            if len(matching) != 1:
-                return None
             entry = copy.deepcopy(current)
+            if isinstance(current.get("efforts"), list):
+                # A native line's historical selector has the same effort grammar.
+                matching = [value for value in historical["selectors"] if base(value) == base(selector)]
+                if len(matching) != 1:
+                    return None
+                entry["selector"] = matching[0]
+            else:
+                efforts = _historical_gateway_efforts(current.get("efforts"), historical.get("selectors"))
+                if efforts is None:
+                    return None
+                entry["efforts"] = efforts
             entry.update(wire_model=historical["last_wire"], display=historical["display"],
                          generation=historical.get("generation", binding.get("generation", current["generation"])),
-                         selector=matching[0], capabilities=historical["capabilities"], roles=historical["roles"])
+                         capabilities=historical["capabilities"], roles=historical["roles"])
             entry["context"]["provider_tokens"] = historical["context_tokens"]
         selectors = {base(value) for _effort, value, _contract in catalog_mod.line_selectors(entry)}
         if (base(selector) not in selectors
