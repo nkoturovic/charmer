@@ -57,9 +57,11 @@ import time
 import unittest
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import test_compiler_v2  # module import: no test classes re-exported
+import test_scope_probe_client as client_probe  # module import: no test classes re-exported
 from _tier import real_binary_gate
 from _layout import RESOURCES_ROOT  # the one root source
 from charmer import compiler, managed, probe, profile, scope, state, strict_json
@@ -72,6 +74,7 @@ _LIVE_DOMAIN_TOUCHED = "live daemon domain touched"
 PREVIOUS_CLIENT = ("2.1.292", "a967e7b1d8b4e47ee421d5433027880347952b0c0857abf880e2c942a4ec93b3")
 LEAD_MODEL = "pd-lead"
 TURN = "PD-TURN"
+SETTLED = "PROBE-SETTLED"
 # Every --permission-mode value the pinned client accepts (S14's matrix).
 ACCEPTED_MODES = ("default", "manual", "acceptEdits", "auto", "bypassPermissions", "dontAsk", "plan")
 
@@ -534,6 +537,69 @@ class _ToolResponder:
         return 200, probe._sse_message(payload) if document.get("stream") else payload
 
 
+class _Settled:
+    """The lead's request that carries a background task's completion notice
+    gets SETTLED; every request reaches ``inner`` first, so what it records
+    is unchanged, and every other reply is its own."""
+
+    def __init__(self, inner: Any) -> None:
+        self.inner = inner
+
+    def respond(self, document: dict[str, Any], path: str, context: probe.RequestContext) -> Any:
+        reply = self.inner.respond(document, path, context)
+        if "Workflow" in context.record.tool_names and client_probe._task_notified(document):
+            payload = probe._message_payload([{"type": "text", "text": SETTLED}], model=document.get("model"),
+                                             stop_reason="end_turn", message_id="msg_pd_settled")
+            return 200, probe._sse_message(payload) if document.get("stream") else payload
+        return reply
+
+
+def _workflow_steps() -> tuple[probe.PTYInteraction, ...]:
+    """A terminal turn that runs a Workflow, approved in its review dialog.
+    The client runs the workflow in the background, and /exit while it still
+    runs opens its "Background work is running" question, which nobody
+    answers: the script leaves after the lead's reply to the workflow's
+    completion notice (by then both children have run)."""
+
+    glyph = "❯".encode("utf-8")
+    return (probe.PTYInteraction(b"Choose", b"2\r"), probe.PTYInteraction(b"Press", b"\r"),
+            probe.PTYInteraction(glyph, b"client check S10\r"),
+            # The default-mode review dialog ("Run a dynamic workflow?"):
+            # the operator approves with 1 (Yes, run it). The dialog
+            # attaches its key handler after its footer paints, so a
+            # key sent at once can be lost (as for S4's Esc).
+            probe.PTYInteraction(b"amend", b"1", before_send=lambda: time.sleep(0.8)),
+            probe.PTYInteraction(SETTLED.encode(), b"", preserve_after_wait=True),
+            probe.PTYInteraction(glyph, b"/exit\r"))
+
+
+class SettledWorkflowTests(unittest.TestCase):
+    def test_exit_waits_for_the_lead_to_answer_the_completion_notice(self) -> None:
+        self.assertEqual([(step.wait_for, step.send) for step in _workflow_steps()[-2:]],
+                         [(SETTLED.encode(), b""), ("❯".encode(), b"/exit\r")])
+        seen: list[int] = []
+
+        class Inner:
+            def respond(self, document, path, context):
+                seen.append(context.ordinal)
+                return 200, {"content": [{"type": "text", "text": "PROBE-OK"}]}
+
+        settled = _Settled(Inner())
+
+        def reply(messages: list[Any], tools: tuple[str, ...] = ("Workflow", "Bash")) -> str:
+            context = SimpleNamespace(record=SimpleNamespace(tool_names=tools), ordinal=len(seen) + 1)
+            _, payload = settled.respond({"model": "lead", "messages": messages}, "/v1/messages", context)
+            return payload["content"][0]["text"]
+
+        launched = [{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_check_workflow_0001",
+                                                  "content": "Workflow launched in background"}]}]
+        notice = [*launched, {"role": "user", "content": [{"type": "text", "text": "<task-notification>\n"}]}]
+        self.assertEqual(reply(launched), "PROBE-OK")
+        self.assertEqual(reply(notice, tools=("Bash",)), "PROBE-OK")  # a child's request
+        self.assertEqual(reply(notice), SETTLED)
+        self.assertEqual(seen, [1, 2, 3])  # the wrapped responder saw every request
+
+
 class AutoModeAndWorkflowTests(_PermissionCase):
     """(a) a default-mode Workflow child dispatch is positively
     observed with its compiled selectors; (b) ``auto`` (reached only by the
@@ -559,26 +625,11 @@ class AutoModeAndWorkflowTests(_PermissionCase):
             path = fixture.root / "workflow-settings.json"
             state.atomic_write(path, strict_json.canonical_file_bytes(settings))
             responder = wf._WorkflowResponder(wf._workflow_script(("default", "typed")), fixture.project_dir)
-
-            def both_children() -> None:
-                deadline = time.monotonic() + 80
-                while len(responder.agents) < 2 and time.monotonic() < deadline:
-                    time.sleep(0.2)
-
-            glyph = "❯".encode("utf-8")
-            steps = (probe.PTYInteraction(b"Choose", b"2\r"), probe.PTYInteraction(b"Press", b"\r"),
-                     probe.PTYInteraction(glyph, b"client check S10\r"),
-                     # The default-mode review dialog ("Run a dynamic workflow?"):
-                     # the operator approves with 1 (Yes, run it). The dialog
-                     # attaches its key handler after its footer paints, so a
-                     # key sent at once can be lost (as for S4's Esc).
-                     probe.PTYInteraction(b"amend", b"1", before_send=lambda: time.sleep(0.8)),
-                     probe.PTYInteraction(glyph, b"/exit\r", before_send=both_children,
-                                          callback_timeout=90))
             try:
-                with probe.FakeAnthropicProvider(responder=responder) as provider:
+                with probe.FakeAnthropicProvider(responder=_Settled(responder)) as provider:
                     result = probe.run_native_pty(
-                        ("--settings", str(path), "--add-dir", str(scope_dir), "--model", wf._LEAD), steps,
+                        ("--settings", str(path), "--add-dir", str(scope_dir), "--model", wf._LEAD),
+                        _workflow_steps(),
                         trusted=client.trusted, fixture=fixture, provider=provider, timeout=150, allow_real=True,
                         environ=self.environ, child_env={"CLAUDE_CODE_GATEWAY_HINT_HEADERS": "1"})
             except probe.ProbeError as exc:

@@ -28,10 +28,12 @@ types, exit codes and the client's own short messages.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import threading
 import unittest
@@ -63,8 +65,13 @@ def _pause(seconds: float = 1.0):
 
 
 # "No, exit" is listed first and has the focus; the question takes input
-# only after a short arming delay, so each key waits a moment first.
-ANSWER_YES = (probe.PTYInteraction(b"Adding", b"\x1b[B", before_send=_pause()),
+# only after a short arming delay, so each key waits a moment first. The
+# question draws its focus glyph (the prompt glyph) once it is armed, on "No,
+# exit", and again on "Yes, add it" after the arrow key: one step consumes
+# each, so a caller's next prompt-glyph step matches only what the session
+# draws once the question has closed. Text typed while it closes is lost.
+ANSWER_YES = (probe.PTYInteraction(b"Adding", b"", preserve_after_wait=True),
+              probe.PTYInteraction(_PROMPT, b"\x1b[B", before_send=_pause()),
               probe.PTYInteraction(_PROMPT, b"\r", before_send=_pause(0.5)))
 ANSWER_NO = (probe.PTYInteraction(b"Adding", b"\r", before_send=_pause()),)
 ONBOARDING = (probe.PTYInteraction(b"Choose", b"2\r"), probe.PTYInteraction(b"Press", b"\r"))
@@ -390,6 +397,53 @@ class TrustClassTests(unittest.TestCase):
         self.assertEqual(trust_class({"fresh": {"dialog": True}, "scopes-root": {"dialog": True}}), "T3")
         self.assertEqual(trust_class({"fresh": {"dialog": True}}), "incomplete")
         self.assertEqual(trust_class({}), "incomplete")
+
+
+# A stand-in for the client's question in a terminal: the focus glyph comes
+# once the question is armed, and keys that arrive while it closes are
+# dropped before the session's input prompt is drawn.
+_QUESTION_CLIENT = """import os, sys, termios, time, tty
+tty.setraw(0)
+os.write(1, b"Adding a new directory:\\r\\n  No, exit\\r\\n  Yes, add it\\r\\n")
+time.sleep(0.2)
+os.write(1, "\\u276f No, exit\\r\\n".encode())
+focus = "no"
+while True:
+    key = os.read(0, 1)
+    if key == b"\\x1b":
+        key += os.read(0, 2)
+    if key == b"\\x1b[B":
+        focus = "yes"
+        os.write(1, "  No, exit\\r\\n\\u276f Yes, add it\\r\\n".encode())
+    elif key == b"\\r":
+        break
+if focus != "yes":
+    sys.exit(1)
+time.sleep(0.3)
+termios.tcflush(0, termios.TCIFLUSH)
+os.write(1, "\\u276f\\u00a0".encode())
+line = b""
+while not line.endswith(b"\\r"):
+    line += os.read(0, 1)
+os.write(1, b"\\r\\nTYPED=" + line[:-1] + b"\\r\\n")
+"""
+
+
+class AnswerYesTests(unittest.TestCase):
+    def test_the_next_prompt_waits_for_the_session_prompt(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="charmer-trust-answer-"))
+        os.chmod(root, 0o700)
+        self.addCleanup(shutil.rmtree, root, True)
+        environ = {"HOME": str(root / "live" / "home"), "PATH": "/usr/bin:/bin"}
+        fixture = probe.build_fixture(root / "fixture", environ=environ)
+        script = state.ensure_private_dir(root / "bin") / "question"
+        script.write_text(f"#!{sys.executable}\n{_QUESTION_CLIENT}", encoding="utf-8")
+        script.chmod(0o700)
+        trusted = probe.TrustedExecutable(script, hashlib.sha256(script.read_bytes()).hexdigest(), fake=True)
+        result = probe.run_native_pty((), (*ANSWER_YES, probe.PTYInteraction(_PROMPT, b"first prompt\r")),
+                                      trusted=trusted, fixture=fixture, timeout=15, environ=environ)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("TYPED=first prompt", result.stdout)
 
 
 if __name__ == "__main__":

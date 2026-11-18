@@ -54,6 +54,7 @@ import unittest
 import uuid
 from unittest import mock
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from charmer import catalog, cli, compiler, probe, profile, scope, state, strict_json, upgrade
@@ -61,6 +62,7 @@ from charmer import settings as settings_mod
 from charmer.probe import ProbeError
 
 import _v3
+import test_scope_probe_client as client_probe
 from _catalog import uses_shipped_catalog
 from _client_policy import managed_settings
 from _tier import real_binary_gate
@@ -71,6 +73,7 @@ _CONTRACT_PATH = (
     RESOURCES_ROOT / "catalog" / "native-contract.json"
 )
 _TURN = "client check probe turn"
+_SETTLED = "PROBE-SETTLED"
 _RUN_TIMEOUT = 120.0
 _TRIPWIRE = "live daemon domain touched"
 _UNRECOGNIZED_MARKER = "[claude-code:unrecognized_model]"
@@ -302,7 +305,9 @@ class _SpikeResponder:
     ``agents`` forces one parallel Agent call per listed subagent type on the
     first main-thread request offering the Agent tool; ``refuse`` maps wire
     models to a refusal category (None = uncategorized); ``not_found`` wire
-    models get a 404 ``not_found_error``. Everything else gets PROBE-OK.
+    models get a 404 ``not_found_error``. With ``agents``, the lead's request
+    that carries their completion notice gets PROBE-SETTLED (what a terminal
+    script waits for before /exit). Everything else gets PROBE-OK.
     """
 
     def __init__(
@@ -393,12 +398,64 @@ class _SpikeResponder:
             ]
             stop = "tool_use"
         else:
-            content = [{"type": "text", "text": "PROBE-OK"}]
+            settled = (
+                bool(self._agents)
+                and "Agent" in record.tool_names
+                and hints.get("x-claude-code-request-class", "main") != "subagent"
+                and client_probe._task_notified(document)
+            )
+            content = [{"type": "text", "text": _SETTLED if settled else "PROBE-OK"}]
             stop = "end_turn"
         payload = probe._message_payload(
             content, model=model, stop_reason=stop, message_id="msg_client_check"
         )
         return 200, probe._sse_message(payload) if stream else payload
+
+
+def _terminal_steps(responder: _SpikeResponder) -> tuple[probe.PTYInteraction, ...]:
+    """One terminal turn, then /exit. The terminal client runs spawned agents
+    in the background even when the spawn asks otherwise, and /exit while one
+    still runs opens its "Background work is running" question, which nobody
+    answers; so with agents the script leaves only after the lead's reply to
+    their completion notice. The reply text is the only change."""
+
+    prompt = "❯".encode("utf-8")
+    done = _SETTLED if responder._agents else "PROBE-OK"
+    return (
+        probe.PTYInteraction(b"Choose", b"2\r"),
+        probe.PTYInteraction(b"Press", b"\r"),
+        probe.PTYInteraction(prompt, _TURN.encode("utf-8") + b"\r"),
+        probe.PTYInteraction(done.encode("utf-8"), b"", preserve_after_wait=True),
+        probe.PTYInteraction(prompt, b"/exit\r"),
+    )
+
+
+class SettledExitTests(unittest.TestCase):
+    def test_exit_waits_for_the_lead_to_answer_the_completion_notice(self) -> None:
+        spawning = _SpikeResponder(agents=("claude-code-guide",))
+        self.assertEqual([(step.wait_for, step.send) for step in _terminal_steps(spawning)[-2:]],
+                         [(_SETTLED.encode(), b""), ("❯".encode(), b"/exit\r")])
+        self.assertEqual(_terminal_steps(_SpikeResponder())[-2].wait_for, b"PROBE-OK")
+
+        def reply(responder: _SpikeResponder, messages: list[Any], request_class: str = "main") -> list[str]:
+            tools = ("Agent", "Bash")
+            record = SimpleNamespace(
+                model="lead", max_tokens=1, effort=None, thinking_type=None, system_json_bytes=0,
+                messages_json_bytes=0, tool_count=len(tools), tool_names=tools, markers_found=(),
+                hint_header_values=(("x-claude-code-request-class", request_class),))
+            _, payload = responder.respond({"model": "lead", "messages": messages}, "/v1/messages",
+                                           SimpleNamespace(record=record, ordinal=1))
+            return [block.get("text") or block["name"] for block in payload["content"]]
+
+        turn = [{"role": "user", "content": [{"type": "text", "text": _TURN}]}]
+        launched = [*turn, {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_client_check_00", "content": "launched"}]}]
+        notice = [*launched, {"role": "user", "content": [{"type": "text", "text": "<task-notification>\n"}]}]
+        self.assertEqual(reply(spawning, turn), ["Agent"])  # the first offer spawns
+        self.assertEqual(reply(spawning, launched), ["PROBE-OK"])
+        self.assertEqual(reply(spawning, notice, "subagent"), ["PROBE-OK"])
+        self.assertEqual(reply(spawning, notice), [_SETTLED])
+        self.assertEqual(reply(_SpikeResponder(), notice), ["PROBE-OK"])
 
 
 class _SpikeTestCase(unittest.TestCase):
@@ -515,15 +572,7 @@ class _SpikeTestCase(unittest.TestCase):
         with provider:
             try:
                 if pty:
-                    prompt = "❯".encode("utf-8")
-                    steps = (
-                        probe.PTYInteraction(b"Choose", b"2\r"),
-                        probe.PTYInteraction(b"Press", b"\r"),
-                        probe.PTYInteraction(prompt, _TURN.encode("utf-8") + b"\r"),
-                        probe.PTYInteraction(b"PROBE-OK", b"", preserve_after_wait=True),
-                        probe.PTYInteraction(prompt, b"/exit\r"),
-                    )
-                    result = probe.run_native_pty(argv, steps, **common)
+                    result = probe.run_native_pty(argv, _terminal_steps(responder), **common)
                 else:
                     result = probe.run_native(argv, **common)
             except ProbeError as exc:
