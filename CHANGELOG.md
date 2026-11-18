@@ -23,6 +23,8 @@ follow [Semantic Versioning](https://semver.org/).
   now leaves that record out of such a reply, streamed or in one body, so
   the result is the text. The record never reaches the client, so it is
   missing from that conversation from then on, a resume included.
+- The rollback check also reports a Settings workflow default the previous
+  release cannot use.
 - Documentation: the quickstart's one-time folder-trust command now starts
   the pinned Claude Code with `DISABLE_AUTOUPDATER=1` and
   `DISABLE_UPDATES=1`, as every charmer session does. Without them that
@@ -51,12 +53,14 @@ follow [Semantic Versioning](https://semver.org/).
 
 - A request that ended before the gateway recorded its result (a stopped
   turn or an expired deadline) can still log a failed credential save
-  (`operation=result … stage=store category=error errno=0`), most often for
-  a Codex credential. This holds gateway stops, restarts and updates. Keep
-  the gateway running and wait for a persisted save of that credential;
-  sign in again only if none comes. If it still holds, check the credentials
-  with `charmer providers list`, then run `charmer gateway clear-hold` in a
-  plain terminal between turns and type `clear-hold` to confirm.
+  (`operation=result result=failed … stage=store errno=0 category=error`),
+  most often for a Codex credential. This holds gateway stops, restarts and
+  uninstall, and any update or rollback that would replace the gateway.
+  Keep it running and wait for a persisted save of that credential; sign
+  in again only if none comes. If it still holds, check the credentials
+  with `charmer providers list` and run `charmer gateway clear-hold` in a
+  plain terminal between turns. Type `clear-hold` to confirm, then run the
+  update again.
 - Subagent reports were not affected: on Claude Code 2.1.326, a foreground
   and a background subagent each returned its text to the lead in a fixture
   test.

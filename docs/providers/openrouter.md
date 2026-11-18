@@ -94,10 +94,11 @@ OpenRouter's public models list, read 2026-11-18, gives all three Gemini 4
 lines 1,048,576 context tokens and 943,718 max completion tokens. One
 AI Studio endpoint for Neon caps completion at 65,536. The listing dates
 are 2026-11-12 for Hydrogen, 2026-11-10 for Carbon and 2026-11-18 for
-Neon. All three list `reasoning` and `reasoning_effort`; Hydrogen and
-Carbon also list tools, `tool_choice` and `structured_outputs`. Google AI
-Studio lists Neon as stable with four thinking levels. These are listing
-facts, not tests through the gateway. The 1M provider bound is listing-based;
+Neon. All three list `tools`, `tool_choice`, `structured_outputs`,
+`reasoning` and `reasoning_effort`. Every Neon endpoint lists all five,
+plus `response_format` and `include_reasoning`. Google AI Studio lists Neon
+as stable with four thinking levels. These are listing facts, not tests
+through the gateway. The 1M provider bound is listing-based;
 the validated floor of 200,000 is not a Gemini 4 capacity measurement.
 Hydrogen's inherited `minimum_tested` pair (Claude Code 2.1.286 /
 CLIProxyAPI 7.3.15) describes Gemini 3.8 Flash's 2026-10-02 tests. For

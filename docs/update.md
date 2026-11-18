@@ -88,6 +88,10 @@ reports `running-gateway: different-running-build` before the restart and
 `running-gateway: current-match` after it; on macOS this check reports
 `unavailable`.
 
+Until you admit Neon, doctor shows the informational advisory
+`New model: Gemini 4 Neon · OpenRouter (or-gemini-neon) — not admitted (optional badge)`
+on every installation, even without an OpenRouter key; admission is optional.
+
 If you declared `google/gemini-4-neon` on OpenRouter yourself, your line
 yields to `or-gemini-neon`. Remove it with the command doctor gives, for
 example `charmer models rm custom-google-gemini-4-neon --successor or-gemini-neon`
@@ -111,9 +115,12 @@ Running sessions on selectors 2.6.0 does not serve (docs/update.md#rolling-back)
 
 With a finding, the default is No and `--yes` refuses. Rebind the listed
 profiles and bindings, change or clear the workflow default (**O** on the
-card), and exit sessions running on Neon. Also choose a 2.6.0-compatible
-lineup for any session you intend to resume on that release: exiting does
-not change its saved lineup. Then run `charmer update --rollback` again.
+card), and exit sessions running on Neon. The printed resume hint does
+not cover a saved lineup that still names Neon: exiting does not change
+that lineup. Before going back, choose a profile that 2.6.0 can use. On
+the card press **S**, select the session, then press **T** to change its
+lineup; or run `charmer lineup --session <runtime-id> profile <name>`.
+Then run `charmer update --rollback` again.
 A persistence hold is separate from these findings: confirming the
 rollback does not waive it.
 
@@ -284,11 +291,13 @@ Prepare first, between turns:
   Flash. Before going back, change any `or-gpt` or `or-gemini` binding at an
   added effort to high or xhigh: 2.5.0 serves only those two efforts on
   these OpenRouter lines.
-- `or-gemini-carbon` is new in 2.6.0 and has no line in 2.5.0. Before going
-  back, rebind any profile, named binding or session using it; exit any
-  session still running on its selectors.
+- `or-gemini-carbon` and `or-gemini-neon` have no line in 2.5.0. If you
+  updated straight from 2.5.0 to 2.6.1, check for both. Before going back,
+  rebind any profile, named binding or session using either line, and change
+  or clear any Settings workflow default that uses one. Exit sessions still
+  running on either line's selectors.
 
-After the rollback the running gateway is still 2.6.0's. Run the guarded
+After the rollback the gateway still runs the version you left. Run the guarded
 `charmer gateway restart` between turns, then `charmer update --verify`:
 on Linux, 2.5.0 reports `running-gateway: different-running-build` until
 the restart and `running-gateway: current-match` after it (on macOS,

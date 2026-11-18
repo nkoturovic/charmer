@@ -202,7 +202,7 @@ What to do depends on the reason:
   described above.
 - **A credential save failed:** if a turn stops or a request reaches its
   deadline before the gateway records its result, the gateway can log a
-  failed save (`operation=result … stage=store category=error errno=0`),
+  failed save (`operation=result result=failed … stage=store errno=0 category=error`),
   most often for a Codex credential. A real store error can produce the
   same evidence. The 2.6.0 updater refuses to switch to 2.6.1 while the
   gateway is held; installing 2.6.1 does not remove this limit. Keep the
