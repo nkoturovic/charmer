@@ -1015,6 +1015,85 @@ def sse_frame(kind: str, body: dict) -> bytes:
     return f"event: {kind}\ndata: {json.dumps(body)}\n\n".encode()
 
 
+# Messages replies built block by block (the stock fake_reply sends one text
+# block): a third-party Messages upstream's shapes, OpenRouter's reasoning
+# record after the answer text among them. Every value is invented fixture
+# text; only the record's prefix is OpenRouter's.
+OPENROUTER_RECORD_PREFIX = "openrouter.reasoning:"
+PING = "ping"
+
+
+def thinking_block(text="gwtest fixture reasoning"):
+    return {"type": "thinking", "thinking": text, "signature": ""}
+
+
+def text_block(text="FAKE_OK"):
+    return {"type": "text", "text": text}
+
+
+def record_block(name="a", *, prefix=OPENROUTER_RECORD_PREFIX):
+    return {"type": "redacted_thinking", "data": prefix + "gwtest-record-" + name}
+
+
+def tool_use_block(name="gwtest_tool", tool_id="toolu_gwtest_blocks", tool_input=None):
+    return {"type": "tool_use", "id": tool_id, "name": name, "input": tool_input or {"k": "v"}}
+
+
+def message_body(blocks, stop_reason="end_turn", *, model="gwtest-wire", message_id="msg_gwtest_blocks"):
+    """The non-streaming reply: ``blocks`` as its content, in order."""
+    message = {"id": message_id, "type": "message", "role": "assistant", "model": model,
+               "content": copy.deepcopy(list(blocks)), "stop_reason": stop_reason, "stop_sequence": None,
+               "usage": {"input_tokens": 7, "output_tokens": 9}}
+    if stop_reason is None:
+        del message["stop_reason"]
+    return message
+
+
+def message_events(blocks, stop_reason="end_turn", *, model="gwtest-wire", message_id="msg_gwtest_blocks"):
+    """The streamed reply as ``(event, data)`` pairs: ``message_start``, one
+    start, delta (when the block type has one) and stop per block, then
+    ``message_delta`` and ``message_stop``. A block given as ``PING`` is a
+    ``ping`` event at that place; it takes no index."""
+    start = {**message_body((), stop_reason, model=model, message_id=message_id), "stop_reason": None}
+    start["usage"] = {"input_tokens": 7, "output_tokens": 1}
+    events = [("message_start", {"type": "message_start", "message": start})]
+    index = 0
+    for block in blocks:
+        if block == PING:
+            events.append((PING, {"type": PING}))
+            continue
+        kind = block["type"]
+        delta = None
+        if kind == "text":
+            opened, delta = {"type": "text", "text": ""}, {"type": "text_delta", "text": block["text"]}
+        elif kind == "thinking":
+            opened = {"type": "thinking", "thinking": "", "signature": block.get("signature", "")}
+            delta = {"type": "thinking_delta", "thinking": block["thinking"]}
+        elif kind == "tool_use":
+            opened = {**block, "input": {}}
+            delta = {"type": "input_json_delta", "partial_json": json.dumps(block["input"])}
+        else:
+            # redacted_thinking carries its whole data in the start event;
+            # server tool blocks and their results arrive whole too.
+            opened = copy.deepcopy(block)
+        events.append(("content_block_start", {"type": "content_block_start", "index": index,
+                                               "content_block": opened}))
+        if delta is not None:
+            events.append(("content_block_delta", {"type": "content_block_delta", "index": index, "delta": delta}))
+        events.append(("content_block_stop", {"type": "content_block_stop", "index": index}))
+        index += 1
+    final = {"stop_sequence": None}
+    if stop_reason is not None:
+        final = {"stop_reason": stop_reason, **final}
+    events.append(("message_delta", {"type": "message_delta", "delta": final, "usage": {"output_tokens": 9}}))
+    events.append(("message_stop", {"type": "message_stop"}))
+    return events
+
+
+def message_stream(blocks, stop_reason="end_turn", **kwargs) -> bytes:
+    return b"".join(sse_frame(kind, data) for kind, data in message_events(blocks, stop_reason, **kwargs))
+
+
 # The named shapes are protocol fixtures, not live-provider samples. The shipped
 # Codex route uses Responses; the catalog's OpenRouter/DeepSeek/Kimi/Qwen/Meta
 # routes and the Z.ai preset use Messages. Their native-route controls are below
