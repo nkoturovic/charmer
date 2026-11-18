@@ -6,6 +6,19 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.6.1] — 2026-11-18
+
+### Fixed
+
+- Documentation: the quickstart's one-time folder-trust command now starts
+  the pinned Claude Code with `DISABLE_AUTOUPDATER=1` and
+  `DISABLE_UPDATES=1`, as every charmer session does. Without them that
+  copy of Claude Code ran its own updater and replaced your own Claude Code
+  installation with the newest release: if you ran 2.6.0's command, your
+  own `claude` may be newer than you chose. The page also says that no
+  question appears when a folder above the scopes folder is already
+  trusted.
+
 ## [2.6.0] — 2026-11-18
 
 ### Upgrade notes
