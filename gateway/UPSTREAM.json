@@ -16,11 +16,11 @@
     "archive_file": "CLIProxyAPI-7df56074b252384d878ec4fca840552c6fb5236e.tar.gz",
     "archive_sha256": "4dc68704c4fc8c572bd6513c0a18338a8feb853510d68c3c74153453d8ef9361",
     "tree_sha256": "fb6c76c2e6b010508e43e34d66cf384fd22d175724b01ecafddde5bafd9f189c",
-    "nix_hash": "sha256-njk9i5JbHvJ3lTB7Bn0wTxFtmcJ5MEokgdOHNhzDPPY="
+    "nix_hash": "sha256-gQclqhFrw82upufHQ48+nHSPeA6N9gBwcsp1BlGC308="
   },
   "vendor": {
     "tree_sha256": "e5af2e9237b46d2a715ca4a690cf3cae1081c627067fb92437d09db6ab9f505f",
-    "nix_hash": "sha256-Axnzm6yjN68P25Zvf0cc1+Bh7A9ic6+OVH20VQWYdLA=",
+    "nix_hash": "sha256-YZ22Ixk3Zaj3WuQkGPKqEMWuSToldWikoMWlmqyGpok=",
     "modules_patch": {
       "basename": "cli-proxy-api-module-requirements.patch",
       "sha256": "dbd4a879c15361a7a65b77cf63666ba19b94e6d9b7c1fb0676566e66920d1415"

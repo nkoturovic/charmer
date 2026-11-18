@@ -707,7 +707,7 @@ def validate_keyed_evidence(directory, *, core_only=False, gateway_only=False):
 
 
 # The one pinned vendor (go-modules) output every diagnostic reuses.
-PINNED_GO_MODULES = "/nix/store/smz97m3z6rlv7g8gdrvc1p4xk115lcvd-cli-proxy-api-8.0.67-go-modules"
+PINNED_GO_MODULES = "/nix/store/j2486swk0sxkgww8drcd8rlb5zlsmxqf-cli-proxy-api-8.0.76-go-modules"
 
 
 def consumed_vendor(installable, run=subprocess.run) -> dict:
