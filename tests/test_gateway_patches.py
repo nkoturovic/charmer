@@ -1019,5 +1019,159 @@ class ToolCallIntegrityTests(_ContentChunkFixture, unittest.TestCase):
             record("TIC2", status="passed", routes=2, cases=26, upstream_hits=26, explicit_precedence=True)
 
 
+# OpenRouter's reasoning record after the answer text, on a third-party key
+# line. Every reply is compared with the control: the same upstream bytes
+# through the same gateway build without the trailing-reasoning-record patch
+# (the 30-patch series of 8.0.76), captured once into
+# TRAILING_RECORD_CONTROL by trailing_record_capture() with that build.
+TRAILING_RECORD_ALIAS = "gwtest-cc-output-config-high"
+TRAILING_RECORD_CONTROL = Path(__file__).resolve().parent / "fixtures/gateway-trailing-record-control.json"
+TRAILING_RECORD_REMOVED = "openrouter reasoning record removed: records="
+
+
+def trailing_record_cases():
+    """Name -> (blocks, stop reason, ending, records left out) for the stream
+    and the one-body forms. Every block list ends where the case says."""
+    h = harness
+    think, text, more = h.thinking_block(), h.text_block("answer"), h.text_block("more")
+    record, foreign = h.record_block, h.record_block("p", prefix="")
+    tool = h.tool_use_block()
+    server = [{"type": "server_tool_use", "id": "srvtoolu_gwtest", "name": "web_search", "input": {"query": "gwtest"}},
+              {"type": "web_search_tool_result", "tool_use_id": "srvtoolu_gwtest", "content": []}]
+    common = {
+        "one-record": ([think, text, record("a")], "end_turn", 1),
+        "two-records": ([think, text, record("a"), record("b")], "end_turn", 2),
+        "no-record": ([think, text], "end_turn", 0),
+        "record-before-the-text": ([think, record("a"), text], "end_turn", 0),
+        "trailing-record-without-the-prefix": ([think, text, foreign], "end_turn", 0),
+        "mixed-run": ([text, record("a"), foreign], "end_turn", 0),
+        "run-then-tool-use": ([text, record("a"), tool], "end_turn", 0),
+        "run-then-text": ([text, record("a"), more], "end_turn", 0),
+        "tool-use-before-the-text": ([tool, text, record("a")], "end_turn", 0),
+        "tool-use-between": ([text, tool, record("a")], "end_turn", 0),
+        "server-tool-and-its-result": ([*server, text, record("a")], "end_turn", 0),
+        **{"stop-" + (stop or "absent"): ([think, text, record("a")], stop, 0)
+           for stop in ("tool_use", "pause_turn", "max_tokens", None, "gwtest_unknown_reason")},
+    }
+    stream = {name: (*value[:2], "stop", value[2]) for name, value in common.items()}
+    stream.update({
+        "pings-and-a-comment-wait-with-the-run": ([text, record("a"), h.PING, h.COMMENT], "end_turn", "stop", 1),
+        "run-then-ping-then-text": ([text, record("a"), h.PING, more], "end_turn", "stop", 0),
+        "comment-and-unknown-event-in-the-queue": ([text, record("a"), h.COMMENT, h.UNKNOWN_EVENT],
+                                                   "end_turn", "stop", 0),
+        "error-while-queued": ([text, record("a")], "end_turn", "error", 0),
+        "end-while-queued": ([text, record("a")], "end_turn", "eof", 0),
+        "error-after-the-delta": ([text, record("a")], "end_turn", "delta-error", 0),
+        "end-after-the-delta": ([text, record("a")], "end_turn", "delta", 0),
+    })
+    body = {name: (*value[:2], None, value[2]) for name, value in common.items()}
+    return {"stream": stream, "body": body}
+
+
+def trailing_record_reply(path, body, raw, _headers=None):
+    match = re.search(rb"gwtest-trailing=([a-z0-9_-]+)", raw)
+    if not path.endswith("/v1/messages") or not match:
+        return 404, "application/json", b'{"error":"unexpected fake upstream path"}'
+    stream = bool(body.get("stream"))
+    blocks, stop, ending, _records = trailing_record_cases()["stream" if stream else "body"][match.group(1).decode()]
+    model = body.get("model", "gwtest-wire")
+    if stream:
+        return 200, "text/event-stream", harness.message_stream(blocks, stop, ending=ending, model=model)
+    return 200, "application/json", json.dumps(harness.message_body(blocks, stop, model=model)).encode()
+
+
+def trailing_record_request(gateway, case, stream):
+    # One fixed request per case: the gateway's message_start token estimate
+    # reads the request, so a random nonce would move the bytes.
+    gateway.upstream.hits.clear()
+    payload = {"model": TRAILING_RECORD_ALIAS, "max_tokens": 64, "stream": stream, "messages": [
+        {"role": "user", "content": "gwtest-case-000000000000 gwtest-trailing=" + case}]}
+    return gateway.request(TRAILING_RECORD_ALIAS, raw=json.dumps(payload).encode())
+
+
+def trailing_record_capture(gateway):
+    """The replies of every case, as the selected gateway build sends them:
+    run with the build without the patch, this is the control."""
+    return {f"{form}:{case}": trailing_record_request(gateway, case, form == "stream").raw.decode()
+            for form, cases in trailing_record_cases().items() for case in cases}
+
+
+def without_run(control, form, blocks, records):
+    """The control with the trailing run left out: its blocks' frames (a
+    stream) or its elements and the separators before them (one body)."""
+    if form == "body":
+        for block in blocks[-records:]:
+            element = ", " + json.dumps(block)
+            if control.count(element) != 1:
+                raise AssertionError("the control body does not hold the record once: " + element)
+            control = control.replace(element, "")
+        return control
+    indices = set(range(len([b for b in blocks if isinstance(b, dict)]) - records,
+                        len([b for b in blocks if isinstance(b, dict)])))
+    kept = []
+    for frame in control.split("\n\n")[:-1]:
+        data = next((line[6:] for line in frame.splitlines() if line.startswith("data: ")), None)
+        event = json.loads(data) if data else {}
+        if not (event.get("type") in ("content_block_start", "content_block_stop") and event.get("index") in indices):
+            kept.append(frame + "\n\n")
+    return "".join(kept)
+
+
+class TrailingReasoningRecordTests(unittest.TestCase):
+    """A third-party key line whose upstream ends replies as OpenRouter's
+    Messages endpoint does: the record after the text is left out, streamed
+    and as one body, and every other reply is the control's byte for byte."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not os.environ.get(harness.BINARY_ENV):
+            harness.boundary("BOUNDARY: the trailing-record proof needs an explicitly selected manifest build")
+        cls.control = json.loads(TRAILING_RECORD_CONTROL.read_text())["replies"]
+        cls.gateway = harness.GatewayHarness(upstream_factory=lambda path: harness.FakeUpstream(
+            path, respond=trailing_record_reply))
+        cls.addClassCleanup(cls.gateway.close)
+
+    def removals(self):
+        return [line for line in self.gateway.log_path.read_text(errors="replace").splitlines()
+                if TRAILING_RECORD_REMOVED in line]
+
+    def check(self, form, affected):
+        cases = {name: value for name, value in trailing_record_cases()[form].items() if bool(value[3]) == affected}
+        for case, (blocks, _stop, _ending, records) in cases.items():
+            with self.subTest(form=form, case=case):
+                before = len(self.removals())
+                reply = trailing_record_request(self.gateway, case, form == "stream")
+                self.assertEqual(reply.status, 200)
+                self.assertEqual([hit.body.get("stream", False) for hit in reply.hits], [form == "stream"])
+                control = self.control[f"{form}:{case}"]
+                want = without_run(control, form, blocks, records) if affected else control
+                self.assertEqual(reply.raw.decode(), want)
+                lines = self.removals()[before:]
+                self.assertEqual(len(lines), 1 if affected else 0, lines)
+                if affected:
+                    self.assertTrue(lines[0].endswith(TRAILING_RECORD_REMOVED + str(records)), lines[0])
+        return len(cases)
+
+    def test_streamed_record_is_left_out(self):
+        cases = self.check("stream", True)
+        if self._outcome.success:
+            record("RR1", status="passed", cases=cases, control_minus_run=True, log_lines=cases)
+
+    def test_record_in_one_body_is_left_out(self):
+        cases = self.check("body", True)
+        if self._outcome.success:
+            record("RR2", status="passed", cases=cases, control_minus_run=True, log_lines=cases)
+
+    def test_other_streams_are_the_controls(self):
+        cases = self.check("stream", False)
+        if self._outcome.success:
+            record("RRC1", status="passed", cases=cases, byte_identical=True)
+
+    def test_other_bodies_are_the_controls(self):
+        cases = self.check("body", False)
+        if self._outcome.success:
+            record("RRC2", status="passed", cases=cases, byte_identical=True)
+
+
 if __name__ == "__main__":
     unittest.main()

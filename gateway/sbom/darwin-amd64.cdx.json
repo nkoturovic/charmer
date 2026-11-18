@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:20550678-b5b0-523e-90c9-9630b76ed69f",
+  "serialNumber": "urn:uuid:4732d519-d7d9-59a3-9e45-eed94d9d7021",
   "version": 1,
   "metadata": {
     "tools": {
@@ -246,6 +246,12 @@
             "diff": {
               "url": "gateway/patches/cli-proxy-api-private-network-dial.patch"
             }
+          },
+          {
+            "type": "unofficial",
+            "diff": {
+              "url": "gateway/patches/cli-proxy-api-trailing-reasoning-record.patch"
+            }
           }
         ],
         "notes": "Built from the upstream source at the commit above with the patches applied in order; each patch's sha256 and the patched tree's normalised sha256 (vendor/ excluded) are the charmer:gateway properties."
@@ -289,7 +295,7 @@
         },
         {
           "name": "charmer:gateway:post-apply-tree-sha256",
-          "value": "67f9c8440b98a811c61968a8634ae190aa036090d583772d78655bdb84d5701e"
+          "value": "da4696d495266d150c97214779d82f0e5f65948929670245692be1bf69a792a7"
         },
         {
           "name": "charmer:gateway:build-godebug",
@@ -325,7 +331,7 @@
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-credential-save-report.patch@9e5fb97358acc9ec875f74db020862a8fc68aad3ed4868781e54eb0967c511ec"
+          "value": "cli-proxy-api-credential-save-report.patch@f6d9719485a3b1f94bf7b74fd4cdc66310f85f6e87de8df294b01d81dff7d6fe"
         },
         {
           "name": "charmer:gateway:patch",
@@ -414,6 +420,10 @@
         {
           "name": "charmer:gateway:patch",
           "value": "cli-proxy-api-private-network-dial.patch@533513e33beb9b7065957f8534fffb4e9aa2b53157b4185b8534f10dceeb7e50"
+        },
+        {
+          "name": "charmer:gateway:patch",
+          "value": "cli-proxy-api-trailing-reasoning-record.patch@7e8846fb4476a55283f5d455337028089c95d89c001a55a5911d497a1b9fd5a2"
         }
       ]
     }

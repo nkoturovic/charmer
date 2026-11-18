@@ -1594,9 +1594,11 @@ def _record_harness():
 class TrailingRecordThroughGatewayTests(_GatedCase):
     """The pinned client through charmer's gateway on a third-party key line
     whose upstream ends a reply in OpenRouter's reasoning record after the
-    answer text (the shape OpenRouter's Messages endpoint gives Gemini 4):
-    the one-shot result, streamed and as one body, and what a lead receives
-    from a foreground and from a background subagent on that line."""
+    answer text (the shape OpenRouter's Messages endpoint gives Gemini 4). The
+    gateway leaves the record out, so the one-shot result is the answer, for a
+    streamed reply and for one in one body (measured empty without it). A
+    foreground and a background subagent's report reaches its lead with and
+    without it (the two controls)."""
 
     probe_id = "trailing-record"
 
@@ -1631,39 +1633,45 @@ class TrailingRecordThroughGatewayTests(_GatedCase):
         if errors:
             raise _Inconclusive("; ".join(errors))
         documents = [json.loads(line) for line in (result.stdout or "").splitlines() if line.startswith("{")]
+        removed = sum(1 for line in gateway.log_path.read_text(errors="replace").splitlines()
+                      if "openrouter reasoning record removed: records=" in line)
         return {"results": [document.get("result") for document in documents], "rows": rows,
-                "upstream": list(upstream.hits), "reports": list(upstream.reports), "gateway": gateway.version}
+                "upstream": list(upstream.hits), "reports": list(upstream.reports), "removed": removed,
+                "gateway": gateway.version}
+
+    def _verdict(self, case: str, ok: bool, observed: dict[str, Any]) -> str:
+        detail = (f"results={observed['results']} upstream={observed['upstream']} removed={observed['removed']} "
+                  f"statuses={sorted({row['status'] for row in observed['rows']})} gateway={observed['gateway']} "
+                  f"client={self.gate.version}")
+        type(self).verdict = ("PASS" if ok else "FAIL", case, detail)
+        return detail
 
     def test_the_one_shot_result_of_a_streamed_reply(self) -> None:
         observed = self._guard(lambda: self._run(_RecordUpstream(), "client check trailing record stream"))
-        detail = f"observed={observed} client={self.gate.version}"
-        type(self).verdict = ("MEASURED", "stream", detail)
-        self.assertEqual(observed["results"], [_RECORD_ANSWER], detail)
+        ok = observed["results"] == [_RECORD_ANSWER] and ("lead", True) in observed["upstream"]
+        self.assertTrue(ok, self._verdict("one-shot-stream", ok, observed))
 
     def test_the_one_shot_result_of_a_reply_in_one_body(self) -> None:
+        # The client's streamed request gets a stream with no block, so it asks
+        # again without streaming: the gateway gets a non-streaming request.
         observed = self._guard(lambda: self._run(_RecordUpstream(unary=True), "client check trailing record body"))
-        detail = f"observed={observed} client={self.gate.version}"
-        type(self).verdict = ("MEASURED", "unary", detail)
-        self.assertIn(("lead", False), observed["upstream"], detail)
-        self.assertEqual(observed["results"], [_RECORD_ANSWER], detail)
+        ok = observed["results"] == [_RECORD_ANSWER] and ("lead", False) in observed["upstream"]
+        self.assertTrue(ok, self._verdict("one-shot-body", ok, observed))
+
+    def _report_case(self, kind: str) -> None:
+        observed = self._guard(lambda: self._run(_RecordUpstream(agent=kind),
+                                                 f"client check trailing record {kind} agent", agents=True))
+        reports = [report for report in observed["reports"]
+                   if kind == "foreground" or "<task-notification>" in report]
+        ok = ("subagent", True) in observed["upstream"] and bool(reports) and all(
+            _RECORD_AGENT_ANSWER in report for report in reports)
+        self.assertTrue(ok, self._verdict(f"{kind}-subagent-report", ok, observed))
 
     def test_what_the_lead_receives_from_a_foreground_subagent(self) -> None:
-        observed = self._guard(lambda: self._run(_RecordUpstream(agent="foreground"),
-                                                 "client check trailing record foreground agent", agents=True))
-        detail = f"observed={observed} client={self.gate.version}"
-        type(self).verdict = ("MEASURED", "foreground", detail)
-        self.assertIn(("subagent", True), observed["upstream"], detail)
-        self.assertTrue(observed["reports"] and all(_RECORD_AGENT_ANSWER in report for report in observed["reports"]),
-                        detail)
+        self._report_case("foreground")
 
     def test_what_the_lead_receives_from_a_background_subagent(self) -> None:
-        observed = self._guard(lambda: self._run(_RecordUpstream(agent="background"),
-                                                 "client check trailing record background agent", agents=True))
-        detail = f"observed={observed} client={self.gate.version}"
-        type(self).verdict = ("MEASURED", "background", detail)
-        self.assertIn(("subagent", True), observed["upstream"], detail)
-        notices = [report for report in observed["reports"] if "<task-notification>" in report]
-        self.assertTrue(notices and all(_RECORD_AGENT_ANSWER in notice for notice in notices), detail)
+        self._report_case("background")
 
 
 if __name__ == "__main__":

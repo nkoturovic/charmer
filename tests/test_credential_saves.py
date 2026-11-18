@@ -391,6 +391,20 @@ class RecoveryHoldPolicyTests(unittest.TestCase):
         self.assertFalse(events.recovery_hold(self.batch(self.failure(), MESSAGE.replace('persisted', 'unverified'))))
         self.assertTrue(events.recovery_hold(self.batch(self.failure(), MESSAGE.replace('persisted', 'unverified').replace('credentials_changed=true', 'credentials_changed=false'))))
 
+    def test_a_failed_result_save_holds_until_a_repairing_save(self):
+        # The line a result save prints for a store failure, whatever caused it.
+        failed = (MESSAGE.replace('operation=refresh', 'operation=result').replace('result=persisted', 'result=failed')
+                  .replace('credentials_changed=true', 'credentials_changed=false').replace('stage=none', 'stage=store')
+                  .replace('category=none', 'category=error').replace('bytes=123 size=123', 'bytes=0 size=0'))
+        persisted = MESSAGE.replace('operation=refresh', 'operation=result')
+        unverified = persisted.replace('result=persisted', 'result=unverified')
+        self.assertEqual([event.result for event in self.batch(failed).events], ['failed'])
+        self.assertTrue(events.recovery_hold(self.batch(failed)))
+        self.assertFalse(events.recovery_hold(self.batch(failed, persisted)))
+        self.assertFalse(events.recovery_hold(self.batch(failed, unverified)))
+        self.assertTrue(events.recovery_hold(self.batch(failed, unverified.replace('credentials_changed=true',
+                                                                                   'credentials_changed=false'))))
+
 
 WARN = "[2026-09-30 12:00:00] [--------] [warn ] [credential_save.go:214] "
 FAILED = (MESSAGE.replace("result=persisted", "result=failed").replace("stage=none", "stage=write")
