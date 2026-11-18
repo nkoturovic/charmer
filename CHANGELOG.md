@@ -28,8 +28,7 @@ model until its next resume; until then doctor names the move for it
 (“the installed catalog resolves …”) and defers its repair. With an
 OpenAI API key in use, the restarted gateway no longer serves GPT-6.1 Sol
 or GPT-6 Astra: exit such sessions before the restart and resume them
-after it
-([the GPT-6.2 lines](docs/update.md#the-gpt-62-lines)).
+after it ([the GPT-6.2 lines](docs/update.md#the-gpt-62-lines)).
 
 Before `charmer update --rollback` to 2.5.0, exit the sessions running on
 the GPT-6.2 lines or Gemini 4 Hydrogen: the rollback check lists each as
