@@ -439,14 +439,14 @@ class FrozenSelectorCoverageTests(unittest.TestCase):
     def test_no_trusted_wire_has_static_header_override(self) -> None:
         # Complete config.override_header census of the
         # pinned pre-patch registry/models/models.json (sha256
-        # 4a52db3f1e4cdc10d045347f758b875fb2c4cbc148ae48ded43afb27037bd0e9).
+        # fbca148e7e6ce79425441b637566073754dd8a6c18783fe1246a8337ba59d319).
         # All four entries (codex-free/team/plus/pro) name this same wire.
         # Keep this small, audited projection hermetic: a source-pin change
         # fails closed and requires re-cutting the census, not a store lookup
         # or a skip in standalone/sandbox tests. It is not a T1 route claim.
         pin = json.loads(UPSTREAM_JSON.read_text())
-        self.assertEqual(pin["upstream"]["version"], "8.0.67")
-        self.assertEqual(pin["source"]["nix_hash"], "sha256-njk9i5JbHvJ3lTB7Bn0wTxFtmcJ5MEokgdOHNhzDPPY=")
+        self.assertEqual(pin["upstream"]["version"], "8.0.76")
+        self.assertEqual(pin["source"]["nix_hash"], "sha256-gQclqhFrw82upufHQ48+nHSPeA6N9gBwcsp1BlGC308=")
         override_wires = {"gpt-5.6-luna"}
         bundle = catalog.load_catalog(SHIPPED_ROOT)
         trusted = {line["wire_model"] for line in bundle.lines.values()}

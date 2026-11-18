@@ -2287,6 +2287,13 @@ class VulncheckTests(unittest.TestCase):
                                    gateway=hashlib.sha256(binary).hexdigest(), gateway_binary=binary)
         self.policy = json.loads((REPO_ROOT / "gateway/vulnerability-dispositions.json").read_text())
         self.policy["gateway"]["targets"] = {target: hashlib.sha256(binary).hexdigest() for target in self.TARGETS}
+        # The checked-in set may be empty; the fixture reviews one synthetic
+        # finding (its advisory and trace bindings are filled in below).
+        self.policy["dispositions"] = [{
+            "id": "GO-2026-5932", "module": "golang.org/x/crypto", "version": "v0.58.0",
+            "advisory_modified": "2026-11-02T22:01:43Z", "advisory_sha256": "0" * 64, "class": "component-absent",
+            "reason": "A synthetic reviewed exception.", "evidence": ["Synthetic evidence."],
+            "re_review": ["Any gateway change."], "trace_sha256": "0" * 64, "trace_count": 1}]
         manifest_path = self.release.dir / "MANIFEST.json"
         manifest = json.loads(manifest_path.read_text())
         manifest["gateway"] = {"version": self.policy["gateway"]["version"]}
@@ -2473,9 +2480,30 @@ if mode == "fail":
                 self.assertEqual(code, 1, report)
                 self.assertTrue(all(entry["scanner_stdout"] is not None for entry in report["targets"]))
 
+    def test_an_empty_disposition_set_passes_only_a_scan_without_findings(self) -> None:
+        """No disposition is a reviewed state: a scan without findings passes,
+        any finding stays unreviewed, and a stale disposition still refuses."""
+        clean = "\n".join(json.dumps(m) for m in self.messages if not {"osv", "finding"} & set(m))
+        reviewed = json.dumps(self.policy)
+        self.policy["dispositions"] = []
+        code, report, output = self.run_check(stream=clean)
+        self.assertEqual(code, 0, report)
+        for entry in report["targets"]:
+            self.assertEqual((entry["result"], entry["findings"], entry["reviewed_dispositions"]), ("reviewed", [], []))
+        self.assertIn("reviewed dispositions: 0; unreviewed findings: 0", output)
+        code, report, _ = self.run_check()
+        self.assertEqual(code, 1, report)
+        self.assertTrue(all(entry["unreviewed_findings"] == sorted(self.IDS) for entry in report["targets"]))
+        self.policy = json.loads(reviewed)
+        code, report, _ = self.run_check(stream=clean)
+        self.assertEqual(code, 1, report)
+        self.assertTrue(all(any(problem.startswith("missing reviewed finding") for problem in entry["problems"])
+                            for entry in report["targets"]))
+
     def test_malformed_missing_and_wildcard_dispositions_refuse(self) -> None:
         original = json.dumps(self.policy)
-        for change in (lambda: self.policy.update(format=99), lambda: self.policy.update(dispositions=[]),
+        for change in (lambda: self.policy.update(format=99), lambda: self.policy.update(dispositions={}),
+                       lambda: self.policy.pop("dispositions"),
                        lambda: self.policy["dispositions"].append(self.policy["dispositions"][0]),
                        lambda: self.policy["dispositions"][0].update(id="GO-*"),
                        lambda: self.policy["dispositions"][0].update(module="*"),
@@ -2540,30 +2568,19 @@ if mode == "fail":
         (self.release.dir / archive).unlink()
         self.assertEqual(self.run_check()[0], 1)
 
-    def test_openpgp_disposition_has_exact_reviewed_bindings(self) -> None:
+    def test_the_checked_in_set_binds_the_shipped_gateways_with_no_exception(self) -> None:
+        # x/crypto v0.59.0 fixes GO-2026-5932, so the 8.0.76 gateways carry no
+        # reviewed exception: any finding on them is unreviewed.
         policy = self.tool.dispositions(REPO_ROOT / "gateway/vulnerability-dispositions.json")
-        entry = next(entry for entry in policy["dispositions"] if entry["id"] == "GO-2026-5932")
-        expected = {
-            "id": "GO-2026-5932", "module": "golang.org/x/crypto", "version": "v0.58.0",
-            "class": "component-absent", "advisory_modified": "2026-11-02T22:01:43Z",
-            "advisory_sha256": "825258c0f40cf04f470330488d282311d182956a628099e6bc687c2532e4714e",
-            "trace_count": 15,
-            "trace_sha256": "4413ed75d58bde5ac0c16b8ecf71c8961d6a06be72d8e73d07317a8e1e1fcf18",
-        }
-        self.assertEqual({key: entry[key] for key in expected}, expected)
-        self.assertEqual(policy["gateway"]["targets"], {
-            "darwin-arm64": "6cfb8149ece572d7aec07030f1b64f1afa0945d191b6152c01721f598ca51db6",
-            "darwin-x86_64": "d86c8f2af3ecc1127a36d7857761a6bdedf297ab88f07806ee82c5a43fc530d9",
-            "linux-aarch64": "f83b93c05ff6de37d67be214995c6cf09679c8a6093bf5f0b35f7f0a703f7a49",
-            "linux-x86_64": "72f7923ddb1516ea4278bbbd497dcd839248c831a274e9936f9a82a420c8585d",
-        })
-        for fact in ("golang.org/x/crypto/openpgp", "not imported", "ProtonMail", "component is absent"):
-            self.assertIn(fact, entry["reason"])
-        triggers = " ".join(entry["re_review"])
-        for trigger in ("OpenPGP", "Git-store crypto", "dependency", "toolchain", "patch"):
-            self.assertIn(trigger, triggers)
-        self.assertIn("v0.58.0", entry["evidence"][-1])
-        self.assertIn("no golang.org/x/crypto/openpgp package", entry["evidence"][-1])
+        self.assertEqual(policy["dispositions"], [])
+        self.assertEqual(policy["gateway"], {"version": "8.0.76", "targets": {
+            "darwin-arm64": "b152f38baf829c153bace09f42722bee02546db294fb741946536ba40578f52d",
+            "darwin-x86_64": "08cb4b2414b8c4d1eb7ef79d65e1fb77301ecee1a076650c13f24344e1dd3265",
+            "linux-aarch64": "158ca0adb099e521e277a8a3b7cfaf2f63207cf68922f9ab4829c0fd3185ec8c",
+            "linux-x86_64": "27aa691c79a848dd7e931f466aa097ca7f4121d8c6d78d136355e1206569e4a9",
+        }})
+        modules = json.loads((REPO_ROOT / "gateway/licenses/modules.json").read_text())["modules"]
+        self.assertEqual([row["version"] for row in modules if row["path"] == "golang.org/x/crypto"], ["v0.59.0"])
 
     def test_workflow_fetches_review_controls_without_changing_the_product_checkout(self) -> None:
         job = _jobs((WORKFLOWS_DIR / "release.yml").read_text())["vulnerabilities"]
@@ -2592,7 +2609,7 @@ if mode == "fail":
 
     def test_public_policy_and_blocking_workflow_are_bound(self) -> None:
         policy = json.loads((REPO_ROOT / "gateway/vulnerability-dispositions.json").read_text())
-        self.assertEqual({entry["id"] for entry in policy["dispositions"]}, self.IDS)
+        self.assertEqual({entry["id"] for entry in policy["dispositions"]}, set())
         self.assertEqual(set(policy["gateway"]["targets"]), set(self.TARGETS))
         upstream = json.loads((REPO_ROOT / "gateway/UPSTREAM.json").read_text())
         self.assertEqual(policy["gateway"]["version"], upstream["upstream"]["version"])

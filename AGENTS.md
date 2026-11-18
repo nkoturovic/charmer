@@ -109,7 +109,7 @@ Meta's Wonder contributor id answered 404 on 2026-10-27. Terra is not a
 shipped line; the add-and-qualify recipes and evidence limits live in
 [the models guide](docs/guides/models.md).
 The trusted catalog pins Claude
-**2.1.322** as the verified binary. The gateway is **CLIProxyAPI 8.0.67**
+**2.1.326** as the verified binary. The gateway is **CLIProxyAPI 8.0.76**
 (pinned in `gateway/UPSTREAM.json` and built by `tools/build.py` with the official
 Go 1.27.4 toolchain, `CGO_ENABLED=0`; see "Gateway build" in §4) with
 thirty local patches (admission ids 1–10, 12, 13, 15–23, 26–29, 31, 32
@@ -1400,16 +1400,17 @@ uses your own HOME and environment.
   `--validate-published-evidence <out>/evidence` (read-only store content
   check); `--validate-evidence` stays the private host/build check.
   Never claim a cached build is a fresh execution.
-  The gates exclude exactly the 17 tests `gateway/upstream-review.json`
+  The gates exclude exactly the 18 tests `gateway/upstream-review.json`
   `test_exclusions` names, each with its reason: the zstd-window fixture
   `TestCaptureRequestInfoDoesNotDecodeASingleSegmentBomb`
-  (management-allowlist); nine Codex refresh-journal tests (eight in
+  (management-allowlist); ten Codex refresh-journal tests (nine in
   redirect-metadata, one in executor), since #34 switches the journal off;
   two content-chunk tests whose all-or-nothing decoding #22 keeps
   (openai-content-chunks); four redirect tests of the plugin host, which
   never starts in the rendered configuration (plugin-host); and
-  `TestInPlaceByteWritesAreReviewed`, an upstream inventory defect at the
-  tag (util). Every other test in those gates still runs.
+  `TestServiceHeartbeatFailoverDoesNotDrainBlockingScope`, an upstream
+  timing race in a Home test (Home is off) that fails under load
+  (sdk-service). Every other test in those gates still runs.
 - **Budget and diagnostic lanes:** the ordinary gateway lanes target ≤20 s on a
   quiet host; >30 s stops the leg. Concurrent-load timings are labelled,
   not used for that stop rule. Revert, lifecycle, races, the hint-client
@@ -2510,7 +2511,7 @@ the operator's approval. Doctor never retires backups.
   below macOS 13; the native Apple silicon journey is on macOS 15, with no
   runtime claim for 13 or 14 and no Intel support claim. The 2.0.1 updater
   does not enforce that floor. See `docs/install/macos.md` and `docs/update.md`.
-- **WebSocket key retirement:** CLIProxyAPI 8.0.67 checks the key on every
+- **WebSocket key retirement:** CLIProxyAPI 8.0.76 checks the key on every
   Responses WebSocket turn. Measured: an overlap turn succeeds; after
   retirement the next turn on that open socket gets 401 without reaching
   the provider, and a new socket with the new key works. Reconnect after
@@ -2518,7 +2519,7 @@ the operator's approval. Doctor never retires backups.
   route (`docs/guides/gateway.md`).
 - **Refusal headers:** the gateway does not forward a provider's
   `x-should-retry`; on Claude routes it answers a 429 or 529 with a
-  `Retry-After` of its own (11–34 s measured on 8.0.67 against the
+  `Retry-After` of its own (8–37 s measured in three runs on 8.0.76 against the
   provider's 7 s: the provider's value plus 1–30 s of the executor's random
   reset-hint fuzz; 8–36 s on 8.0.45), and
   the client applies its own retry rules. Since 8.0.45 a Codex capacity 429
