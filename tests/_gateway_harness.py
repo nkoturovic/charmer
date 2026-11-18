@@ -1065,12 +1065,13 @@ def message_body(blocks, stop_reason="end_turn", *, model="gwtest-wire", message
 
 
 def message_events(blocks, stop_reason="end_turn", *, ending="stop", model="gwtest-wire",
-                   message_id="msg_gwtest_blocks"):
+                   message_id="msg_gwtest_blocks", stop_details=None):
     """The streamed reply as ``(event, data)`` pairs: ``message_start``, one
     start, delta (when the block type has one) and stop per block, then the
     ``ending`` (one of ``ENDINGS``). ``PING``, ``COMMENT`` and
     ``UNKNOWN_EVENT`` among the blocks are that frame at that place; they
-    take no index."""
+    take no index. ``stop_details`` joins the message_delta's delta (a
+    refusal's, for example)."""
     if ending not in ENDINGS:
         raise ValueError("unknown stream ending")
     start = {**message_body((), stop_reason, model=model, message_id=message_id), "stop_reason": None}
@@ -1104,6 +1105,8 @@ def message_events(blocks, stop_reason="end_turn", *, ending="stop", model="gwte
     final = {"stop_sequence": None}
     if stop_reason is not None:
         final = {"stop_reason": stop_reason, **final}
+    if stop_details is not None:
+        final["stop_details"] = copy.deepcopy(stop_details)
     if ending in ("stop", "delta", "delta-error"):
         events.append(("message_delta", {"type": "message_delta", "delta": final, "usage": {"output_tokens": 9}}))
     if ending == "stop":

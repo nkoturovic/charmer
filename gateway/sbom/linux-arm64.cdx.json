@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:57bee6a5-629b-5711-9b17-f16a27bfd442",
+  "serialNumber": "urn:uuid:a1e2ef86-4eb7-52d8-bc32-cdd1edaf7486",
   "version": 1,
   "metadata": {
     "tools": {
@@ -295,7 +295,7 @@
         },
         {
           "name": "charmer:gateway:post-apply-tree-sha256",
-          "value": "da4696d495266d150c97214779d82f0e5f65948929670245692be1bf69a792a7"
+          "value": "6a06481b98b30904961c12bd3220fc4b66ebff33997f27d9b1ee1498739e3df0"
         },
         {
           "name": "charmer:gateway:build-godebug",
@@ -331,7 +331,7 @@
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-credential-save-report.patch@f6d9719485a3b1f94bf7b74fd4cdc66310f85f6e87de8df294b01d81dff7d6fe"
+          "value": "cli-proxy-api-credential-save-report.patch@9e5fb97358acc9ec875f74db020862a8fc68aad3ed4868781e54eb0967c511ec"
         },
         {
           "name": "charmer:gateway:patch",
@@ -423,7 +423,7 @@
         },
         {
           "name": "charmer:gateway:patch",
-          "value": "cli-proxy-api-trailing-reasoning-record.patch@7e8846fb4476a55283f5d455337028089c95d89c001a55a5911d497a1b9fd5a2"
+          "value": "cli-proxy-api-trailing-reasoning-record.patch@493d5bd81e4567b431eb6d945369b4123f951dc7c5319001fc8f076279413b91"
         }
       ]
     }
