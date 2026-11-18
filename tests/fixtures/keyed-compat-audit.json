@@ -12,7 +12,7 @@
           "client_sha256": "b6b3647d981130dc44fc670846ae97b6cde531ffb667cf9c4d17cfcafb38cb37",
           "errors": 0,
           "failures": 0,
-          "head": "fa3c591a9b6a58ab8fc91364ac0c9881de12aded",
+          "head": "492c4df245a4348957f399fc402927235d6f3a0e",
           "inventory": {
             "J1": {
               "count": 9,
@@ -79,7 +79,7 @@
           },
           "journey_tests": 9,
           "keyed_client_budget_seconds": 900,
-          "keyed_client_seconds": 12.062,
+          "keyed_client_seconds": 12.977,
           "keyed_client_tests": 10,
           "keyed_identity": {
             "client_contract_sha256": "30343d6af96d1fb3afbfa67230094f3f2eefa51daf5d06ab3c1109dd1b5b5ddb",
@@ -223,7 +223,7 @@
           "skipped": 0,
           "status": "passed"
         },
-        "sha256": "f323dcf56c2ad7ad48657fb2d5561f92cd1b5eb7d43b3889b62c725bcad239a5"
+        "sha256": "48c8db1ec8f47b6fd0f7c731bee704ec03df9b0c4210e22eed7d31846fb8eb92"
       },
       "tests.keyed_journeys.json": {
         "document": {
@@ -240,54 +240,54 @@
           "tables": {
             "J1": [
               {
-                "head": "fa3c591a9b6a58ab8fc91364ac0c9881de12aded",
+                "head": "492c4df245a4348957f399fc402927235d6f3a0e",
                 "row": "tests.test_onboarding_isolation.KeyedJourneyTests.test_keyed_cli_changes_and_failed_qualification_remain_selectable_with_warnings",
                 "status": "passed"
               },
               {
-                "head": "fa3c591a9b6a58ab8fc91364ac0c9881de12aded",
+                "head": "492c4df245a4348957f399fc402927235d6f3a0e",
                 "row": "tests.test_onboarding_isolation.KeyedJourneyTests.test_keyed_cli_declare_approve_apply_admit_qualify_bind",
                 "status": "passed"
               },
               {
-                "head": "fa3c591a9b6a58ab8fc91364ac0c9881de12aded",
+                "head": "492c4df245a4348957f399fc402927235d6f3a0e",
                 "row": "tests.test_packaging.PackageSourceTests.test_package_payload_excludes_operator_credentials_and_grants",
                 "status": "passed"
               },
               {
-                "head": "fa3c591a9b6a58ab8fc91364ac0c9881de12aded",
+                "head": "492c4df245a4348957f399fc402927235d6f3a0e",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_closed_target_refuses_audit",
                 "status": "passed"
               },
               {
-                "head": "fa3c591a9b6a58ab8fc91364ac0c9881de12aded",
+                "head": "492c4df245a4348957f399fc402927235d6f3a0e",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_open_target_requires_local_route_and_key_not_admission",
                 "status": "passed"
               },
               {
-                "head": "fa3c591a9b6a58ab8fc91364ac0c9881de12aded",
+                "head": "492c4df245a4348957f399fc402927235d6f3a0e",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_rechecks_headers_origins_collisions",
                 "status": "passed"
               },
               {
-                "head": "fa3c591a9b6a58ab8fc91364ac0c9881de12aded",
+                "head": "492c4df245a4348957f399fc402927235d6f3a0e",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_import_uses_existing_single_commit_barrier",
                 "status": "passed"
               },
               {
-                "head": "fa3c591a9b6a58ab8fc91364ac0c9881de12aded",
+                "head": "492c4df245a4348957f399fc402927235d6f3a0e",
                 "row": "tests.test_portability.KeyedPortabilityTests.test_keyed_json_export_has_logical_refs_and_no_store_reads",
                 "status": "passed"
               },
               {
-                "head": "fa3c591a9b6a58ab8fc91364ac0c9881de12aded",
+                "head": "492c4df245a4348957f399fc402927235d6f3a0e",
                 "row": "tests.test_tui_pty.KeyedJourneyPTYTests.test_keyed_tui_optional_admission_qualification_and_binding",
                 "status": "passed"
               }
             ]
           }
         },
-        "sha256": "7bb59f1b8f2c27fad186919b048153014ca1a9419088a70768327087c445624c"
+        "sha256": "cb15754c23ecbbc4de44bba5e861e4938dbf3a0d1aee1ee572d505748b7c4863"
       },
       "tests.test_gateway_keyed_compat.json": {
         "document": {
@@ -928,7 +928,7 @@
   "source_report": {
     "document": {
       "evidence_dir": "tests/fixtures",
-      "head": "fa3c591a9b6a58ab8fc91364ac0c9881de12aded",
+      "head": "492c4df245a4348957f399fc402927235d6f3a0e",
       "relevant_sources": [
         {
           "path": "src/charmer/catalog.py",
@@ -1008,7 +1008,7 @@
         }
       ]
     },
-    "sha256": "2f094d27d1651cd270df6bf03c5cc186029afddc011d7a2e3b981e364e09ae45"
+    "sha256": "94f89c29908e5f5824ad7ec6b054c0f982657a5d3551eaaf2998a7fbeabf9d59"
   },
   "version": 1
 }
