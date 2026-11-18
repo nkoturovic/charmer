@@ -93,7 +93,7 @@ index 855d0dcd..a89e0cbc 100644
  
  					// wantAccept mirrors the simplified upstream model above: any
 diff --git a/internal/runtime/executor/codex_executor_sse_events_test.go b/internal/runtime/executor/codex_executor_sse_events_test.go
-index 7555e5b4..db731a55 100644
+index 5938d66a..517c1aac 100644
 --- a/internal/runtime/executor/codex_executor_sse_events_test.go
 +++ b/internal/runtime/executor/codex_executor_sse_events_test.go
 @@ -576,7 +576,7 @@ func TestCodexVerifyInferenceTranslatesPayloadAndRequiresCompletedEvent_Issue578
@@ -117,7 +117,7 @@ index 7555e5b4..db731a55 100644
  }
  
 diff --git a/internal/runtime/executor/codex_executor_stream.go b/internal/runtime/executor/codex_executor_stream.go
-index eacf2349..5d8be5ea 100644
+index efc90ce2..8e47769c 100644
 --- a/internal/runtime/executor/codex_executor_stream.go
 +++ b/internal/runtime/executor/codex_executor_stream.go
 @@ -72,6 +72,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
@@ -729,10 +729,10 @@ index ffbf6f44..1b9bc1cc 100644
  
  	if err = helps.ApplyRequestThinkingDoc(doc, req, opts, from.String(), to.String(), e.Identifier(), updatesChanged); err != nil {
 diff --git a/internal/runtime/executor/codex_websockets_stream.go b/internal/runtime/executor/codex_websockets_stream.go
-index 4aadf3d2..de388c7a 100644
+index d4798447..79bfe5b8 100644
 --- a/internal/runtime/executor/codex_websockets_stream.go
 +++ b/internal/runtime/executor/codex_websockets_stream.go
-@@ -915,6 +915,7 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
+@@ -922,6 +922,7 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
  	originalTranslated = helps.SetStringIfDifferent(originalTranslated, "model", baseModel)
  	doc := ojson.NewDoc(body)
  	normalizeCodexOutputBudgetDoc(doc)

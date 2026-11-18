@@ -828,9 +828,9 @@ class NativeReplayTests(unittest.TestCase):
                             self.assertFalse(result.timed_out)
                             self.assertTrue(result.daemon and result.daemon.unchanged)
                             self.assertEqual(relay.completion_errors(), [])
-                            # Re-measured on 8.0.67 with client 2.1.322 (as on 8.0.45 with clients 2.1.311 and
-                            # 2.1.312): the same known negative.
-                            self.assertEqual(gateway.version, "8.0.67", "requalify late-terminal evidence for a changed gateway")
+                            # Re-measured on 8.0.76 with client 2.1.322 (as on 8.0.67 with 2.1.322 and on 8.0.45
+                            # with clients 2.1.311 and 2.1.312): the same known negative.
+                            self.assertEqual(gateway.version, "8.0.76", "requalify late-terminal evidence for a changed gateway")
                             expected_start = {"stop_reason": None, "stop_sequence": None, "output_tokens": 0}
                             self.assertTrue(all(row["initial_fields"] == expected_start for row in upstream_rows))
                             self.assertTrue(all(row.get("reply_initial_fields") == [expected_start] for row in relay.rows))

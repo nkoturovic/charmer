@@ -847,6 +847,27 @@ class ManagementAllowlistGateTests(unittest.TestCase):
         "TestSIWCManagementRouteAccessControl",
         "TestCodexCallbackRejectsSIWCState",
         "TestSIWCStatusEndpoint",
+        # 8.0.68-8.0.76 tests of refused surfaces: the websocket tunnel, the
+        # Muse Code relay and the v8 plugin listing.
+        "TestMuseCodeClientEndpointsRelayToMetaOrigin",
+        "TestMuseCodeModelsUsesFullCPACatalogWithoutUpstreamRelay",
+        "TestMuseCodeModelsSupportsHomeModeOAuthSettingsHotReloadAndPluginInterceptor",
+        "TestMuseCodeRoutesEnforceAuthSafeModeAndDisallowedPaths",
+        "TestServerWebsocketTunnel_EndToEndAndTenantIsolation",
+        "TestServerWebsocketTunnel_NonGetMethodsReturn405AndPreserveCORSOptions",
+        "TestServerWebsocketTunnel_RejectsWhenAPIKeysEmptyOrSafeMode",
+        "TestServerWebsocketTunnel_ServiceUnavailableResponseBodies",
+        "TestServerWebsocketTunnel_HotReloadRevokesRemovedKeyOnly",
+        "TestServerWebsocketTunnel_ServerStopClosesConnections",
+        "TestServerWebsocketTunnel_TLSWithoutALPNClosesRawTransport",
+        "TestManagementV8PluginsExposesRuntimePriorityOnlyOnV8",
+        # The verified-hash cache of the config secret-key, which never
+        # authenticates (management-env-only).
+        "TestAuthenticateManagementKey_ReusesVerifiedSecretWithinOneHourTTL",
+        "TestAuthenticateManagementKey_NeverCachesFailuresAndPreservesIPBan",
+        "TestAuthenticateManagementKey_InvalidatesCacheOnSecretChangeAndRemoval",
+        "TestAuthenticateManagementKey_CoalescesConcurrentColdCacheLookups",
+        "TestMiddleware_AuthenticatesRealBcryptHashAndInvalidatesOnConfigV8Update",
     )
     # Upstream tests this gate excludes for a diagnosed upstream reason, not a
     # refused surface. Each keeps its record in gateway/upstream-review.json
@@ -1035,6 +1056,7 @@ class ManagementEnvOnlyGateTests(unittest.TestCase):
         "TestManagementEnvOnly_AuthenticateManagementKeyIgnoresLocalPassword",
         "TestManagementEnvOnly_LocalPasswordStillGuardsKeepAlive",
     )
+    HANDLER_GATE_TESTS = ("TestManagementEnvOnly_VerifiedHashCacheNeverAdmitsConfigSecret",)
 
     def _patch_text(self) -> str:
         self.assertTrue(self.PATCH.is_file(), f"{self.PATCH} missing next to the package")
@@ -1050,6 +1072,7 @@ class ManagementEnvOnlyGateTests(unittest.TestCase):
             "internal/api/server_reload.go",
             "internal/api/handlers/management/handler.go",
             "internal/api/server_management_env_only_test.go",
+            "internal/api/handlers/management/management_env_only_cache_test.go",
         ):
             with self.subTest(path=path):
                 self.assertIn(f"+++ b/{path}", text)
@@ -1069,7 +1092,9 @@ class ManagementEnvOnlyGateTests(unittest.TestCase):
         # the key check drops its branch and the source adds no reader of it
         # (it keeps guarding /keep-alive only).
         self.assertIn("if lp := h.localPassword; lp != \"\" {", removed)
-        self.assertIn("bcrypt.CompareHashAndPassword([]byte(secretHash), []byte(provided))", removed)
+        # Upstream's one-hour verified-hash cache of the config secret is
+        # never consulted either.
+        self.assertIn("if secretHash == \"\" || !h.authCache.verify(secretHash, provided) {", removed)
         self.assertIn("newSecretEmpty := cfg.RemoteManagement.SecretKey == \"\"", removed)
         # The only config-secret reads the patch adds (outside its tests) are
         # the drop helper's own.
@@ -1087,7 +1112,8 @@ class ManagementEnvOnlyGateTests(unittest.TestCase):
         self.assertEqual(
             [line for line in source_added if "ocalPassword" in line and not line.startswith("//")], []
         )
-        for name in self.CONFIG_GATE_TESTS + self.API_GATE_TESTS:
+        self.assertEqual([line for line in source_added if "authCache.verify" in line], [])
+        for name in self.CONFIG_GATE_TESTS + self.API_GATE_TESTS + self.HANDLER_GATE_TESTS:
             with self.subTest(test=name):
                 self.assertIn(f"func {name}(t *testing.T)", added)
         # Hot reloads go through a real config watcher into Server.UpdateClients.
@@ -1099,11 +1125,12 @@ class ManagementEnvOnlyGateTests(unittest.TestCase):
         self.assertEqual(names[6], self.PATCH.name)
         self.assertLess(names.index("cli-proxy-api-watcher-parentdir.patch"), names.index(self.PATCH.name))
         record = gate("management-env-only")
-        self.assertEqual(record["packages"], ["./internal/config", "./internal/api"])
+        self.assertEqual(record["packages"], ["./internal/config", "./internal/api", "./internal/api/handlers/management"])
         match = re.fullmatch(r"\^\(([^()]*)\)\$", record["run"])
         self.assertIsNotNone(match, "management env-only run is not an exact name list")
-        self.assertEqual(match.group(1).split("|"), list(self.CONFIG_GATE_TESTS + self.API_GATE_TESTS))
-        self.assertEqual(record["expected_tests"], list(self.CONFIG_GATE_TESTS + self.API_GATE_TESTS))
+        tests = list(self.CONFIG_GATE_TESTS + self.API_GATE_TESTS + self.HANDLER_GATE_TESTS)
+        self.assertEqual(match.group(1).split("|"), tests)
+        self.assertEqual(record["expected_tests"], tests)
         self.assertIsNone(record["count"])
         self.assertNotIn("skip", record)
 

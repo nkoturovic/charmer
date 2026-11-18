@@ -402,7 +402,7 @@ index ef7b616e..cd21d68e 100644
  				reporter.PublishFailureWithDetail(ctx, detail, err)
  			}
 diff --git a/internal/runtime/executor/codex_executor_stream.go b/internal/runtime/executor/codex_executor_stream.go
-index 5d8be5ea..0adb57a9 100644
+index 8e47769c..aa864616 100644
 --- a/internal/runtime/executor/codex_executor_stream.go
 +++ b/internal/runtime/executor/codex_executor_stream.go
 @@ -196,7 +196,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
@@ -423,7 +423,7 @@ index 5d8be5ea..0adb57a9 100644
  		return nil, err
  	}
  
-@@ -320,7 +320,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -323,7 +323,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  						}
  						helps.LogWithRequestID(ctx).Debugf("codex executor: bootstrap overload rejection after %d lines / %v, time budget exhausted; delivering in-stream", bufferedFrames, timeSinceStart)
  					}
@@ -432,7 +432,7 @@ index 5d8be5ea..0adb57a9 100644
  					break
  				}
  				if helps.HasMeaningfulCodexOutputDelta(data) {
-@@ -520,7 +520,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
+@@ -523,7 +523,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
  					helps.RecordAPIResponseError(ctx, e.cfg, streamErr)
  					reporter.PublishFailure(ctx, streamErr)
  					select {
@@ -442,10 +442,10 @@ index 5d8be5ea..0adb57a9 100644
  					}
  					return
 diff --git a/sdk/api/handlers/claude/code_handlers.go b/sdk/api/handlers/claude/code_handlers.go
-index c9f05427..cd0797e2 100644
+index 1e477eb9..9abd8323 100644
 --- a/sdk/api/handlers/claude/code_handlers.go
 +++ b/sdk/api/handlers/claude/code_handlers.go
-@@ -564,6 +564,9 @@ func (h *ClaudeCodeAPIHandler) toClaudeError(msg *interfaces.ErrorMessage) claud
+@@ -575,6 +575,9 @@ func (h *ClaudeCodeAPIHandler) toClaudeError(msg *interfaces.ErrorMessage) claud
  }
  
  func (h *ClaudeCodeAPIHandler) toClaudeErrorWithRetryAfter(msg *interfaces.ErrorMessage, retryAfter string) claudeErrorResponse {
@@ -455,7 +455,7 @@ index c9f05427..cd0797e2 100644
  	status := http.StatusInternalServerError
  	errText := http.StatusText(status)
  	if msg != nil {
-@@ -608,6 +611,9 @@ func (h *ClaudeCodeAPIHandler) WriteErrorResponse(c *gin.Context, msg *interface
+@@ -619,6 +622,9 @@ func (h *ClaudeCodeAPIHandler) WriteErrorResponse(c *gin.Context, msg *interface
  	if msg != nil && msg.StatusCode > 0 {
  		status = msg.StatusCode
  	}

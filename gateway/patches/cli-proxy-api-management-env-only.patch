@@ -1,16 +1,8 @@
 diff --git a/internal/api/handlers/management/handler.go b/internal/api/handlers/management/handler.go
-index a230af08..86438244 100644
+index a36af7c9..4ecb7639 100644
 --- a/internal/api/handlers/management/handler.go
 +++ b/internal/api/handlers/management/handler.go
-@@ -21,7 +21,6 @@ import (
- 	sdkAuth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
- 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
- 	log "github.com/sirupsen/logrus"
--	"golang.org/x/crypto/bcrypt"
- )
- 
- type attemptInfo struct {
-@@ -366,13 +365,9 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
+@@ -393,13 +393,9 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
  
  	h.mu.Lock()
  	cfg := h.cfg
@@ -25,7 +17,7 @@ index a230af08..86438244 100644
  	}
  	h.mu.Unlock()
  	if h.allowRemoteOverride {
-@@ -424,7 +419,11 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
+@@ -451,7 +447,11 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
  		h.attemptsMu.Unlock()
  	}
  
@@ -38,7 +30,7 @@ index a230af08..86438244 100644
  		return false, http.StatusForbidden, "remote management key not set"
  	}
  
-@@ -433,28 +432,13 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
+@@ -460,28 +460,15 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
  		return false, http.StatusUnauthorized, "missing management key"
  	}
  
@@ -56,7 +48,7 @@ index a230af08..86438244 100644
  		return true, 0, ""
  	}
  
--	if secretHash == "" || bcrypt.CompareHashAndPassword([]byte(secretHash), []byte(provided)) != nil {
+-	if secretHash == "" || !h.authCache.verify(secretHash, provided) {
 -		fail()
 -		return false, http.StatusUnauthorized, "invalid management key"
 -	}
@@ -64,16 +56,76 @@ index a230af08..86438244 100644
 -	reset()
 -
 -	return true, 0, ""
++	// The verified-hash cache admits only what the config secret-key would
++	// have admitted, so it is never consulted either.
 +	fail()
 +	return false, http.StatusUnauthorized, "invalid management key"
  }
  
  // persistLocked saves the current in-memory config to disk.
+diff --git a/internal/api/handlers/management/management_env_only_cache_test.go b/internal/api/handlers/management/management_env_only_cache_test.go
+new file mode 100644
+index 00000000..17b3f3ea
+--- /dev/null
++++ b/internal/api/handlers/management/management_env_only_cache_test.go
+@@ -0,0 +1,52 @@
++package management
++
++import (
++	"net/http"
++	"testing"
++
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	"golang.org/x/crypto/bcrypt"
++)
++
++// charmer local patch (management-env-only): only MANAGEMENT_PASSWORD
++// authenticates. Upstream caches a verified config secret-key for an hour;
++// with the cache warm for the config secret, neither it nor the runtime local
++// password is a key, and the environment secret still is.
++func TestManagementEnvOnly_VerifiedHashCacheNeverAdmitsConfigSecret(t *testing.T) {
++	const envKey, configKey, localKey = "env-only-cache-env-key", "env-only-cache-config-key", "env-only-cache-local-key"
++	hash, errHash := bcrypt.GenerateFromPassword([]byte(configKey), bcrypt.MinCost)
++	if errHash != nil {
++		t.Fatalf("bcrypt: %v", errHash)
++	}
++	cfg := &config.Config{}
++	cfg.RemoteManagement.SecretKey = string(hash)
++
++	t.Run("env-set", func(t *testing.T) {
++		t.Setenv("MANAGEMENT_PASSWORD", envKey)
++		h := NewHandler(cfg, "", nil)
++		h.SetLocalPassword(localKey)
++		// Control: the cache admits the config secret, as the unpatched check would.
++		if !h.authCache.verify(string(hash), configKey) || !h.authCache.verify(string(hash), configKey) {
++			t.Fatal("control: the verified-hash cache does not admit the config secret")
++		}
++		for _, key := range []string{configKey, localKey} {
++			if ok, code, msg := h.AuthenticateManagementKey("127.0.0.1", true, key); ok || code != http.StatusUnauthorized {
++				t.Fatalf("key %q after a warm cache: ok=%v status=%d msg=%q, want 401", key, ok, code, msg)
++			}
++		}
++		if ok, code, msg := h.AuthenticateManagementKey("127.0.0.1", true, envKey); !ok {
++			t.Fatalf("env key: ok=%v status=%d msg=%q, want accepted", ok, code, msg)
++		}
++	})
++	t.Run("env-unset", func(t *testing.T) {
++		t.Setenv("MANAGEMENT_PASSWORD", "")
++		h := NewHandler(cfg, "", nil)
++		if !h.authCache.verify(string(hash), configKey) {
++			t.Fatal("control: the verified-hash cache does not admit the config secret")
++		}
++		ok, code, msg := h.AuthenticateManagementKey("127.0.0.1", true, configKey)
++		if ok || code != http.StatusForbidden || msg != "remote management key not set" {
++			t.Fatalf("config key without env after a warm cache: ok=%v status=%d msg=%q, want 403", ok, code, msg)
++		}
++	})
++}
 diff --git a/internal/api/server.go b/internal/api/server.go
-index bbf35a77..f287bd09 100644
+index 4f644cb4..ee4ff76f 100644
 --- a/internal/api/server.go
 +++ b/internal/api/server.go
-@@ -252,9 +252,11 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
+@@ -280,9 +280,11 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
  		optionState.routerConfigurator(engine, s.handlers, cfg)
  	}
  
@@ -599,10 +651,10 @@ index 00000000..f5edeeff
 +	assertManagementOff(t, s, "keep-alive server without MANAGEMENT_PASSWORD")
 +}
 diff --git a/internal/api/server_management_v8_test.go b/internal/api/server_management_v8_test.go
-index b59ad2b0..8ace6ea3 100644
+index 0d4c2111..c482094b 100644
 --- a/internal/api/server_management_v8_test.go
 +++ b/internal/api/server_management_v8_test.go
-@@ -18,6 +18,9 @@ import (
+@@ -21,6 +21,9 @@ import (
  )
  
  func TestManagementV8RoutesShareAccessControl(t *testing.T) {
@@ -612,7 +664,7 @@ index b59ad2b0..8ace6ea3 100644
  	gin.SetMode(gin.TestMode)
  	for _, tc := range []struct {
  		name                      string
-@@ -62,6 +65,9 @@ func TestManagementV8RoutesShareAccessControl(t *testing.T) {
+@@ -65,6 +68,9 @@ func TestManagementV8RoutesShareAccessControl(t *testing.T) {
  }
  
  func TestManagementV8IndependentContract(t *testing.T) {
@@ -622,7 +674,7 @@ index b59ad2b0..8ace6ea3 100644
  	path := filepath.Join(t.TempDir(), "config.yaml")
  	raw := "port: 8317\nrequest-retry: 3\ndebug: false\napi-keys: [client]\nremote-management: {secret-key: test-password}\n"
  	if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
-@@ -182,6 +188,9 @@ func TestManagementV8IndependentContract(t *testing.T) {
+@@ -185,6 +191,9 @@ func TestManagementV8IndependentContract(t *testing.T) {
  }
  
  func TestManagementV8PluginOperationMigratesConfiguration(t *testing.T) {
@@ -633,10 +685,10 @@ index b59ad2b0..8ace6ea3 100644
  	path := filepath.Join(dir, "config.yaml")
  	raw := fmt.Sprintf("codex: {disable-codex-cloaking: true}\nremote-management: {secret-key: test-password}\nplugins:\n  dir: %q\n  configs: {test-plugin: {enabled: false}}\n", filepath.ToSlash(dir))
 diff --git a/internal/api/server_reload.go b/internal/api/server_reload.go
-index 312182c0..3b010345 100644
+index 273a5842..79bef714 100644
 --- a/internal/api/server_reload.go
 +++ b/internal/api/server_reload.go
-@@ -134,11 +134,9 @@ func (s *Server) UpdateClientsContext(ctx context.Context, cfg *config.Config) b
+@@ -140,11 +140,9 @@ func (s *Server) UpdateClientsContext(ctx context.Context, cfg *config.Config) b
  		util.SetLogLevel(cfg)
  	}
  
@@ -651,7 +703,7 @@ index 312182c0..3b010345 100644
  	if s.envManagementSecret {
  		s.registerManagementRoutes()
  		if s.managementRoutesEnabled.CompareAndSwap(false, true) {
-@@ -147,23 +145,7 @@ func (s *Server) UpdateClientsContext(ctx context.Context, cfg *config.Config) b
+@@ -153,23 +151,7 @@ func (s *Server) UpdateClientsContext(ctx context.Context, cfg *config.Config) b
  			s.managementRoutesEnabled.Store(true)
  		}
  	} else {

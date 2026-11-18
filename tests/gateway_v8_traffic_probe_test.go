@@ -22,21 +22,33 @@ func TestGatewayV8NativeConfigurationUpdateBoundary(t *testing.T) {
 	if model == nil || model.Thinking == nil || len(model.Thinking.Levels) == 0 {
 		t.Fatal("no actual static Codex configuration-update capability")
 	}
-	body, _ := json.Marshal(map[string]any{
-		"model":     model.ID,
-		"reasoning": map[string]any{"effort": "fixture-unsupported", "summary": "concise"},
-		"input": []any{map[string]any{"type": "configuration_update", "reasoning": map[string]any{"effort": "high"}},
-			map[string]any{"role": "user", "content": "fixture"}},
-	})
+	levels := model.Thinking.Levels
+	native := func(effort string) []byte {
+		body, _ := json.Marshal(map[string]any{
+			"model":     model.ID,
+			"reasoning": map[string]any{"effort": effort, "summary": "concise"},
+			"input": []any{map[string]any{"type": "configuration_update", "reasoning": map[string]any{"effort": levels[len(levels)-1]}},
+				map[string]any{"role": "user", "content": "fixture"}},
+		})
+		return body
+	}
+	// A native update-capable request whose efforts the model supports keeps
+	// its baseline and its update timeline byte for byte.
+	body := native(levels[0])
 	got, err := thinking.ApplyThinkingWithModelInfo(body, body, model.ID, "openai-response", "codex", "codex", model)
 	if err != nil || !bytes.Equal(got, body) {
 		t.Fatalf("native update-capable request must preserve its baseline and updates: err=%v", err)
 	}
-	// The same real definition does not exempt a translated caller from level
-	// validation. No provider acceptance is inferred from native passthrough.
+	// Native passthrough is no validation bypass (since 8.0.68): an effort the
+	// model does not support is refused, as it is for a translated caller. No
+	// provider acceptance is inferred from native passthrough.
+	unsupported := native("fixture-unsupported")
+	if _, err = thinking.ApplyThinkingWithModelInfo(unsupported, unsupported, model.ID, "openai-response", "codex", "codex", model); err == nil {
+		t.Fatal("native request with an unsupported effort was not validated")
+	}
 	source := []byte(`{"reasoning_effort":"fixture-unsupported","reasoning":{"summary":"concise"}}`)
 	if _, err = thinking.ApplyThinkingWithModelInfo(body, source, model.ID, "openai", "codex", "codex", model); err == nil {
-		t.Fatal("translated caller incorrectly gained native validation bypass")
+		t.Fatal("translated caller with an unsupported effort was not validated")
 	}
-	t.Logf("actual static model=%s configuration_updates=true; native bypass and translated rejection observed", model.ID)
+	t.Logf("actual static model=%s configuration_updates=true; supported native kept, unsupported native and translated refused", model.ID)
 }

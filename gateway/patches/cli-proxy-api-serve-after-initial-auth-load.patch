@@ -181,10 +181,10 @@ index 60c74fa5..d57bab5b 100644
  func (w *Watcher) SnapshotCoreAuths() []*coreauth.Auth {
  	w.clientsMutex.RLock()
 diff --git a/sdk/cliproxy/service.go b/sdk/cliproxy/service.go
-index 69893b79..df103ff7 100644
+index d298cd37..000ea29b 100644
 --- a/sdk/cliproxy/service.go
 +++ b/sdk/cliproxy/service.go
-@@ -95,6 +95,14 @@ type Service struct {
+@@ -106,6 +106,14 @@ type Service struct {
  	// authQueueStop cancels the auth update queue processing.
  	authQueueStop context.CancelFunc
  

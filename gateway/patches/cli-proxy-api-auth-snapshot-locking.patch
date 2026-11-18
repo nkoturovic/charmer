@@ -425,12 +425,12 @@ index 00000000..71e85830
 +	return auth, nil
 +}
 diff --git a/sdk/cliproxy/auth/types.go b/sdk/cliproxy/auth/types.go
-index 69c41e6d..4311d17b 100644
+index a2d8979f..2f3c43ef 100644
 --- a/sdk/cliproxy/auth/types.go
 +++ b/sdk/cliproxy/auth/types.go
-@@ -503,6 +503,9 @@ func (a *Auth) Clone() *Auth {
- 		copyErr := *a.RefreshError
- 		copyAuth.RefreshError = &copyErr
+@@ -507,6 +507,9 @@ func (a *Auth) Clone() *Auth {
+ 	if a.RefreshError != nil {
+ 		copyAuth.RefreshError = a.RefreshError.Clone()
  	}
 +	// A clone owns every map it carries, empty ones included: a request path that
 +	// fills an empty map of its copy must never write into the manager's published
@@ -438,7 +438,7 @@ index 69c41e6d..4311d17b 100644
  	if a.Attributes != nil {
  		copyAuth.Attributes = make(map[string]string, len(a.Attributes))
  		for key, value := range a.Attributes {
-@@ -568,30 +571,65 @@ func (o *ProxyConnectionPoolOverride) Clone() *ProxyConnectionPoolOverride {
+@@ -572,30 +575,65 @@ func (o *ProxyConnectionPoolOverride) Clone() *ProxyConnectionPoolOverride {
  	return out
  }
  

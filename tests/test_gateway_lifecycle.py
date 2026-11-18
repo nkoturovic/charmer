@@ -779,6 +779,57 @@ class ServiceBackendTests(_ServiceBackend):
         self.world.clock.now = 0.0
         self.assertEqual(self.service_gateway().ensure(max_wait=2).status, "failed")
 
+    def test_a_startup_failure_restarts_then_fails_and_says_so(self) -> None:
+        # Since CLIProxyAPI 8.0.68 a configuration, store or service start
+        # failure exits 1, so the unit (Restart=on-failure, RestartSec=5s,
+        # start limit 5 per 300 s, OnFailure) starts it again: between the
+        # attempts the manager reports activating (auto-restart), and once the
+        # start limit is hit, failed. The gateway never takes the lock.
+        self.starts_unit, self.after_start = False, "activating"
+        self.world.lock, self.world.alive, self.world.listener = False, False, "none"
+        start_limit_hit = 25.0  # five attempts five seconds apart
+
+        def restarting(argv, **kwargs):
+            if self.active == "activating" and self.world.clock.now >= start_limit_hit:
+                self.active = "failed"
+            return self.runner(argv, **kwargs)
+
+        runtime = cli.Runtime(asset_root=FIXTURE_ROOT, environ=self.wrapper_env(), cwd=self.root,
+                              managed_root=self.root / "managed",
+                              gateway_seams=self.world.seams(runner=restarting, journal=self.journal()))
+
+        def run(*argv):
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stderr(err):
+                code = cli.main(list(argv), runtime=runtime, output_stream=out, interactive=False)
+            return code, out.getvalue(), err.getvalue()
+
+        # ensure (and start) waits through the restarts and reports the failed
+        # start with the log remedy; it asks for one start and never resets
+        # the failed unit itself.
+        code, out, err = run("gateway", "ensure", "--max-wait", "45")
+        self.assertEqual((code, out), (1, ""), err)
+        self.assertIn("charmer: the gateway exited during its start", err)
+        self.assertIn("fix: read its log: charmer gateway logs", err)
+        self.assertGreaterEqual(self.world.clock.now, start_limit_hit)
+        self.assertEqual(len([call for call in self.calls if call[0] == "systemctl" and call[-2] == "start"]), 1)
+        self.assertFalse([call for call in self.calls if "reset-failed" in call])
+        # status reads the lock and the listener, not the manager: stopped
+        # while the unit restarts and after it has failed.
+        for active in ("activating", "failed"):
+            self.active = active
+            code, out, _ = run("gateway", "status")
+            self.assertEqual(code, 0)
+            self.assertEqual(out.splitlines()[0], "gateway: stopped — the gateway is not running", active)
+            self.assertIn("supervision: systemd (restarts on failure)", out)
+        # doctor blocks on the refused health check and names the unit's
+        # recovery and why it stopped (the line GatewayRemedyTests composes).
+        with mock.patch.object(endpoint.sys, "platform", "linux"):
+            remedy = launch.gateway_unit_remedy(self.home)
+        self.assertEqual(remedy, "start it with `charmer gateway start`; if it failed (start limit hit): "
+                         "`systemctl --user reset-failed charmer-gateway && charmer gateway start`; why it stopped: "
+                         "`systemctl --user show -p ActiveState,Result,ExecMainStatus charmer-gateway`")
+
     def test_the_helper_bound_holds_through_the_cli(self) -> None:
         self.start_takes = 11.0
         runtime = cli.Runtime(asset_root=FIXTURE_ROOT, environ=self.wrapper_env(), cwd=self.root,

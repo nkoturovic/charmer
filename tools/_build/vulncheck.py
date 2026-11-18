@@ -111,8 +111,10 @@ def dispositions(path: Path | None) -> dict[str, Any]:
     targets = gateway["targets"]
     require(isinstance(targets, dict) and set(targets) == TARGETS
             and all(digest(value) for value in targets.values()), "missing or malformed gateway target hashes")
+    # An empty list is a reviewed state too: the gateway is expected to report
+    # no finding, so any finding stays unreviewed and fails the check.
     entries = policy["dispositions"]
-    require(isinstance(entries, list) and entries, "missing dispositions")
+    require(isinstance(entries, list), "malformed dispositions")
     ids = set()
     for entry in entries:
         require(isinstance(entry, dict) and set(entry) == {

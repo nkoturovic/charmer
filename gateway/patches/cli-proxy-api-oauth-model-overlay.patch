@@ -1,8 +1,8 @@
 diff --git a/internal/config/config.go b/internal/config/config.go
-index dad8d435..f00eabc7 100644
+index 9cd301bb..37b38e62 100644
 --- a/internal/config/config.go
 +++ b/internal/config/config.go
-@@ -208,6 +208,11 @@ type Config struct {
+@@ -214,6 +214,11 @@ type Config struct {
  	// gemini-api-key, interactions-api-key, codex-api-key, xai-api-key, meta-api-key, claude-api-key, openai-compatibility, and vertex-api-key.
  	OAuthModelAlias map[string][]OAuthModelAlias `yaml:"oauth-model-alias,omitempty" json:"oauth-model-alias,omitempty"`
  
@@ -1131,10 +1131,10 @@ index d69a1760..e794f8fe 100644
  	log.Infof("config successfully reloaded, triggering client reload")
  	w.reloadClientsLocked(authDirChanged, affectedOAuthProviders, forceAuthRefresh)
 diff --git a/internal/watcher/diff/config_diff.go b/internal/watcher/diff/config_diff.go
-index 19541a88..a0967968 100644
+index 6f791bab..02302148 100644
 --- a/internal/watcher/diff/config_diff.go
 +++ b/internal/watcher/diff/config_diff.go
-@@ -498,6 +498,13 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
+@@ -507,6 +507,13 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
  	if entries, _ := DiffOAuthModelAliasChanges(oldCfg.OAuthModelAlias, newCfg.OAuthModelAlias); len(entries) > 0 {
  		changes = append(changes, entries...)
  	}
@@ -1401,7 +1401,7 @@ index b6bb6180..6103163c 100644
  	models = applyOAuthModelAliasForAuth(cfg, "antigravity", auth.AuthKind(), auth.Attributes, models)
  	models = s.appendPluginModels("antigravity", models, excluded)
 diff --git a/sdk/cliproxy/auth/api_key_model_capabilities.go b/sdk/cliproxy/auth/api_key_model_capabilities.go
-index bb0ae424..6bf2dc45 100644
+index 7ff0b9fb..1dea63be 100644
 --- a/sdk/cliproxy/auth/api_key_model_capabilities.go
 +++ b/sdk/cliproxy/auth/api_key_model_capabilities.go
 @@ -328,6 +328,9 @@ func attachResolvedHomeModelInfo(req cliproxyexecutor.Request, auth *Auth, route
@@ -1467,10 +1467,10 @@ index ae07e401..ab22ed62 100644
  			// Match the watcher's normalization so no-op and unrelated reloads do not
 diff --git a/sdk/cliproxy/oauth_extra_models_cm053_test.go b/sdk/cliproxy/oauth_extra_models_cm053_test.go
 new file mode 100644
-index 00000000..22b6bd18
+index 00000000..faa6efcc
 --- /dev/null
 +++ b/sdk/cliproxy/oauth_extra_models_cm053_test.go
-@@ -0,0 +1,946 @@
+@@ -0,0 +1,1000 @@
 +package cliproxy
 +
 +// charmer local patch (oauth-model-overlay) gates. Model ids are
@@ -1646,7 +1646,15 @@ index 00000000..22b6bd18
 +func TestCM053OverlayRegistersCodexModel(t *testing.T) {
 +	cfg := fxLoadConfig(t, fxOverlayExampleYAML)
 +	service := &Service{cfg: cfg}
-+	for _, plan := range []string{"pro", "plus", "team", "free", ""} {
++	// A free plan takes no overlay entry; its static list stays.
++	for _, plan := range []string{"free", "free_workspace", "k12", "Free"} {
++		models := fxRegister(t, service, fxCodexOAuth("cm053-overlay-codex-oauth-"+plan, plan))
++		if found := fxFind(models, fxOverlayCodexID); len(found) != 0 || len(models) == 0 {
++			t.Fatalf("plan %q: overlay model registered %d times among %v, want none beside the static list", plan, len(found), fxIDs(models))
++		}
++	}
++	// Every other plan, an unknown one and none keep the entries.
++	for _, plan := range []string{"pro", "plus", "team", "business", "plan-fixture-unknown", ""} {
 +		auth := fxCodexOAuth("cm053-overlay-codex-oauth-"+plan, plan)
 +		models := fxRegister(t, service, auth)
 +		found := fxFind(models, fxOverlayCodexID)
@@ -1797,19 +1805,13 @@ index 00000000..22b6bd18
 +
 +func TestCM053OverlayStaticWins(t *testing.T) {
 +	staticClaude := internalregistry.GetClaudeModels()[0]
-+	// A static codex model the free plan also lists, so a free account
-+	// registers it.
++	// A static codex model the plus plan lists, so a plus account registers
++	// it (a free account takes no overlay entry at all).
 +	codexPlus := internalregistry.GetCodexPlusModels()
 +	staticCodex := codexPlus[0]
-+	for _, model := range codexPlus {
-+		if len(fxFind(internalregistry.GetCodexFreeModels(), model.ID)) != 0 {
-+			staticCodex = model
-+			break
-+		}
-+	}
 +	proOnly := ""
 +	for _, model := range internalregistry.GetCodexProModels() {
-+		if internalregistry.LookupStaticModelInfoByChannel(model.ID, "codex") != nil && len(fxFind(internalregistry.GetCodexFreeModels(), model.ID)) == 0 {
++		if internalregistry.LookupStaticModelInfoByChannel(model.ID, "codex") != nil && len(fxFind(codexPlus, model.ID)) == 0 {
 +			proOnly = model.ID
 +			break
 +		}
@@ -1847,7 +1849,7 @@ index 00000000..22b6bd18
 +	if len(fxFind(models, "claude-cm053-overlay-static-wins-new")) != 1 {
 +		t.Fatal("a non-colliding overlay entry next to a shadowed one must still register")
 +	}
-+	codexModels := fxRegister(t, service, fxCodexOAuth("cm053-overlay-static-wins-codex", "free"))
++	codexModels := fxRegister(t, service, fxCodexOAuth("cm053-overlay-static-wins-codex", "plus"))
 +	if got := fxFind(codexModels, staticCodex.ID); len(got) != 1 || got[0].DisplayName == "Overlay Must Not Win" {
 +		t.Fatalf("codex static entry lost to the overlay: %+v", got)
 +	}
@@ -1855,7 +1857,7 @@ index 00000000..22b6bd18
 +		// A static model of the channel the account's plan list omits stays
 +		// omitted: the overlay never redefines a model the registry knows.
 +		if got := fxFind(codexModels, proOnly); len(got) != 0 {
-+			t.Fatalf("overlay re-planned the static model %q onto a free account", proOnly)
++			t.Fatalf("overlay re-planned the static model %q onto a plus account", proOnly)
 +		}
 +	}
 +
@@ -2417,11 +2419,63 @@ index 00000000..22b6bd18
 +		}
 +	}
 +}
++
++// Upstream's registry lookup is provider-scoped: an overlay-registered codex
++// wire resolves its capabilities and effort levels under the codex provider,
++// not under another one, and the request that reaches upstream carries an
++// effort the overlay lists and never one it does not.
++func TestOverlayCodexCapabilityLookupIsProviderScoped(t *testing.T) {
++	var mu sync.Mutex
++	var efforts []string
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		body, _ := io.ReadAll(r.Body)
++		mu.Lock()
++		efforts = append(efforts, ojson.GetBytes(body, "reasoning.effort").String())
++		mu.Unlock()
++		w.Header().Set("Content-Type", "text/event-stream")
++		_, _ = w.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"model\":\"" + fxOverlayCodexID + "\",\"output\":[],\"usage\":{\"input_tokens\":0,\"output_tokens\":0,\"total_tokens\":0}}}\n\n"))
++	}))
++	defer server.Close()
++
++	cfg := fxLoadConfig(t, fxOverlayExampleYAML)
++	auth := fxCodexOAuth("overlay-provider-scoped-codex", "pro")
++	auth.Attributes["base_url"] = server.URL
++	manager := fxPipeline(t, cfg, runtimeexecutor.NewCodexExecutor(cfg), auth)
++
++	info := internalregistry.LookupModelInfo(fxOverlayCodexID, "codex")
++	if info == nil || info.Thinking == nil || !reflect.DeepEqual(info.Thinking.Levels, []string{"low", "medium", "high", "xhigh"}) ||
++		info.ContextLength != 272000 || info.MaxCompletionTokens != 128000 {
++		t.Fatalf("codex lookup of the overlay wire = %+v", info)
++	}
++	if internalregistry.GetGlobalRegistry().GetModelInfo(fxOverlayCodexID, "codex") == nil {
++		t.Fatal("the codex-scoped registry lookup misses the overlay wire")
++	}
++	if got := internalregistry.GetGlobalRegistry().GetModelInfo(fxOverlayCodexID, "claude"); got != nil {
++		t.Fatalf("the overlay wire resolved under another provider: %+v", got)
++	}
++
++	for _, model := range []string{fxOverlayCodexID + "(xhigh)", fxOverlayCodexID + "(max)"} {
++		_, _ = manager.Execute(context.Background(), []string{"codex"}, cliproxyexecutor.Request{
++			Model:   model,
++			Payload: []byte(`{"model":"` + model + `","input":[{"role":"user","content":"hi"}]}`),
++		}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FromString("openai-response")})
++	}
++	mu.Lock()
++	defer mu.Unlock()
++	if len(efforts) == 0 || efforts[0] != "xhigh" {
++		t.Fatalf("upstream efforts = %q, want xhigh first", efforts)
++	}
++	for _, effort := range efforts {
++		if effort == "max" {
++			t.Fatalf("an effort the overlay does not list reached upstream: %q", efforts)
++		}
++	}
++}
 diff --git a/sdk/cliproxy/service.go b/sdk/cliproxy/service.go
-index df103ff7..7f4d1ba8 100644
+index 000ea29b..fd229fc8 100644
 --- a/sdk/cliproxy/service.go
 +++ b/sdk/cliproxy/service.go
-@@ -33,6 +33,10 @@ type Service struct {
+@@ -34,6 +34,10 @@ type Service struct {
  	// cfgMu protects concurrent access to the configuration.
  	cfgMu sync.RWMutex
  
@@ -2433,10 +2487,10 @@ index df103ff7..7f4d1ba8 100644
  	configUpdateMu sync.Mutex
  
 diff --git a/sdk/cliproxy/service_executors.go b/sdk/cliproxy/service_executors.go
-index c83c246c..db9d17ab 100644
+index 4b0f0b96..d959c0b4 100644
 --- a/sdk/cliproxy/service_executors.go
 +++ b/sdk/cliproxy/service_executors.go
-@@ -636,12 +636,9 @@ func (s *Service) tryRegisterPluginModelsForAuthWithConfigFenced(ctx context.Con
+@@ -723,12 +723,9 @@ func (s *Service) tryRegisterPluginModelsForAuthWithConfigFenced(ctx context.Con
  		activeExcluded = excluded
  		fallbackExclusionProvider = strings.ToLower(strings.TrimSpace(provider))
  	}
@@ -2453,7 +2507,7 @@ index c83c246c..db9d17ab 100644
  		return true, true
  	}
 diff --git a/sdk/cliproxy/service_models.go b/sdk/cliproxy/service_models.go
-index cf9554d5..0750973a 100644
+index cf9554d5..e948eef6 100644
 --- a/sdk/cliproxy/service_models.go
 +++ b/sdk/cliproxy/service_models.go
 @@ -12,6 +12,7 @@ import (
@@ -2489,7 +2543,7 @@ index cf9554d5..0750973a 100644
  				excluded = entry.ExcludedModels
  			}
  		}
-+		models = s.appendOAuthExtraModels(cfg, provider, authKind, models)
++		models = s.appendOAuthExtraModels(cfg, provider, authKind, "", models)
  		models = applyExcludedModels(models, excluded)
  	case "codex":
  		if authKind == "apikey" {
@@ -2497,11 +2551,11 @@ index cf9554d5..0750973a 100644
  		default:
  			models = registry.GetCodexProModels()
  		}
-+		models = s.appendOAuthExtraModels(cfg, provider, authKind, models)
++		models = s.appendOAuthExtraModels(cfg, provider, authKind, codexPlanType, models)
  		models = applyExcludedModels(models, excluded)
  	case "kimi", "kimi-ai", "kimi.ai", "kimi.com":
  		models = registry.GetKimiModels()
-@@ -638,6 +638,50 @@ func resolveConfigCodexStyleKey(auth *coreauth.Auth, entries []config.CodexKey,
+@@ -638,6 +638,67 @@ func resolveConfigCodexStyleKey(auth *coreauth.Auth, entries []config.CodexKey,
  	return nil
  }
  
@@ -2512,12 +2566,20 @@ index cf9554d5..0750973a 100644
 +// channel, the static entry wins and the overlay entry is dropped.
 +// The entries come from cfg, the configuration snapshot the registration runs
 +// against, so a fenced registration never mixes two configurations.
-+func (s *Service) appendOAuthExtraModels(cfg *config.Config, provider, authKind string, models []*ModelInfo) []*ModelInfo {
++// A codex credential on a free plan (free, free_workspace, k12) gets no
++// overlay entry: the overlay serves models the provider does not offer there,
++// and such a credential would take their requests and fail each one. Every
++// other plan, an unknown one and none keep the entries, as unknown plans get
++// the Pro list.
++func (s *Service) appendOAuthExtraModels(cfg *config.Config, provider, authKind, plan string, models []*ModelInfo) []*ModelInfo {
 +	if s == nil {
 +		return models
 +	}
 +	channel := coreauth.OAuthModelAliasChannel(provider, authKind)
 +	if channel != "claude" && channel != "codex" {
++		return models
++	}
++	if channel == "codex" && codexPlanWithoutOAuthExtraModels(plan) {
 +		return models
 +	}
 +	if cfg == nil || len(cfg.OAuthExtraModels[channel]) == 0 {
@@ -2549,10 +2611,19 @@ index cf9554d5..0750973a 100644
 +	return out
 +}
 +
++// codexPlanWithoutOAuthExtraModels reports a codex plan that takes no overlay entry.
++func codexPlanWithoutOAuthExtraModels(plan string) bool {
++	switch strings.ToLower(strings.TrimSpace(plan)) {
++	case "free", "free_workspace", "k12":
++		return true
++	}
++	return false
++}
++
  func (s *Service) oauthExcludedModels(provider, authKind string) []string {
  	return oauthExcludedModelsForConfig(s.currentConfig(), provider, authKind)
  }
-@@ -654,6 +698,18 @@ func oauthExcludedModelsForConfig(cfg *config.Config, provider, authKind string)
+@@ -654,6 +715,18 @@ func oauthExcludedModelsForConfig(cfg *config.Config, provider, authKind string)
  	return cfg.OAuthExcludedModels[providerKey]
  }
  
@@ -2572,7 +2643,7 @@ index cf9554d5..0750973a 100644
  	if len(models) == 0 || len(excluded) == 0 {
  		return models
 diff --git a/sdk/config/config.go b/sdk/config/config.go
-index 735deaf9..711c987a 100644
+index 11d965d5..3b29af2e 100644
 --- a/sdk/config/config.go
 +++ b/sdk/config/config.go
 @@ -24,6 +24,7 @@ type DiscoveryInterfacesConfig = internalconfig.DiscoveryInterfacesConfig

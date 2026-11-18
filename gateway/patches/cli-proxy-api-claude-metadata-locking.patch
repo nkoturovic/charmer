@@ -1,8 +1,8 @@
 diff --git a/internal/auth/claude/identity.go b/internal/auth/claude/identity.go
-index 7cbf917d..fa44fcf7 100644
+index 779f3ebf..75578697 100644
 --- a/internal/auth/claude/identity.go
 +++ b/internal/auth/claude/identity.go
-@@ -356,6 +356,24 @@ func ReadMetadataHomeCloak(metadata *map[string]any) (
+@@ -466,6 +466,24 @@ func ReadMetadataHomeCloak(metadata *map[string]any) (
  	return mode, strictMode, sensitiveWords, sensitiveWordsReplace, cacheUserID, true
  }
  

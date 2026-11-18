@@ -670,12 +670,16 @@ class RenderedTodayTests(unittest.TestCase):
         from test_gateway_v8_traffic import ResponsesSocket
         static = shipped_static()
         self.assertEqual({key: static[key] for key in self.STATIC}, self.STATIC)
+        self.assertNotIn("shutdown-timeout", static)
         gateway = harness.GatewayHarness(upstream_factory=lambda path: harness.FakeUpstream(path, unavailable_upstream))
         self.addCleanup(gateway.close)
         entries = 0
         for label, document in documents(gateway):
             with self.subTest(document=label):
                 self.assertEqual({key: document.get(key) for key in self.STATIC}, self.STATIC)
+                # No HTTP drain on stop (8.0.69's shutdown-timeout, default 0):
+                # a stop closes in-flight requests at once.
+                self.assertNotIn("shutdown-timeout", document)
                 # Cooling stays off for every credential: no per-credential
                 # override re-enables it, and no key route retries.
                 for section, entry in credential_entries(document):

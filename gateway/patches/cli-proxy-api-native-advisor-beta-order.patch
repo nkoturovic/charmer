@@ -15,10 +15,10 @@ index 3e64e5d4..2d5effe1 100644
  		if err := applyClaudeHeaders(req, claudeOAuthAuthForBetaPolicy(), claudeRaceProbeOAuthKey, false, nil,
  			body, nil, incoming, confirmed); err != nil {
 diff --git a/internal/runtime/executor/claude_executor_request.go b/internal/runtime/executor/claude_executor_request.go
-index e029c787..97981487 100644
+index 9e30a627..3b13bf48 100644
 --- a/internal/runtime/executor/claude_executor_request.go
 +++ b/internal/runtime/executor/claude_executor_request.go
-@@ -1280,7 +1280,7 @@ func applyClaudeHeadersWithNativeProfile(
+@@ -1281,7 +1281,7 @@ func applyClaudeHeadersWithNativeProfile(
  	if confirmedClaudeCode && incomingBetas != "" {
  		baseBetas = incomingBetas
  		if advisorNeeded {

@@ -1,11 +1,11 @@
 diff --git a/internal/auth/codex/openai_auth.go b/internal/auth/codex/openai_auth.go
-index 890a451c..4830883c 100644
+index be43ff5c..4fb9bf91 100644
 --- a/internal/auth/codex/openai_auth.go
 +++ b/internal/auth/codex/openai_auth.go
-@@ -216,9 +216,10 @@ func (o *CodexAuth) RefreshTokens(ctx context.Context, refreshToken string) (*Co
- 	result, err, _ := codexRefreshGroup.Do(refreshToken, func() (interface{}, error) {
- 		refreshCtx, cancelRefresh := context.WithTimeout(context.WithoutCancel(ctx), codexRefreshTimeout)
- 		defer cancelRefresh()
+@@ -220,9 +220,10 @@ func (o *CodexAuth) RefreshTokens(ctx context.Context, refreshToken string) (*Co
+ 		if errReadiness := codexRefreshReadiness(refreshCtx, "Codex"); errReadiness != nil {
+ 			return nil, errReadiness
+ 		}
 -		return journalRefresh(refreshCtx, o.journal(ctx), ClientID, refreshToken, func() (*CodexTokenData, error) {
 -			return o.refreshTokensSingleFlight(refreshCtx, refreshToken)
 -		}, decodeRefreshReceipt)
@@ -16,25 +16,25 @@ index 890a451c..4830883c 100644
  	})
  	if err != nil {
  		return nil, err
-@@ -240,7 +241,7 @@ func (o *CodexAuth) refreshTokensSingleFlight(ctx context.Context, refreshToken
+@@ -244,7 +245,7 @@ func (o *CodexAuth) refreshTokensSingleFlight(ctx context.Context, refreshToken
  
  	req, errReq := http.NewRequestWithContext(ctx, "POST", TokenURL, strings.NewReader(data.Encode()))
  	if errReq != nil {
--		return nil, &RefreshOutcomeUnknownError{Stage: "request-create", Cause: errReq}
+-		return nil, &RefreshPreSendError{Stage: "request-create", Cause: errReq}
 +		return nil, fmt.Errorf("failed to create refresh request: %w", errReq)
  	}
  
  	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-@@ -248,7 +249,7 @@ func (o *CodexAuth) refreshTokensSingleFlight(ctx context.Context, refreshToken
+@@ -252,7 +253,7 @@ func (o *CodexAuth) refreshTokensSingleFlight(ctx context.Context, refreshToken
  
  	resp, errDo := o.doRefreshRequest(req)
  	if errDo != nil {
--		return nil, &RefreshOutcomeUnknownError{Stage: "transport", Cause: errDo}
-+		return nil, fmt.Errorf("token refresh request failed: %w", errDo)
+-		return nil, errDo
++		return nil, fmt.Errorf("token refresh request failed: %w", plainRefreshTransportError(errDo))
  	}
  	defer func() {
  		if errClose := resp.Body.Close(); errClose != nil {
-@@ -258,15 +259,11 @@ func (o *CodexAuth) refreshTokensSingleFlight(ctx context.Context, refreshToken
+@@ -262,15 +263,11 @@ func (o *CodexAuth) refreshTokensSingleFlight(ctx context.Context, refreshToken
  
  	body, errRead := io.ReadAll(resp.Body)
  	if errRead != nil {
@@ -52,7 +52,7 @@ index 890a451c..4830883c 100644
  	}
  
  	var tokenResp struct {
-@@ -278,7 +275,7 @@ func (o *CodexAuth) refreshTokensSingleFlight(ctx context.Context, refreshToken
+@@ -282,7 +279,7 @@ func (o *CodexAuth) refreshTokensSingleFlight(ctx context.Context, refreshToken
  	}
  
  	if !ojson.ValidBytes(body) {
@@ -61,7 +61,7 @@ index 890a451c..4830883c 100644
  	}
  	response := ojson.ParseBytes(body)
  	tokenResp.AccessToken = response.Get("access_token").String()
-@@ -286,7 +283,7 @@ func (o *CodexAuth) refreshTokensSingleFlight(ctx context.Context, refreshToken
+@@ -290,7 +287,7 @@ func (o *CodexAuth) refreshTokensSingleFlight(ctx context.Context, refreshToken
  	tokenResp.IDToken = response.Get("id_token").String()
  	tokenResp.ExpiresIn = int(response.Get("expires_in").Int())
  	if response.Get("access_token").Type != ojson.String || strings.TrimSpace(tokenResp.AccessToken) == "" || response.Get("expires_in").Type != ojson.Number || tokenResp.ExpiresIn <= 0 || response.Get("refresh_token").Type != ojson.String || strings.TrimSpace(tokenResp.RefreshToken) == "" {
@@ -70,6 +70,30 @@ index 890a451c..4830883c 100644
  	}
  
  	// Extract account ID from ID token
+@@ -319,6 +316,23 @@ func (o *CodexAuth) refreshTokensSingleFlight(ctx context.Context, refreshToken
+ 	}, nil
+ }
+ 
++// plainRefreshTransportError drops the journal's pre-send and outcome-unknown
++// typing from a refresh transport error: without a journal, a failed exchange
++// is an ordinary, retryable refresh error, whether or not it was sent.
++func plainRefreshTransportError(err error) error {
++	switch typed := err.(type) {
++	case *RefreshPreSendError:
++		if typed.Cause != nil {
++			return typed.Cause
++		}
++	case *RefreshOutcomeUnknownError:
++		if typed.Cause != nil {
++			return typed.Cause
++		}
++	}
++	return err
++}
++
+ // CreateTokenStorage creates a new CodexTokenStorage from a CodexAuthBundle.
+ // It populates the storage struct with token data, user information, and timestamps.
+ func (o *CodexAuth) CreateTokenStorage(bundle *CodexAuthBundle) *CodexTokenStorage {
 diff --git a/internal/runtime/executor/codex_refresh_without_journal_test.go b/internal/runtime/executor/codex_refresh_without_journal_test.go
 new file mode 100644
 index 00000000..266f1f55
