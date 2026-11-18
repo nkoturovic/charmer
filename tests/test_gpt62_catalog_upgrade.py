@@ -10,7 +10,7 @@ import test_rollback_preflight as rollback_tests
 from _catalog import SHIPPED_ROOT, uses_shipped_catalog
 from _layout import FIXTURES_ROOT
 from charmer import (catalog, endpoint, operator as operator_mod, proxy, render,
-                     rollback_preflight as rp, state, strict_json)
+                     rollback_preflight as rp)
 from charmer.cli import doctor as doctor_mod
 
 OLD = FIXTURES_ROOT / "rollback-preflight" / "2.5.0"
