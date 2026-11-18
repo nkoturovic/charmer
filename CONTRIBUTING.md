@@ -97,9 +97,10 @@ runnable and the run fails.
 
 Two control clients are named by absolute path, never copied:
 `CHARMER_TEST_PREVIOUS_CLAUDE` (the previous release's pin, Claude Code
-2.1.311, for the downgrade-resume check) and
+2.1.322, for the downgrade-resume check) and
 `CHARMER_TEST_FALLBACK_CONTROL_CLAUDE` (Claude Code 2.1.302, for the
-gateway-fallback controls). The runner checks each one named against the
+gateway-fallback controls and the SendFeedback check behind a gateway).
+The runner checks each one named against the
 sha256 in `tests/_client_roles.py` before any test runs and stops with a
 usage error on a mismatch.
 
