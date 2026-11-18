@@ -313,7 +313,7 @@ class PreviousReleaseDoctorTests(unittest.TestCase):
     def test_operator_line_tracks_the_codex_catalog_outcome(self):
         self.assertEqual(catalog.validate_catalog(catalog.load_raw(CURRENT_ASSETS)), [])
         self.check_previous_scope(lead=OPERATOR_KEY, agent=OPERATOR_KEY, report=False)
-        self.assertEqual(self.fixture.reader.catalog.docs["version"]["catalog_version"], 45)
+        self.assertEqual(self.fixture.reader.catalog.docs["version"]["catalog_version"], 46)
         layer = self.fixture.reader.operator_snapshot().layer
         self.assertEqual(operator.blocking_problems(layer), ())
         self.assertEqual(OPERATOR_KEY in layer.displaced, self.gpt_moved)
