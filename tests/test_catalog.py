@@ -1784,6 +1784,8 @@ class NativeContractTests(unittest.TestCase):
         # The OpenRouter lines record the pin their evidence ran on.
         floors.update({key: "2.1.286" for key, line in bundle.lines.items()
                        if line["provider"] in catalog.AGGREGATOR_PROVIDERS})
+        # These generation moves had managed live turns on the release pair.
+        floors.update({key: "2.1.326" for key in ("astra", "sol", "or-gpt")})
         # A model outside the locked floors map sits exactly
         # at the 2.1.216 baseline (a raised floor must be locked deliberately
         # in `floors`, AGENTS §5); a model added at the baseline stays green.
@@ -3280,6 +3282,28 @@ class GenerationMoveTests(unittest.TestCase):
                 self.assertIn("Claude Code 2.1.310, CLIProxyAPI 8.0.42", text)
                 self.assertIn(f"Moved from {self.MOVES[key][1]} on 2026-10-27", text)
 
+    def test_gpt62_live_checks_keep_capacity_evidence_separate(self) -> None:
+        bundle = catalog.load_catalog(SHIPPED_ROOT)
+        for key in ("astra", "sol", "or-gpt"):
+            with self.subTest(line=key):
+                line = bundle.lines[key]
+                self.assertEqual(line["minimum_tested"], {"claude_code": "2.1.326", "cliproxyapi": "8.0.76"})
+                context = line["context"]
+                self.assertEqual(context["provider_tokens"], 1000000 if key == "or-gpt" else 872000)
+                self.assertEqual(context["validated_tokens"], 200000)
+                text = context["qualification"]
+                for fact in ("2026-11-18", "managed high turn passed", "HTTP 200, exit 0",
+                             "Claude Code 2.1.326, CLIProxyAPI 8.0.76", "No context-limit test"):
+                    self.assertIn(fact, text)
+                self.assertNotIn("requalification is pending", text)
+                self.assertNotIn("activation acceptance is still required", line["routing_note"])
+                if key != "or-gpt":
+                    self.assertIn("Codex-route smoke and low/medium/high/xhigh/max", text)
+                    self.assertIn("Claude Code 2.1.322, CLIProxyAPI 8.0.67", text)
+                else:
+                    self.assertIn("2026-10-02 battery (smoke, high, xhigh, forced named tool, stream)", text)
+                    self.assertIn("passed on GPT-6.1 Sol, not 6.2", text)
+
     def test_or_gpt_context_retirement_and_independent_hold(self) -> None:
         from _layout import FIXTURES_ROOT
 
@@ -3292,7 +3316,7 @@ class GenerationMoveTests(unittest.TestCase):
         self.assertEqual(line["context"]["provider_tokens"], 1000000)
         self.assertEqual(line["context"]["client_tokens"], 1000000)
         self.assertEqual(line["context"]["validated_tokens"], 200000)
-        self.assertIn("Not measured on GPT-6.2 Sol", line["context"]["qualification"])
+        self.assertIn("No context-limit test on GPT-6.2 Sol", line["context"]["qualification"])
         old = strict_json.load(FIXTURES_ROOT / "rollback-preflight/2.5.0/catalog/models.json")["models"]["or-gpt"]
         retired = raw["docs"]["retired"]["retired"]["or-gpt@6.1"]
         self.assertEqual(retired["context_tokens"], old["context"]["provider_tokens"])

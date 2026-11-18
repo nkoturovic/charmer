@@ -10,7 +10,7 @@
         "declared_tokens": 1050000,
         "ordinary_profile": "large",
         "provider_tokens": 872000,
-        "qualification": "GPT-6.2 Astra (released 2026-11-17): API docs declare 1,050,000 context, 922,000 input and 128,000 output. provider_tokens=872000 is the inherited GPT-6 Codex-route bound, unverified for 6.2. validated_tokens=200000 is a conservative floor, not a new-model measurement. Lead, agents and workflow defaults use the 1M client class at the session window. No Codex-route acceptance is claimed. minimum_tested still describes the predecessor; requalification is pending.",
+        "qualification": "GPT-6.2 Astra (released 2026-11-17): API docs declare 1,050,000 context, 922,000 input and 128,000 output. provider_tokens=872000 is the inherited GPT-6 Codex-route bound, unverified for 6.2. validated_tokens=200000 is a conservative floor, not a new-model measurement. Lead, agents and workflow defaults use the 1M client class at the session window. Live checks 2026-11-18: #1 accepted Codex-route smoke and low/medium/high/xhigh/max (Claude Code 2.1.322, CLIProxyAPI 8.0.67); #2 managed high turn passed (HTTP 200, exit 0; Claude Code 2.1.326, CLIProxyAPI 8.0.76). No context-limit test.",
         "scalar_tokens": null,
         "validated_tokens": 200000
       },
@@ -59,8 +59,8 @@
         "env": {}
       },
       "minimum_tested": {
-        "claude_code": "2.1.216",
-        "cliproxyapi": "7.2.80"
+        "claude_code": "2.1.326",
+        "cliproxyapi": "8.0.76"
       },
       "output": {
         "declared_tokens": 128000,
@@ -72,7 +72,7 @@
         "channel": "codex"
       },
       "roles": "all",
-      "routing_note": "Astra 6.2 flagship; generation-tagged aliases keep GPT-6 sessions on continuity until resume. Output 128K is API-documented, not Codex-route measured. GPT-6 route bound 872K is inherited, unverified for 6.2; activation acceptance is still required.",
+      "routing_note": "Astra 6.2 flagship; generation-tagged aliases keep GPT-6 sessions on continuity until resume. Output 128K is API-documented, not Codex-route measured. GPT-6 route bound 872K is inherited, unverified for 6.2; live acceptance passed 2026-11-18.",
       "status": "active",
       "wire_model": "gpt-6.2-astra"
     },
@@ -564,7 +564,7 @@
         "declared_tokens": 1050000,
         "ordinary_profile": "large",
         "provider_tokens": 1000000,
-        "qualification": "Listing context_length 1,050,000 (OpenRouter models list, 2026-11-17: openai/gpt-6.2-sol, created 2026-11-17), max_completion_tokens 128,000. Not measured on GPT-6.2 Sol. Moved from openai/gpt-6.1-sol in catalog 45: the 2026-10-02 battery (smoke, high, xhigh, forced named tool, stream) and admission smoke passed on GPT-6.1 Sol, not 6.2. validated_tokens stays at the conservative 200,000 floor. minimum_tested still describes the predecessor; requalification is pending.",
+        "qualification": "Listing context_length 1,050,000 (OpenRouter models list, 2026-11-17: openai/gpt-6.2-sol, created 2026-11-17), max_completion_tokens 128,000. Live check #2, 2026-11-18: managed high turn passed (HTTP 200, exit 0; Claude Code 2.1.326, CLIProxyAPI 8.0.76). Moved from openai/gpt-6.1-sol in catalog 45: the 2026-10-02 battery (smoke, high, xhigh, forced named tool, stream) and admission smoke passed on GPT-6.1 Sol, not 6.2. No context-limit test on GPT-6.2 Sol: provider_tokens=1000000 is listing-based; validated_tokens stays at the conservative 200,000 floor.",
         "scalar_tokens": null,
         "validated_tokens": 200000
       },
@@ -587,8 +587,8 @@
         "env": {}
       },
       "minimum_tested": {
-        "claude_code": "2.1.286",
-        "cliproxyapi": "7.3.15"
+        "claude_code": "2.1.326",
+        "cliproxyapi": "8.0.76"
       },
       "provider": "openrouter",
       "registry_overlay": null,
@@ -846,7 +846,7 @@
         "declared_tokens": 1050000,
         "ordinary_profile": "large",
         "provider_tokens": 872000,
-        "qualification": "GPT-6.2 Sol (released 2026-11-17): API docs declare 1,050,000 context, 922,000 input and 128,000 output. provider_tokens=872000 is the inherited GPT-6 Codex-route bound, unverified for 6.2. validated_tokens=200000 is a conservative floor, not a new-model measurement. Lead, agents and workflow defaults use the 1M client class at the session window. No Codex-route acceptance is claimed. minimum_tested still describes the predecessor; requalification is pending.",
+        "qualification": "GPT-6.2 Sol (released 2026-11-17): API docs declare 1,050,000 context, 922,000 input and 128,000 output. provider_tokens=872000 is the inherited GPT-6 Codex-route bound, unverified for 6.2. validated_tokens=200000 is a conservative floor, not a new-model measurement. Lead, agents and workflow defaults use the 1M client class at the session window. Live checks 2026-11-18: #1 accepted Codex-route smoke and low/medium/high/xhigh/max (Claude Code 2.1.322, CLIProxyAPI 8.0.67); #2 managed high turn passed (HTTP 200, exit 0; Claude Code 2.1.326, CLIProxyAPI 8.0.76). No context-limit test.",
         "scalar_tokens": null,
         "validated_tokens": 200000
       },
@@ -895,8 +895,8 @@
         "env": {}
       },
       "minimum_tested": {
-        "claude_code": "2.1.216",
-        "cliproxyapi": "7.3.15"
+        "claude_code": "2.1.326",
+        "cliproxyapi": "8.0.76"
       },
       "output": {
         "declared_tokens": 128000,
@@ -908,7 +908,7 @@
         "channel": "codex"
       },
       "roles": "all",
-      "routing_note": "Sol 6.2 workhorse; generation-tagged aliases keep GPT-6 and 6.1 sessions on continuity until resume. Output 128K is API-documented, not Codex-route measured. GPT-6 route bound 872K is inherited, unverified for 6.2; activation acceptance is still required.",
+      "routing_note": "Sol 6.2 workhorse; generation-tagged aliases keep GPT-6 and 6.1 sessions on continuity until resume. Output 128K is API-documented, not Codex-route measured. GPT-6 route bound 872K is inherited, unverified for 6.2; live acceptance passed 2026-11-18.",
       "status": "active",
       "wire_model": "gpt-6.2-sol"
     },
