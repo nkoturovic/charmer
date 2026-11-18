@@ -136,10 +136,12 @@ folder (your first launch creates it) in a terminal outside Claude Code:
 
 ```bash
 cd ~/.local/state/charmer/scopes                # or $XDG_STATE_HOME/charmer/scopes
-~/.local/share/charmer/claude/2.1.326/claude    # or $XDG_DATA_HOME/charmer/claude/2.1.326/claude
+env -u CLAUDE_CONFIG_DIR ~/.local/share/charmer/claude/2.1.326/claude
 ```
 
-Choose "Yes, I trust this folder", then type `/exit`. charmer never writes
+Choose "Yes, I trust this folder", then type `/exit`. The `env -u` makes the
+trust land where managed sessions read it: charmer launches them without a
+`CLAUDE_CONFIG_DIR` of your own. charmer never writes
 Claude Code's configuration, so this step is yours. It covers every scope
 below that folder, unless the folder is inside a git repository. Headless
 runs (`-p`) never ask.

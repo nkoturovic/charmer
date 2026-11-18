@@ -76,7 +76,7 @@ charmer never writes Claude Code's configuration; `-p` never asks.
 ### Fixed
 
 - The gateway identifies its requests on a ChatGPT account as Codex CLI
-  0.169.0 (was 0.159.1); OpenAI requires at least 0.166.0 for GPT-6.2.
+  0.169.0 (was 0.159.1); OpenAI refuses GPT-6.2 to older Codex clients.
   `charmer discover openai` lists models as the same client.
 - When a catalog moves a session's line to a newer model, doctor checks the
   session's scope against what it launched with also for lines whose effort
@@ -99,8 +99,9 @@ charmer never writes Claude Code's configuration; `-p` never asks.
 - golang.org/x/crypto 0.59.0 fixes GO-2026-5932; the gateway carries no
   reviewed vulnerability exception.
 - The non-use review of CPython CVE-2026-124249 is bound to the advisory's
-  text and affected versions as well as its revision: a re-publication with
-  unchanged text keeps it, and any other change asks for a new review.
+  text and to whether the bundled CPython version is still affected, as well
+  as to its revision: a re-publication with unchanged text that still names
+  the bundled version keeps the review; a changed text asks for a new one.
 - `charmer doctor` reports BLOCKED, not Attention, when a generated agent
   file's tool denies (`disallowedTools`) or its worktree isolation were
   removed or changed, also after the installed catalog changed since the

@@ -95,10 +95,11 @@ next resume ([compatibility](reference/compatibility.md#verified-behavior-and-li
   `charmer doctor --repair-all` drops the line from stopped sessions now.
   To keep charmer's rows, see
   [the agent panel](guides/sessions.md#the-agent-panels-rows).
-- A model id without `[1m]` runs in the 200K class
-  (`CLAUDE_CODE_MAX_CONTEXT_TOKENS`), `[1m]` selectors keep 1M even against
-  a `CLAUDE_CODE_DISABLE_1M_CONTEXT` in your settings, and Claude Code's
-  exit hint names `charmer --resume <id>`.
+- A model id Claude Code does not know and that has no `[1m]` runs in the
+  window class charmer exports (`CLAUDE_CODE_MAX_CONTEXT_TOKENS`, normally
+  200K, or the lead set's declared window); `[1m]` selectors and Claude's
+  own 1M ids keep 1M, even against a `CLAUDE_CODE_DISABLE_1M_CONTEXT` in your
+  settings; and Claude Code's exit hint names `charmer --resume <id>`.
 - In a terminal, Claude Code 2.1.326 asks whether to add the session's scope
   folder ("Adding a new directory"). Answer Yes, or trust charmer's scopes
   folder once so that no session asks ([quickstart](quickstart.md#3-launch));
