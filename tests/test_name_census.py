@@ -89,7 +89,7 @@ HISTORICAL_FILES = {
 # inside one of them.
 SPANS = {
     "src/charmer/data/catalog/native-contract.json": [
-        (f"deepwork-{OLD}-durable-session-config-phase0-2.1.322", 1, "the evidence id of a run lifecycle probe"),
+        (f"deepwork-{OLD}-durable-session-config-phase0-2.1.326", 1, "the evidence id of a run lifecycle probe"),
     ],
     "tests/fixtures/assets/catalog/native-contract.json": [
         (f"while {OLD}-* Anthropic ids are unknown", 1, "the fixture mirror of the recorded U17 note"),

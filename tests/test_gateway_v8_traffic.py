@@ -746,7 +746,7 @@ class NativeReplayTests(unittest.TestCase):
         # Buffered complete-SSE reconstruction establishes ordered content and
         # bounded execution counts, NOT eager timing or general exactly-once
         # behavior. No previous-version baseline has been established.
-        self.assertEqual(self.version, "2.1.322", "requalify late-terminal evidence for a changed client")
+        self.assertEqual(self.version, "2.1.326", "requalify late-terminal evidence for a changed client")
         for tool in (False, True):
             paired_usage, skipped = {}, {}
             for cut in (False, True):
