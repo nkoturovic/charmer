@@ -1,0 +1,211 @@
+"""GPT-6.2 moves against genuine 2.5.0 data; fake reloads, no provider calls."""
+from __future__ import annotations
+
+import copy
+import unittest
+
+import test_cli
+import test_fable_catalog_upgrade as fable
+import test_rollback_preflight as rollback_tests
+from _catalog import SHIPPED_ROOT, uses_shipped_catalog
+from _layout import FIXTURES_ROOT
+from charmer import (catalog, endpoint, operator as operator_mod, proxy, render,
+                     rollback_preflight as rp, state, strict_json)
+from charmer.cli import doctor as doctor_mod
+
+OLD = FIXTURES_ROOT / "rollback-preflight" / "2.5.0"
+KEY = "custom-gpt-6-2-sol"
+WIRE = "gpt-6.2-sol"
+LEVELS = ("low", "medium", "high", "xhigh", "max")
+ALIASES = {f"{KEY}-{level}" for level in LEVELS}
+OTHER = "custom-spare"
+DECLARATION = {
+    "wire_model": WIRE, "display": "GPT-6.2 Sol", "generation": "6.2",
+    "efforts": {level: f"reasoning-effort-{level}" for level in LEVELS}, "default_effort": "high",
+    "capabilities": ["lead", "agents"], "roles": "all",
+    "context": {"declared_tokens": 872000, "source": "docs",
+                "source_ref": "https://developers.openai.com/api/docs/models/gpt-6.2-sol"},
+}
+SPARE = {**DECLARATION, "wire_model": "gpt-spare", "display": "Spare"}
+PROFILE = {
+    "version": 2, "name": "mine", "description": "A temporary GPT line",
+    "lead": {"model": KEY, "effort": "max"},
+    "agents": {"cm-reviewer": {"use": "gpt-review"}},
+    "native_agents": {"explore": "replace", "general_purpose": "off", "plan": "native"},
+    "workflows": "native",
+}
+BINDINGS = {"version": 1, "bindings": {"gpt-review": {"model": KEY, "effort": "low"}}}
+
+
+class GptUpgradeCase(test_cli.OperatorCommandCase):
+    # Reuse the release-upgrade harness, not a second implementation of
+    # Runtime's seams, preparation or the real resume commit.
+    use_catalog = fable.FableUpgradeCase.use_catalog
+    resolved = fable.FableUpgradeCase.resolved
+    resume = fable.FableUpgradeCase.resume
+    commit_resume = fable.FableUpgradeCase.commit_resume
+
+    def setUp(self) -> None:
+        super().setUp()
+        endpoint.write_config(self.runtime.home, endpoint.EndpointConfig(port=19327, backend="on-demand"))
+        self.runtime.proc_root.mkdir()
+        self.old_root = rp.compose_root(SHIPPED_ROOT, rp.read_target(OLD), self.root / "old-assets")
+        self.use_catalog(self.old_root)
+        self.assertEqual(self.runtime.catalog.docs["version"]["launcher_version"], "2.5.0")
+        self.assertEqual(self.runtime.catalog.docs["version"]["catalog_version"], 44)
+        self.declare(True)
+        self.apply_and_serve()
+        self.runtime.bindings.update(lambda doc: doc.update(copy.deepcopy(BINDINGS)), cat=self.runtime.lineup_catalog())
+        self.runtime.profiles.save(copy.deepcopy(PROFILE))
+        self.record = self.save_v4_session("mine", write_scope=True, last_event_source="end")
+        self.before_state = self.state_bytes()
+
+    def declare(self, present):
+        lines = {OTHER: copy.deepcopy(SPARE)}
+        if present:
+            lines[KEY] = copy.deepcopy(DECLARATION)
+        operator_mod.write_provider_file(self.runtime.environ, "openai", {"version": 1, "lines": lines})
+
+    def rollback(self):
+        before, scratch = rollback_tests.tree(self.root), rollback_tests.scratch_roots()
+        report = rp.check(environ=self.runtime.gateway_environ(), home=self.runtime.home,
+                          state_root=self.runtime.session_store.root, current_root=self.runtime.asset_root,
+                          target_root=OLD, current="2.6.0", target="2.5.0")
+        self.assertEqual(rollback_tests.tree(self.root), before)
+        self.assertEqual(rollback_tests.scratch_roots(), scratch)
+        self.assertIsNone(report.unreadable)
+        return report
+
+
+@uses_shipped_catalog
+class MovedGptOperatorLineTests(GptUpgradeCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.use_catalog(SHIPPED_ROOT)
+
+    def test_displacement_and_each_capture_report_the_exact_attention(self) -> None:
+        layer = self.runtime.operator_snapshot().layer
+        self.assertEqual(set(layer.lines), {OTHER})
+        self.assertEqual(set(layer.displaced), {KEY})
+        self.assertEqual(operator_mod.blocking_problems(layer), ())
+        blocks, attention, _info = doctor_mod._doctor_operator_report(self.runtime, "fixture-token")
+        self.assertFalse(blocks)
+        rows = [line for line in attention if "now provided by the catalog" in line]
+        self.assertEqual(len(rows), 1, attention)
+        self.assertIn(f"operator line {KEY} (openai/{WIRE}) is now provided by the catalog as sol", rows[0])
+        self.assertIn(f"charmer models rm {KEY} --successor sol", rows[0])
+        self.assertEqual(sorted(line for line in attention if line.startswith("oauth-extra-models:")), sorted(
+            f"oauth-extra-models: overlay codex/{WIRE}: captured alias {alias} differs from the winning catalog "
+            "line sol; the winning definition is served" for alias in ALIASES))
+        for alias in ALIASES:
+            self.assertNotIn("output", self.ledger().aliases[alias])
+        self.assertEqual(self.runtime.catalog.lines["sol"]["output"]["declared_tokens"], 128000)
+        self.assertEqual(self.state_bytes(), self.before_state)
+        self.apply_and_serve()
+        document = self.runtime.operator_render_plan()
+        for alias in ALIASES:
+            self.assertEqual(document.captures[alias]["wire"], WIRE)
+
+    def test_profile_and_resume_move_five_effort_bindings_without_rewriting_intent(self) -> None:
+        lineup = self.resolved()
+        self.assertEqual((lineup.lead.binding.key, lineup.lead.binding.selector),
+                         ("sol", "gpt-multi-sol-6-2-max[1m]"))
+        self.assertEqual((lineup.agents["cm-reviewer"].binding.key, lineup.agents["cm-reviewer"].binding.selector),
+                         ("sol", "gpt-multi-sol-6-2-low[1m]"))
+        self.assertEqual(self.runtime.profiles.load("mine"), PROFILE)
+        self.assertEqual(self.runtime.bindings.load(), BINDINGS)
+        self.assertEqual(self.state_bytes(), self.before_state)
+        self.apply_and_serve()
+        record = self.commit_resume()
+        self.assertEqual(record["applied"]["lead"]["selector"], "gpt-multi-sol-6-2-max[1m]")
+        self.assertEqual(record["applied"]["agents"]["cm-reviewer"]["selector"], "gpt-multi-sol-6-2-low[1m]")
+        for field in ("managed_id", "runtime_session_id", "profile", "follow", "created_at"):
+            self.assertEqual(record[field], self.record[field])
+        self.assertEqual(record["launch_epoch"], self.record["launch_epoch"] + 1)
+
+    def test_removal_and_prune_keep_the_successor_and_other_lines(self) -> None:
+        self.apply_and_serve()
+        code, out, err = self.op(["models", "rm", KEY, "--successor", "sol", "--yes"])
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(self.runtime.profiles.load("mine")["lead"], {"model": "sol", "effort": "max"})
+        self.assertEqual(self.runtime.bindings.load()["bindings"]["gpt-review"], {"model": "sol", "effort": "low"})
+        self.assertEqual(self.ledger().removed[KEY]["successor"], "sol")
+        self.assertEqual(self.resume().record["applied"]["lead"]["selector"], "gpt-multi-sol-6-2-max[1m]")
+        self.assertLessEqual(ALIASES, set(self.ledger().aliases))
+        self.serve_current()
+        before = self.state_bytes()
+        code, out, err = self.op(["doctor", "--prune-aliases", *sorted(ALIASES), "--preview"])
+        self.assertEqual(code, 0, out + err)
+        for alias in ALIASES:
+            self.assertIn(alias, out)
+        self.assertEqual(self.state_bytes(), before)
+        code, out, err = self.op(["doctor", "--prune-aliases", *sorted(ALIASES)])
+        self.assertEqual(code, 0, out + err)
+        self.assertFalse(ALIASES & set(self.ledger().aliases))
+        self.assertIn(f"{OTHER}-high", self.ledger().aliases)
+        document = proxy.candidate_document(self.runtime.home, environ=self.runtime.gateway_environ(),
+                                             asset_root=SHIPPED_ROOT, state_root=self.runtime.session_store.root)
+        served = render.rendered_selectors(document)
+        self.assertFalse(ALIASES & served)
+        self.assertIn("gpt-multi-sol-6-2-high", served)
+        self.assertEqual(self.runtime.session_store.load(test_cli.FIXED_ID), self.record)
+
+    def test_rollback_shipped_selectors_are_findings_even_with_temporary_aliases(self) -> None:
+        # A temporary selector is served by both catalogs, unlike a shipped
+        # generation selector. Neither a declaration nor its capture masks it.
+        self.runtime.profiles.save({**copy.deepcopy(PROFILE), "lead": {"model": "sol", "effort": "max"}})
+        self.runtime.bindings.update(lambda doc: doc["bindings"]["gpt-review"].update(model="sol"),
+                                     cat=self.runtime.lineup_catalog())
+        for temporary in ("declared", "captured", "absent"):
+            with self.subTest(temporary=temporary):
+                if temporary != "declared":
+                    self.declare(False)
+                if temporary == "absent":
+                    schemas = operator_mod.load_schemas(SHIPPED_ROOT)
+                    operator_mod.write_ledger(self.runtime.environ, operator_mod.apply_capture_prune(
+                        operator_mod.ledger_document(self.ledger()), sorted(ALIASES), 45), schemas)
+                for selector, agent in (("gpt-multi-sol-6-2-high", False), ("gpt-multi-astra-6-2-max", True)):
+                    with self.subTest(selector=selector):
+                        rollback_tests.session(self.runtime.session_store.root, test_cli.OTHER_ID,
+                                               "claude-opus-5-5[1m]" if agent else selector + "[1m]",
+                                               {"cm-reviewer": selector + "[1m]"} if agent else {})
+                        report = self.rollback()
+                        self.assertEqual(report.findings, (rp.Finding(
+                            rp.SESSIONS, f"session 22222222 uses {selector}, which 2.5.0 does not serve",
+                            f"exit it first (end the session; after the rollback, charmer -r {test_cli.OTHER_ID} "
+                            "resumes it on 2.5.0's models)"),))
+                        self.assertEqual(report.unchanged, 0)
+                if temporary != "absent":
+                    rollback_tests.session(self.runtime.session_store.root, test_cli.OTHER_ID,
+                                           f"{KEY}-max[1m]", {})
+                    self.assertEqual(self.rollback().findings, ())
+
+    def test_rollback_ignores_ended_and_fence_only_selectors(self) -> None:
+        for ended in (True, False):
+            with self.subTest(ended=ended):
+                rollback_tests.session(self.runtime.session_store.root, test_cli.OTHER_ID,
+                                       "gpt-multi-sol-6-2-high[1m]" if ended else "claude-opus-5-5[1m]", {},
+                                       live=not ended, fence=["gpt-multi-sol-6-2-high[1m]"])
+                self.assertEqual(self.rollback().findings, ())
+
+    def test_previous_entries_and_seeds_are_preserved(self) -> None:
+        old = catalog.load_catalog(self.old_root)
+        current = self.runtime.catalog
+        self.assertEqual(current.lines["luna"], old.lines["luna"])
+        for key in ("sol@6", "gpt55"):
+            self.assertEqual(current.retired[key], old.retired[key])
+        for key in ("astra", "sol"):
+            line = old.lines[key]
+            retired = current.retired[f"{key}@{line['generation']}"]
+            self.assertEqual(retired["selectors"], {spec["selector"]: spec["proxy_contract"]
+                                                  for spec in line["efforts"].values()})
+            for name in ("provider", "display", "generation", "capabilities", "roles"):
+                self.assertEqual(retired[name], line[name])
+            self.assertNotIn("output", retired)
+            self.assertNotIn("registry_overlay", retired)
+        for name, document in old.seed_profiles.items():
+            self.assertEqual(current.seed_profiles[name], document)
+
+
+if __name__ == "__main__":
+    unittest.main()
