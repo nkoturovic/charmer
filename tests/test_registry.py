@@ -137,9 +137,12 @@ class RegistrySnapshotTests(unittest.TestCase):
             self.assertEqual((entry["context_length"], entry["max_completion_tokens"]), (272000, 128000))
         # Registry data is advisory. The trusted route bound and its measured
         # floor must not be silently replaced by a static listing's number.
-        line = next(line for line in catalog.load_catalog(SHIPPED_ROOT).lines.values() if line["wire_model"] == wire)
+        bundle = catalog.load_catalog(SHIPPED_ROOT)
+        line = bundle.lines["sol"]
         self.assertEqual(line["context"]["provider_tokens"], 872000)
         self.assertEqual(line["context"]["validated_tokens"], 200000)
+        self.assertEqual(bundle.retired["sol@6.1"]["last_wire"], wire)
+        self.assertEqual(bundle.retired["sol@6.1"]["context_tokens"], 872000)
 
     def test_the_build_tool_and_the_package_name_the_same_files(self) -> None:
         from _layout import BUILD_TOOL, NIX_DIR, load_tool
