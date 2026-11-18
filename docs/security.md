@@ -99,6 +99,14 @@ by a running session is locked against removal.
   editing charmer's state is denied too.
 - Sessions get the gateway's key only from a token helper, which hands it
   over only to a gateway proven to be yours.
+- The gateway answers 404, before any handler or key check, on the
+  upstream surfaces it does not serve, among them the websocket tunnel
+  (`/v1/tunnel`, which upstream also opens to a key in the query string)
+  and the Muse Code relay (`/muse-code`).
+- Signing in to a ChatGPT account (`charmer providers sign-in openai`)
+  follows only same-origin redirects for its user-code request and token
+  poll, so a redirect cannot carry the device id and user code to another
+  host.
 - Under WSL, the Windows-side Claude Code folders are denied as well; see
   [their limits](install/windows-wsl2.md#what-the-windows-side-protections-cover).
 
@@ -146,6 +154,12 @@ still write the folder, as it can read a file a deny names. In default
 mode the client asks you first; in auto mode Claude Code's own check of
 each call decides, which was not measured offline. To write a mod, use plain
 `claude`, or write it yourself and load it with `--plugin-dir`.
+
+A mod you install runs with your authority: from Claude Code 2.1.326 its
+own tool calls are no longer checked against the session's deny rules, as
+its file access never was. Install only mods you trust, and none that let
+the model drive arbitrary tool calls. In a managed session the model still
+cannot write or turn on a mod.
 
 Managed sessions turn off Claude Code's background service
 (`/background`, `--bg` and its choice to move a session to the
