@@ -276,7 +276,7 @@ class OpenRouterListingUpgradeTests(GptUpgradeCase):
                         self.assertFalse(any(row.startswith(f"operator line {custom_key} ") for row in
                                              doctor_mod._doctor_operator_report(self.runtime, "fixture-token")[1]))
 
-    def test_carbon_profile_and_named_binding_are_rollback_findings(self) -> None:
+    def test_carbon_profile_named_binding_and_workflow_default_are_rollback_findings(self) -> None:
         state.atomic_write(self.secret_file, rollback_tests.SECRETS)
         self.use_catalog(SHIPPED_ROOT)
         self.runtime.profiles.save({**copy.deepcopy(PROFILE), "name": "carbon",
@@ -284,8 +284,12 @@ class OpenRouterListingUpgradeTests(GptUpgradeCase):
         self.runtime.bindings.update(lambda doc: doc["bindings"].update({
             "carbon-review": {"model": "or-gemini-carbon", "effort": "medium"}}), cat=self.runtime.lineup_catalog())
         self.assertEqual(self.resolved("carbon").lead.binding.key, "or-gemini-carbon")
+        self.runtime.settings_store.save({"version": 1, "workflow_default_binding": {
+            "model": "or-gemini-carbon", "effort": "high"}}, catalog=self.runtime.catalog)
         report = self.rollback()
         self.assertEqual(report.findings, (
+            rp.Finding(rp.PROFILES, "Settings workflow_default_binding.model: unknown model key 'or-gemini-carbon'",
+                       "change or clear the workflow default in Settings (charmer, then O)"),
             rp.Finding(rp.PROFILES, "bindings.carbon-review.model: unknown model 'or-gemini-carbon'",
                        "rebind it in the profile editor (charmer, then P)"),
             rp.Finding(rp.PROFILES, "profile carbon: lead.model: unknown model 'or-gemini-carbon'",

@@ -32,7 +32,7 @@ from _layout import FIXTURES_ROOT, RESOURCES_ROOT
 from test_trust import SEED_A, signer_line
 from charmer import (catalog, continuity, custom, observations, operator as operator_mod,
                      profile as profile_mod, proxy, release_update as ru, render, rollback_preflight as rp,
-                     self_update as su, state, strict_json)
+                     self_update as su, settings, state, strict_json)
 
 DATA = FIXTURES_ROOT / "rollback-preflight"
 OLD, NEW = DATA / "2.2.1", DATA / "2.3.0"
@@ -490,7 +490,24 @@ class PatchReleaseRollbackTests(PreflightCase):
             "Checked with 2.6.1's rules against 2.6.0's data; 2.6.0 may still refuse what these rules accept.",
         ])
 
+    def test_neon_workflow_default_alone_is_a_finding_against_260(self) -> None:
+        settings.SettingsStore(self.env).save({"version": 1, "workflow_default_binding": {
+            "model": "or-gemini-neon", "effort": "high"}}, catalog=catalog.load_catalog(self.current_root))
+        report = self.check_260()
+        self.assertEqual(report.findings, (rp.Finding(
+            rp.PROFILES, "Settings workflow_default_binding.model: unknown model key 'or-gemini-neon'",
+            "change or clear the workflow default in Settings (charmer, then O)"),))
+        self.assertEqual(report.lines(), [
+            f"Profiles and named bindings 2.6.0 cannot evaluate ({ANCHOR}):",
+            "  - Settings workflow_default_binding.model: unknown model key 'or-gemini-neon' — "
+            "change or clear the workflow default in Settings (charmer, then O)",
+            "Also reported by 2.6.1: 0, unchanged by the rollback.",
+            "Checked with 2.6.1's rules against 2.6.0's data; 2.6.0 may still refuse what these rules accept.",
+        ])
+
     def test_untouched_data_against_260_finds_nothing(self) -> None:
+        settings.SettingsStore(self.env).save({"version": 1, "workflow_default_binding": {
+            "model": "or-gemini-carbon", "effort": "high"}}, catalog=catalog.load_catalog(self.current_root))
         save_profile(self.env, self.current_root, PATCH_PROFILE)
         models = json.loads(rp.read_target(RESOURCES_ROOT)["catalog/models.json"])["models"]
         gemini = models["or-gemini"]["efforts"]["xhigh"]["selector"]
