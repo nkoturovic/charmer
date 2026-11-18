@@ -36,7 +36,7 @@ usable for leads, agents and reviews.
 
 | Key | Model | Provider | Family | Efforts (default) | Context | Roles | `/model` selectors |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `astra` | GPT-6 Astra | OpenAI | openai | low, medium, high, xhigh, max (high) | 1M class, provider window 872K | lead and agents | `gpt-multi-astra-<effort>[1m]` |
+| `astra` | GPT-6.2 Astra | OpenAI | openai | low, medium, high, xhigh, max (high) | 1M class, provider window 872K | lead and agents | `gpt-multi-astra-6-2-<effort>[1m]` |
 | `deepseek-flash` | DeepSeek V4.1 Flash | DeepSeek | deepseek | high, max (high) | 1M class, provider window 1M | lead and agents | `charmer-deepseek-flash-<effort>[1m]` |
 | `fable` | Fable 5.2 · 1M selector | Anthropic | anthropic | low, medium, high, xhigh, max (high) | 1M class, provider window 1M | lead and agents | `claude-fable-5-2[1m]` (the effort is chosen in Claude Code) |
 | `haiku` | Haiku 5.5 · 1M selector | Anthropic | anthropic | low, medium, high, xhigh, max (medium) | 1M class, provider window 1M | agents | `claude-haiku-5-5[1m]` (the effort is chosen in Claude Code) |
@@ -47,16 +47,16 @@ usable for leads, agents and reviews.
 | `opus` | Opus 5.5 · 1M selector | Anthropic | anthropic | low, medium, high, xhigh, max (high) | 1M class, provider window 1M | lead and agents | `claude-opus-5-5[1m]` (the effort is chosen in Claude Code) |
 | `or-deepseek` | DeepSeek V4.1 Flash 1017 · OpenRouter | OpenRouter | deepseek | high, xhigh (high) | 1M class, provider window 1M | lead and agents | `charmer-or-deepseek-4-1-1017-<effort>[1m]` |
 | `or-gemini` | Gemini 3.8 Flash · OpenRouter | OpenRouter | google | high, xhigh (high) | 1M class, provider window 1M | lead and agents | `charmer-or-gemini-<effort>[1m]` |
-| `or-gpt` | GPT-6.1 Sol · OpenRouter | OpenRouter | openai | high, xhigh (high) | 1M class, provider window 1M | lead and agents | `charmer-or-gpt-<effort>[1m]` |
+| `or-gpt` | GPT-6.2 Sol · OpenRouter | OpenRouter | openai | high, xhigh (high) | 1M class, provider window 1M | lead and agents | `charmer-or-gpt-6-2-<effort>[1m]` |
 | `or-grok` | Grok 4.7 · OpenRouter | OpenRouter | x-ai | high, xhigh (high) | 200K class, provider window 500K | lead and agents | `charmer-or-grok-<effort>` |
 | `or-kimi` | Kimi K3.1 Pro · OpenRouter | OpenRouter | moonshot | low, high, xhigh, max (high) | 1M class, provider window 1M | lead and agents | `charmer-or-kimi-3-1-<effort>[1m]` |
 | `or-opus` | Opus 5.5 · OpenRouter | OpenRouter | anthropic | high, xhigh (xhigh) | 1M class, provider window 1M | lead and agents | `charmer-or-opus-<effort>[1m]` |
 | `qwen-flash` | Qwen3.8 Flash | Qwen | alibaba | low, medium, xhigh (xhigh) | 1M class, provider window 983,616 | lead and agents | `charmer-qwen-flash-<effort>[1m]` |
 | `qwen-max` | Qwen3.8 Max | Qwen | alibaba | low, medium, xhigh (xhigh) | 1M class, provider window 983,616 | lead and agents | `charmer-qwen-max-<effort>[1m]` |
-| `sol` | GPT-6.1 Sol | OpenAI | openai | low, medium, high, xhigh, max (high) | 1M class, provider window 872K | lead and agents | `gpt-multi-sol-6-1-<effort>[1m]` |
+| `sol` | GPT-6.2 Sol | OpenAI | openai | low, medium, high, xhigh, max (high) | 1M class, provider window 872K | lead and agents | `gpt-multi-sol-6-2-<effort>[1m]` |
 | `sonnet` | Sonnet 5.5 · 1M selector | Anthropic | anthropic | low, medium, high, xhigh, max (high) | 1M class, provider window 1M | lead and agents | `claude-sonnet-5-5[1m]` (the effort is chosen in Claude Code) |
 
-20 retired keys resolve to their successors; `charmer models` lists them.
+23 retired keys resolve to their successors; `charmer models` lists them.
 
 <!-- end of generated: model-lines -->
 
