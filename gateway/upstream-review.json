@@ -4169,6 +4169,15 @@
       "measured": "2026-11-17: passes on pristine v8.0.76 and fails on the 30-patch tree; it passes with the journal-off patch's hunks in openai_auth.go reverted.",
       "upstream": "Upstream's design, not a defect; not reported upstream.",
       "re_check": "At every re-pin, and if the journal is switched back on: rerun the test; the skip goes with the journal-off patch."
+    },
+    {
+      "test": "TestServiceHeartbeatFailoverDoesNotDrainBlockingScope",
+      "package": "./sdk/cliproxy",
+      "gate": "sdk-service",
+      "reason": "An upstream timing race in a Home test: after the first Home subscription is lost, the test waits a fixed second for the replacement subscription (service_executionregistry_test.go:1453), while the subscriber retries after a randomised delay that can be longer under load. Home is off in the rendered configuration, so the Home heartbeat failover this test covers is not reachable in charmer's gateway and needs no other row. Excluded by name from the sdk-service gate; every other ./sdk/cliproxy test still runs.",
+      "measured": "2026-11-18 on 8.0.76: passed in the native gates run and in the first Nix gates build; failed in the second Nix gates build, run while a full host suite ran ('new subscription did not start while the old scope remained active'; that run's log shows subscription retries scheduled 0.54 to 3.77 s out). On 8.0.67 it was one of two upstream timing tests that together failed five of six Nix gates builds under load.",
+      "upstream": "Not reported upstream.",
+      "re_check": "At every re-pin: run the test under load; remove the skip once the test waits for the replacement subscription instead of a fixed second, or if Home is ever rendered on."
     }
   ]
 }
