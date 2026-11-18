@@ -168,7 +168,7 @@ class MovedGptOperatorLineTests(GptUpgradeCase):
                         operator_mod.ledger_document(self.ledger()), sorted(ALIASES), 45), schemas)
                 for selector, agent in (("gpt-multi-sol-6-2-high", False), ("gpt-multi-astra-6-2-max", True),
                                         ("charmer-or-gpt-6-2-high", True), ("charmer-or-gemini-4-high", True),
-                                        ("charmer-or-gemini-carbon-medium", False)):
+                                        ("charmer-or-gemini-carbon-medium", False), ("charmer-or-gemini-neon-xhigh", True)):
                     with self.subTest(selector=selector):
                         rollback_tests.session(self.runtime.session_store.root, test_cli.OTHER_ID,
                                                "claude-opus-5-5[1m]" if agent else selector + "[1m]",
