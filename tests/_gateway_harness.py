@@ -191,6 +191,12 @@ PATCH_ROWS = {
         "tests.test_gateway_patches.PatchOmissionProbeTests.test_private_network",
         "tests.test_gateway_private_network.PrivateNetworkGatewayTests.test_t1_keyed_loopback_is_served_with_the_bearer",
     ),
+    # Without the patch a third-party key line passes OpenRouter's record on
+    # after the answer text, as the control fixture shows.
+    "cli-proxy-api-trailing-reasoning-record.patch": (
+        "tests.test_gateway_patches.TrailingReasoningRecordTests.test_streamed_record_is_left_out",
+        "tests.test_gateway_patches.TrailingReasoningRecordTests.test_record_in_one_body_is_left_out",
+    ),
 }
 
 
@@ -205,6 +211,10 @@ PATCH_CONTROL_ROWS = {
         "tests.test_gateway_patches.ContentChunkGoldenTests.test_native_route_bytes",
         "tests.test_gateway_patches.MistralContentChunkTests.test_streaming_content_chunks",
         "tests.test_gateway_patches.MistralContentChunkTests.test_non_streaming_content_chunks",
+    ),
+    "cli-proxy-api-trailing-reasoning-record.patch": (
+        "tests.test_gateway_patches.TrailingReasoningRecordTests.test_other_streams_are_the_controls",
+        "tests.test_gateway_patches.TrailingReasoningRecordTests.test_other_bodies_are_the_controls",
     ),
     "cli-proxy-api-tool-call-integrity.patch": (
         "tests.test_gateway_patches.ToolCallIntegrityTests.test_explicit_and_mixed_continuations_remain_one_call",
@@ -432,7 +442,7 @@ REQUIRED_EVIDENCE["tests.test_gateway_clamp"] = {
 
 
 REQUIRED_EVIDENCE["tests.test_gateway_patches"] = {
-    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "AL1", "RL1", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2", "CL1", "TI1", "TI2", "TI3", "TIC1", "TIC2", "IR1", "TR1", "RJ1", "RA1", "LR1", "SI1", "PN1", "SF1"},
+    "patches": {"LO1", "LO2", "LO1-A", "LO3", "LO4", "M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "AL1", "RL1", "ME1", "S1", "P1", "CS1", "CR1", "KS1", "AS1", "SC1", "ML1", "OM1", "CI1", "CI2", "CK1", "RS1", "MC1", "MC2", "MG1", "MG2", "CL1", "TI1", "TI2", "TI3", "TIC1", "TIC2", "IR1", "TR1", "RJ1", "RA1", "LR1", "SI1", "PN1", "SF1", "RR1", "RR2", "RRC1", "RRC2"},
 }
 
 
@@ -1013,6 +1023,100 @@ def hint_markers(header_values, raw):
 
 def sse_frame(kind: str, body: dict) -> bytes:
     return f"event: {kind}\ndata: {json.dumps(body)}\n\n".encode()
+
+
+# Messages replies built block by block (the stock fake_reply sends one text
+# block): a third-party Messages upstream's shapes, OpenRouter's reasoning
+# record after the answer text among them. Every value is invented fixture
+# text; only the record's prefix is OpenRouter's.
+OPENROUTER_RECORD_PREFIX = "openrouter.reasoning:"
+PING = "ping"
+COMMENT = ":comment"  # a comment-only frame
+UNKNOWN_EVENT = "gwtest_unknown"  # an event type no Messages stream sends
+# How a streamed reply ends: its message_delta and message_stop; the delta
+# alone; an upstream error event (after the delta); or nothing more at all.
+ENDINGS = ("stop", "delta", "error", "delta-error", "eof")
+
+
+def thinking_block(text="gwtest fixture reasoning"):
+    return {"type": "thinking", "thinking": text, "signature": ""}
+
+
+def text_block(text="FAKE_OK"):
+    return {"type": "text", "text": text}
+
+
+def record_block(name="a", *, prefix=OPENROUTER_RECORD_PREFIX):
+    return {"type": "redacted_thinking", "data": prefix + "gwtest-record-" + name}
+
+
+def tool_use_block(name="gwtest_tool", tool_id="toolu_gwtest_blocks", tool_input=None):
+    return {"type": "tool_use", "id": tool_id, "name": name, "input": tool_input or {"k": "v"}}
+
+
+def message_body(blocks, stop_reason="end_turn", *, model="gwtest-wire", message_id="msg_gwtest_blocks"):
+    """The non-streaming reply: ``blocks`` as its content, in order."""
+    message = {"id": message_id, "type": "message", "role": "assistant", "model": model,
+               "content": copy.deepcopy(list(blocks)), "stop_reason": stop_reason, "stop_sequence": None,
+               "usage": {"input_tokens": 7, "output_tokens": 9}}
+    if stop_reason is None:
+        del message["stop_reason"]
+    return message
+
+
+def message_events(blocks, stop_reason="end_turn", *, ending="stop", model="gwtest-wire",
+                   message_id="msg_gwtest_blocks"):
+    """The streamed reply as ``(event, data)`` pairs: ``message_start``, one
+    start, delta (when the block type has one) and stop per block, then the
+    ``ending`` (one of ``ENDINGS``). ``PING``, ``COMMENT`` and
+    ``UNKNOWN_EVENT`` among the blocks are that frame at that place; they
+    take no index."""
+    if ending not in ENDINGS:
+        raise ValueError("unknown stream ending")
+    start = {**message_body((), stop_reason, model=model, message_id=message_id), "stop_reason": None}
+    start["usage"] = {"input_tokens": 7, "output_tokens": 1}
+    events = [("message_start", {"type": "message_start", "message": start})]
+    index = 0
+    for block in blocks:
+        if block in (PING, COMMENT, UNKNOWN_EVENT):
+            events.append((block, {"type": block}))
+            continue
+        kind = block["type"]
+        delta = None
+        if kind == "text":
+            opened, delta = {"type": "text", "text": ""}, {"type": "text_delta", "text": block["text"]}
+        elif kind == "thinking":
+            opened = {"type": "thinking", "thinking": "", "signature": block.get("signature", "")}
+            delta = {"type": "thinking_delta", "thinking": block["thinking"]}
+        elif kind == "tool_use":
+            opened = {**block, "input": {}}
+            delta = {"type": "input_json_delta", "partial_json": json.dumps(block["input"])}
+        else:
+            # redacted_thinking carries its whole data in the start event;
+            # server tool blocks and their results arrive whole too.
+            opened = copy.deepcopy(block)
+        events.append(("content_block_start", {"type": "content_block_start", "index": index,
+                                               "content_block": opened}))
+        if delta is not None:
+            events.append(("content_block_delta", {"type": "content_block_delta", "index": index, "delta": delta}))
+        events.append(("content_block_stop", {"type": "content_block_stop", "index": index}))
+        index += 1
+    final = {"stop_sequence": None}
+    if stop_reason is not None:
+        final = {"stop_reason": stop_reason, **final}
+    if ending in ("stop", "delta", "delta-error"):
+        events.append(("message_delta", {"type": "message_delta", "delta": final, "usage": {"output_tokens": 9}}))
+    if ending == "stop":
+        events.append(("message_stop", {"type": "message_stop"}))
+    if ending in ("error", "delta-error"):
+        events.append(("error", {"type": "error", "error": {"type": "overloaded_error",
+                                                            "message": "gwtest fixture overload"}}))
+    return events
+
+
+def message_stream(blocks, stop_reason="end_turn", **kwargs) -> bytes:
+    return b"".join(b": gwtest keep-alive\n\n" if kind == COMMENT else sse_frame(kind, data)
+                    for kind, data in message_events(blocks, stop_reason, **kwargs))
 
 
 # The named shapes are protocol fixtures, not live-provider samples. The shipped

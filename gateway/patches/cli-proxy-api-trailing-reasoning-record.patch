@@ -1,0 +1,1168 @@
+diff --git a/internal/runtime/executor/claude_executor_execute.go b/internal/runtime/executor/claude_executor_execute.go
+index 5bcd1a9d..62b23f5d 100644
+--- a/internal/runtime/executor/claude_executor_execute.go
++++ b/internal/runtime/executor/claude_executor_execute.go
+@@ -479,6 +479,9 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, r
+ 	if responseFormat == sdktranslator.FormatOpenAIResponse {
+ 		out = helps.EnsureResponsesUsageDetails(out)
+ 	}
++	if responseFormat == to {
++		out = omitClaudeTrailingRecord(ctx, claudeTrailingRecordEntry(auth, url, fp), out)
++	}
+ 	threadBetas.Commit(threadMessageID)
+ 	resp = cliproxyexecutor.Response{Payload: out, Headers: httpResp.Header.Clone()}
+ 	return resp, nil
+diff --git a/internal/runtime/executor/claude_executor_stream.go b/internal/runtime/executor/claude_executor_stream.go
+index 0c9a6e2f..b20ba115 100644
+--- a/internal/runtime/executor/claude_executor_stream.go
++++ b/internal/runtime/executor/claude_executor_stream.go
+@@ -423,6 +423,7 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
+ 			var upstreamMessageID string
+ 			var upstreamStreamErr error
+ 			upstreamCompleted := false
++			trailingRecord := newClaudeTrailingRecordStream(ctx, claudeTrailingRecordEntry(auth, url, fp))
+ 			flushEvent := func() bool {
+ 				if event.Len() == 0 {
+ 					return true
+@@ -431,6 +432,9 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
+ 				streamUsage.ObserveClaudeSSEEvent(event.Bytes())
+ 				cloned := bytes.Clone(event.Bytes())
+ 				event.Reset()
++				if trailingRecord != nil {
++					return sendClaudeStreamFrames(ctx, out, trailingRecord.Push(cloned))
++				}
+ 				select {
+ 				case out <- cliproxyexecutor.StreamChunk{Payload: cloned}:
+ 					return true
+@@ -445,6 +449,7 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
+ 				streamUsage.ObserveClaudeStream(line)
+ 				restoredLine, errRestore := restoreClaudeOAuthToolNamesFromStreamLine(line, oauthToolNamesReverseMap)
+ 				if errRestore != nil {
++					sendClaudeStreamFrames(ctx, out, trailingRecord.End())
+ 					emitResponseError(fmt.Errorf("restore Claude OAuth tool name from streaming response: %w", errRestore))
+ 					return
+ 				}
+@@ -461,7 +466,7 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
+ 					}
+ 				}
+ 			}
+-			if !flushEvent() {
++			if !flushEvent() || !sendClaudeStreamFrames(ctx, out, trailingRecord.End()) {
+ 				emitCancellation(ctx.Err())
+ 				return
+ 			}
+diff --git a/internal/runtime/executor/claude_trailing_reasoning_record.go b/internal/runtime/executor/claude_trailing_reasoning_record.go
+new file mode 100644
+index 00000000..7796d51e
+--- /dev/null
++++ b/internal/runtime/executor/claude_trailing_reasoning_record.go
+@@ -0,0 +1,436 @@
++package executor
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"errors"
++	"io"
++	"net/url"
++	"strings"
++	"time"
++
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
++	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
++	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
++)
++
++// OpenRouter's Messages endpoint can end a reply with its own reasoning record:
++// a redacted_thinking block whose data starts with this prefix, after the answer
++// text. Claude Code takes a one-shot result from the reply's last block, so such
++// a reply gives an empty result although the model answered. On a third-party
++// API-key entry the run of such records is left out of a reply when it directly
++// follows a text block, every other block of the reply is thinking,
++// redacted_thinking or text, and the reply ends with stop_reason end_turn.
++// Nothing sent is altered, reordered or renumbered, the text is never held, and
++// no state outlives one response. The client never receives a record left out,
++// so it is not part of that conversation from then on.
++const claudeTrailingRecordPrefix = "openrouter.reasoning:"
++
++// The limits of a stream's pending frames. Only frames that can still belong to
++// a trailing record wait: from the record's start to the end of the message
++// (the record, its stop, pings, comment frames and the message_delta). Past
++// either limit the pending frames are sent in their original order and the
++// rest of the response passes unchanged.
++//
++// 8 MiB is about a million reasoning tokens at the size records were measured
++// at (1,477 bytes for 146 tokens, 2,905 for 343), and a single event may already
++// hold 50 MiB. The record and the end of the message arrive together, and 10 s
++// is far below the 300 s the client waits on a silent stream.
++//
++// The time limit is checked when the next frame arrives (a ping or a comment
++// frame counts) and at the end of the stream: no timer runs, so the executor
++// keeps one goroutine per response. An upstream that goes silent after a record
++// gives the client the silence it gives it today: the client waits until its own
++// idle limit or until the stream ends, and at the end of the stream the pending
++// frames are sent before the existing error.
++const (
++	claudeTrailingRecordMaxPendingBytes = 8 << 20
++	claudeTrailingRecordMaxPendingTime  = 10 * time.Second
++)
++
++// claudeTrailingRecordLine is the one Info line per removal, the same for a
++// stream and for one body: the number of records left out, never their content.
++// Its text is fixed; checks of a live gateway's log match on it.
++const claudeTrailingRecordLine = "openrouter reasoning record removed: records=%d"
++
++// claudeTrailingRecordEntry reports whether a request runs on a third-party
++// API-key entry: a credential classified as an API key, that is not an OAuth or
++// setup token given as one, sent to an origin that is not Anthropic's own. OAuth
++// and setup-token entries never qualify, at any origin.
++func claudeTrailingRecordEntry(auth *cliproxyauth.Auth, requestURL string, fp claudeFingerprintPolicy) bool {
++	if auth == nil || auth.AuthKind() != cliproxyauth.AuthKindAPIKey || fp.AuthIsOAuthToken {
++		return false
++	}
++	parsed, err := url.Parse(strings.TrimSpace(requestURL))
++	if err != nil || parsed.Host == "" {
++		return false
++	}
++	return !helps.IsAnthropicUpstreamURL(parsed)
++}
++
++func claudeTrailingRecordAllowedBlock(kind string) bool {
++	return kind == "text" || kind == "thinking" || kind == "redacted_thinking"
++}
++
++func isClaudeTrailingRecord(kind string, data *string) bool {
++	return kind == "redacted_thinking" && data != nil && strings.HasPrefix(*data, claudeTrailingRecordPrefix)
++}
++
++// omitClaudeTrailingRecord returns a non-streaming Messages body without its
++// trailing record run when entry qualifies and the body does; otherwise body
++// itself. Only the run's elements and the separators before them are cut, from
++// the end of the text element they follow to the end of the last record: every
++// other byte is the body as it came.
++func omitClaudeTrailingRecord(ctx context.Context, entry bool, body []byte) []byte {
++	if !entry {
++		return body
++	}
++	cut, end, records, ok := claudeTrailingRecordSpan(body)
++	if !ok {
++		return body
++	}
++	helps.LogWithRequestID(ctx).Infof(claudeTrailingRecordLine, records)
++	out := make([]byte, 0, len(body)-(end-cut))
++	out = append(out, body[:cut]...)
++	return append(out, body[end:]...)
++}
++
++// claudeTrailingRecordSpan finds the byte span [cut, end) of a body's trailing
++// record run. ok is false unless the body is one JSON object with exactly one
++// content array and one stop_reason, the stop reason is end_turn, every element
++// is a text, thinking or redacted_thinking block, and the content ends in one
++// or more records directly after a text block.
++func claudeTrailingRecordSpan(body []byte) (cut, end, records int, ok bool) {
++	type element struct {
++		start, end int
++		kind       string
++		record     bool
++	}
++	dec := json.NewDecoder(bytes.NewReader(body))
++	if token, err := dec.Token(); err != nil || token != json.Delim('{') {
++		return 0, 0, 0, false
++	}
++	var elements []element
++	var stop *string
++	contents, stops := 0, 0
++	for dec.More() {
++		token, err := dec.Token()
++		if err != nil {
++			return 0, 0, 0, false
++		}
++		key, _ := token.(string)
++		switch key {
++		case "content":
++			contents++
++			if token, err = dec.Token(); err != nil || token != json.Delim('[') {
++				return 0, 0, 0, false
++			}
++			for dec.More() {
++				var raw json.RawMessage
++				if err = dec.Decode(&raw); err != nil {
++					return 0, 0, 0, false
++				}
++				var block struct {
++					Type string  `json:"type"`
++					Data *string `json:"data"`
++				}
++				if err = json.Unmarshal(raw, &block); err != nil || !claudeTrailingRecordAllowedBlock(block.Type) {
++					return 0, 0, 0, false
++				}
++				offset := int(dec.InputOffset())
++				elements = append(elements, element{start: offset - len(raw), end: offset, kind: block.Type,
++					record: isClaudeTrailingRecord(block.Type, block.Data)})
++			}
++			if token, err = dec.Token(); err != nil || token != json.Delim(']') {
++				return 0, 0, 0, false
++			}
++		case "stop_reason":
++			stops++
++			if err = dec.Decode(&stop); err != nil {
++				return 0, 0, 0, false
++			}
++		default:
++			var skipped json.RawMessage
++			if err = dec.Decode(&skipped); err != nil {
++				return 0, 0, 0, false
++			}
++		}
++	}
++	if token, err := dec.Token(); err != nil || token != json.Delim('}') {
++		return 0, 0, 0, false
++	}
++	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
++		return 0, 0, 0, false
++	}
++	if contents != 1 || stops != 1 || stop == nil || *stop != "end_turn" {
++		return 0, 0, 0, false
++	}
++	last := len(elements)
++	for last > 0 && elements[last-1].record {
++		last--
++	}
++	records = len(elements) - last
++	if records == 0 || last == 0 || elements[last-1].kind != "text" {
++		return 0, 0, 0, false
++	}
++	return elements[last-1].end, elements[len(elements)-1].end, records, true
++}
++
++// claudeStreamFrame is what the stream filter reads from one complete SSE event.
++type claudeStreamFrame struct {
++	kind         string // the event type, "comment" for a comment-only frame, "unknown" otherwise
++	index        int64
++	blockType    string
++	record       bool
++	stopReason   *string
++	contentEmpty bool
++}
++
++func parseClaudeStreamFrame(frame []byte) claudeStreamFrame {
++	unknown := claudeStreamFrame{kind: "unknown"}
++	var name string
++	var data [][]byte
++	comments := 0
++	for _, line := range bytes.Split(frame, []byte("\n")) {
++		line = bytes.TrimSuffix(line, []byte("\r"))
++		switch {
++		case len(bytes.TrimSpace(line)) == 0:
++		case line[0] == ':':
++			comments++
++		case bytes.HasPrefix(line, []byte("event:")):
++			if name != "" {
++				return unknown
++			}
++			name = string(bytes.TrimSpace(line[len("event:"):]))
++		case bytes.HasPrefix(line, []byte("data:")):
++			value := line[len("data:"):]
++			data = append(data, bytes.TrimPrefix(value, []byte(" ")))
++		default:
++			return unknown
++		}
++	}
++	if len(data) == 0 {
++		if name == "" && comments > 0 {
++			return claudeStreamFrame{kind: "comment"}
++		}
++		return unknown
++	}
++	var event struct {
++		Type         string `json:"type"`
++		Index        *int64 `json:"index"`
++		ContentBlock *struct {
++			Type string  `json:"type"`
++			Data *string `json:"data"`
++		} `json:"content_block"`
++		Delta *struct {
++			StopReason *string `json:"stop_reason"`
++		} `json:"delta"`
++		Message *struct {
++			Content []json.RawMessage `json:"content"`
++		} `json:"message"`
++	}
++	if err := json.Unmarshal(bytes.Join(data, []byte("\n")), &event); err != nil || event.Type == "" ||
++		(name != "" && name != event.Type) {
++		return unknown
++	}
++	parsed := claudeStreamFrame{kind: event.Type}
++	switch event.Type {
++	case "message_start":
++		parsed.contentEmpty = event.Message != nil && len(event.Message.Content) == 0
++	case "content_block_start":
++		if event.Index == nil || event.ContentBlock == nil {
++			return unknown
++		}
++		parsed.index, parsed.blockType = *event.Index, event.ContentBlock.Type
++		parsed.record = isClaudeTrailingRecord(event.ContentBlock.Type, event.ContentBlock.Data)
++	case "content_block_delta", "content_block_stop":
++		if event.Index == nil {
++			return unknown
++		}
++		parsed.index = *event.Index
++	case "message_delta":
++		if event.Delta != nil {
++			parsed.stopReason = event.Delta.StopReason
++		}
++	case "message_stop", "ping", "error":
++	default:
++		return unknown
++	}
++	return parsed
++}
++
++type claudeTrailingRecordState int
++
++const (
++	claudeTrailingRecordWatching claudeTrailingRecordState = iota
++	claudeTrailingRecordQueued
++	claudeTrailingRecordPassing
++)
++
++type claudeQueuedFrame struct {
++	data   []byte
++	record bool
++}
++
++// claudeTrailingRecordStream decides, frame by frame, what a streamed reply's
++// client is sent. It runs in the executor's response goroutine; nothing else
++// touches it.
++type claudeTrailingRecordStream struct {
++	ctx      context.Context
++	maxBytes int
++	maxWait  time.Duration
++	now      func() time.Time
++
++	state       claudeTrailingRecordState
++	open        string // the type of the block open now, "" when none is
++	openIndex   int64
++	lastStopped string // the type of the block stopped last
++	delta       bool   // a message_delta passed while watching
++
++	queue      []claudeQueuedFrame
++	pending    int
++	queuedAt   time.Time
++	runOpen    bool
++	runIndex   int64
++	records    int
++	deltaQueue bool
++}
++
++// newClaudeTrailingRecordStream is nil unless the entry qualifies: the
++// executor then sends every frame as it always did.
++func newClaudeTrailingRecordStream(ctx context.Context, entry bool) *claudeTrailingRecordStream {
++	if !entry {
++		return nil
++	}
++	return &claudeTrailingRecordStream{ctx: ctx, maxBytes: claudeTrailingRecordMaxPendingBytes,
++		maxWait: claudeTrailingRecordMaxPendingTime, now: time.Now}
++}
++
++// Push takes the next complete event and returns the frames to send now, in
++// order: the frame itself, nothing while it waits, or the frames that waited.
++func (s *claudeTrailingRecordStream) Push(frame []byte) [][]byte {
++	if s == nil || s.state == claudeTrailingRecordPassing {
++		return [][]byte{frame}
++	}
++	event := parseClaudeStreamFrame(frame)
++	if s.state == claudeTrailingRecordQueued {
++		return s.queued(frame, event)
++	}
++	switch event.kind {
++	case "message_start":
++		if !event.contentEmpty {
++			s.state = claudeTrailingRecordPassing
++		}
++	case "content_block_start":
++		switch {
++		case !claudeTrailingRecordAllowedBlock(event.blockType):
++			s.state = claudeTrailingRecordPassing
++		case event.record && s.open == "" && s.lastStopped == "text" && !s.delta:
++			s.state, s.queuedAt = claudeTrailingRecordQueued, s.now()
++			return s.queued(frame, event)
++		case s.open != "":
++			s.state = claudeTrailingRecordPassing
++		default:
++			s.open, s.openIndex = event.blockType, event.index
++		}
++	case "content_block_stop":
++		if s.open == "" || event.index != s.openIndex {
++			s.state = claudeTrailingRecordPassing
++		} else {
++			s.lastStopped, s.open = s.open, ""
++		}
++	case "message_delta":
++		s.delta = true
++	case "content_block_delta", "ping", "comment":
++	default: // message_stop, error, an event type the filter does not know
++		s.state = claudeTrailingRecordPassing
++	}
++	return [][]byte{frame}
++}
++
++// queued handles a frame while a run waits: it extends the run, waits with it,
++// ends it (the record is left out) or releases everything in arrival order.
++func (s *claudeTrailingRecordStream) queued(frame []byte, event claudeStreamFrame) [][]byte {
++	if s.now().Sub(s.queuedAt) > s.maxWait || s.pending+len(frame) > s.maxBytes {
++		return s.release(frame)
++	}
++	record := false
++	switch event.kind {
++	case "content_block_start":
++		if !event.record || s.runOpen || s.deltaQueue {
++			return s.release(frame)
++		}
++		record, s.runOpen, s.runIndex = true, true, event.index
++		s.records++
++	case "content_block_stop":
++		if !s.runOpen || event.index != s.runIndex {
++			return s.release(frame)
++		}
++		record, s.runOpen = true, false
++	case "ping", "comment":
++	case "message_delta":
++		if s.runOpen || s.deltaQueue || event.stopReason == nil || *event.stopReason != "end_turn" {
++			return s.release(frame)
++		}
++		s.deltaQueue = true
++	case "message_stop":
++		if s.runOpen || !s.deltaQueue {
++			return s.release(frame)
++		}
++		frames := make([][]byte, 0, len(s.queue)+1)
++		for _, queued := range s.queue {
++			if !queued.record {
++				frames = append(frames, queued.data)
++			}
++		}
++		helps.LogWithRequestID(s.ctx).Infof(claudeTrailingRecordLine, s.records)
++		s.queue, s.pending, s.state = nil, 0, claudeTrailingRecordPassing
++		return append(frames, frame)
++	default: // a delta inside the run, an error, an event type the filter does not know
++		return s.release(frame)
++	}
++	s.queue = append(s.queue, claudeQueuedFrame{data: frame, record: record})
++	s.pending += len(frame)
++	return nil
++}
++
++// release returns every waiting frame in arrival order, then frame (when not
++// nil), and lets the rest of the response pass unchanged.
++func (s *claudeTrailingRecordStream) release(frame []byte) [][]byte {
++	frames := make([][]byte, 0, len(s.queue)+1)
++	for _, queued := range s.queue {
++		frames = append(frames, queued.data)
++	}
++	if frame != nil {
++		frames = append(frames, frame)
++	}
++	s.queue, s.pending, s.state = nil, 0, claudeTrailingRecordPassing
++	return frames
++}
++
++// End returns the frames still waiting when the stream ends before its
++// message_stop (an early end, a scanner or restore error): they are sent, in
++// order, before the executor reports the error it reports today.
++func (s *claudeTrailingRecordStream) End() [][]byte {
++	if s == nil || s.state != claudeTrailingRecordQueued {
++		return nil
++	}
++	return s.release(nil)
++}
++
++// sendClaudeStreamFrames sends frames in order and reports false once the
++// client has gone away: nothing more is sent then, and no send blocks.
++func sendClaudeStreamFrames(ctx context.Context, out chan<- cliproxyexecutor.StreamChunk, frames [][]byte) bool {
++	for _, frame := range frames {
++		if ctx.Err() != nil {
++			return false
++		}
++		select {
++		case out <- cliproxyexecutor.StreamChunk{Payload: frame}:
++		case <-ctx.Done():
++			return false
++		}
++	}
++	return true
++}
+diff --git a/internal/runtime/executor/claude_trailing_reasoning_record_test.go b/internal/runtime/executor/claude_trailing_reasoning_record_test.go
+new file mode 100644
+index 00000000..387a7f39
+--- /dev/null
++++ b/internal/runtime/executor/claude_trailing_reasoning_record_test.go
+@@ -0,0 +1,667 @@
++package executor
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"fmt"
++	"net/http"
++	"net/http/httptest"
++	"net/url"
++	"strings"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
++	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
++	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
++	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
++	log "github.com/sirupsen/logrus"
++)
++
++const trModel = "gwtest-trailing-model"
++
++func trEvent(kind string, data map[string]any) []byte {
++	raw, err := json.Marshal(data)
++	if err != nil {
++		panic(err)
++	}
++	return []byte("event: " + kind + "\ndata: " + string(raw) + "\n\n")
++}
++
++// trStream builds a streamed reply frame by frame, the way a Messages upstream
++// sends it, and records which frames belong to a trailing run the filter is to
++// leave out.
++type trStream struct {
++	frames  [][]byte
++	removed map[int]bool
++	index   int
++}
++
++func newTRStream() *trStream {
++	s := &trStream{removed: map[int]bool{}}
++	return s.raw(trEvent("message_start", map[string]any{"type": "message_start", "message": map[string]any{
++		"id": "msg_gwtest_trailing", "type": "message", "role": "assistant", "model": trModel, "content": []any{},
++		"stop_reason": nil, "stop_sequence": nil, "usage": map[string]any{"input_tokens": 7, "output_tokens": 1}}}))
++}
++
++func (s *trStream) raw(frame []byte) *trStream {
++	s.frames = append(s.frames, frame)
++	return s
++}
++
++func (s *trStream) block(start map[string]any, delta map[string]any, run bool) *trStream {
++	index := s.index
++	s.index++
++	if run {
++		s.removed[len(s.frames)] = true
++	}
++	s.raw(trEvent("content_block_start", map[string]any{"type": "content_block_start", "index": index, "content_block": start}))
++	if delta != nil {
++		s.raw(trEvent("content_block_delta", map[string]any{"type": "content_block_delta", "index": index, "delta": delta}))
++	}
++	if run {
++		s.removed[len(s.frames)] = true
++	}
++	return s.raw(trEvent("content_block_stop", map[string]any{"type": "content_block_stop", "index": index}))
++}
++
++func (s *trStream) thinking() *trStream {
++	return s.block(map[string]any{"type": "thinking", "thinking": "", "signature": ""},
++		map[string]any{"type": "thinking_delta", "thinking": "gwtest fixture reasoning"}, false)
++}
++
++func (s *trStream) text(text string) *trStream {
++	return s.block(map[string]any{"type": "text", "text": ""}, map[string]any{"type": "text_delta", "text": text}, false)
++}
++
++func (s *trStream) record(name string, run bool) *trStream {
++	return s.block(map[string]any{"type": "redacted_thinking", "data": claudeTrailingRecordPrefix + "gwtest-record-" + name}, nil, run)
++}
++
++func (s *trStream) redacted(data string) *trStream {
++	return s.block(map[string]any{"type": "redacted_thinking", "data": data}, nil, false)
++}
++
++func (s *trStream) toolUse() *trStream {
++	return s.block(map[string]any{"type": "tool_use", "id": "toolu_gwtest_trailing", "name": "gwtest_tool", "input": map[string]any{}},
++		map[string]any{"type": "input_json_delta", "partial_json": `{"k":"v"}`}, false)
++}
++
++func (s *trStream) serverTool() *trStream {
++	s.block(map[string]any{"type": "server_tool_use", "id": "srvtoolu_gwtest", "name": "web_search",
++		"input": map[string]any{"query": "gwtest"}}, nil, false)
++	return s.block(map[string]any{"type": "web_search_tool_result", "tool_use_id": "srvtoolu_gwtest", "content": []any{}}, nil, false)
++}
++
++func (s *trStream) ping() *trStream { return s.raw(trEvent("ping", map[string]any{"type": "ping"})) }
++
++func (s *trStream) comment() *trStream { return s.raw([]byte(": gwtest keep-alive\n\n")) }
++
++func (s *trStream) unknown() *trStream {
++	return s.raw(trEvent("gwtest_unknown", map[string]any{"type": "gwtest_unknown"}))
++}
++
++func (s *trStream) delta(stop any) *trStream {
++	delta := map[string]any{"stop_sequence": nil}
++	if stop != nil {
++		delta["stop_reason"] = stop
++	}
++	return s.raw(trEvent("message_delta", map[string]any{"type": "message_delta", "delta": delta,
++		"usage": map[string]any{"output_tokens": 9}}))
++}
++
++func (s *trStream) stop() *trStream {
++	return s.raw(trEvent("message_stop", map[string]any{"type": "message_stop"}))
++}
++
++func (s *trStream) errorEvent() *trStream {
++	return s.raw(trEvent("error", map[string]any{"type": "error", "error": map[string]any{
++		"type": "overloaded_error", "message": "gwtest fixture overload"}}))
++}
++
++func (s *trStream) end(stop any) *trStream { return s.delta(stop).stop() }
++
++func (s *trStream) bytes() []byte { return bytes.Join(s.frames, nil) }
++
++// kept is the stream the client is to get: every frame but the run's.
++func (s *trStream) kept() []byte {
++	var out [][]byte
++	for i, frame := range s.frames {
++		if !s.removed[i] {
++			out = append(out, frame)
++		}
++	}
++	return bytes.Join(out, nil)
++}
++
++type trCase struct {
++	name    string
++	stream  *trStream
++	records int // records left out; 0 leaves the reply as it came
++}
++
++func trShapes() []trCase {
++	return []trCase{
++		{"thinking-text-record", newTRStream().thinking().text("answer").record("a", true).end("end_turn"), 1},
++		{"two-records", newTRStream().thinking().text("answer").record("a", true).record("b", true).end("end_turn"), 2},
++		{"pings-and-a-comment-wait-with-the-run", newTRStream().text("answer").record("a", true).ping().comment().
++			delta("end_turn").ping().stop(), 1},
++		{"no-record", newTRStream().thinking().text("answer").end("end_turn"), 0},
++		{"record-before-the-text", newTRStream().thinking().record("a", false).text("answer").end("end_turn"), 0},
++		{"trailing-redacted-without-the-prefix", newTRStream().thinking().text("answer").redacted("gwtest-provider-reasoning").end("end_turn"), 0},
++		{"mixed-run", newTRStream().text("answer").record("a", false).redacted("gwtest-provider-reasoning").end("end_turn"), 0},
++		{"run-then-tool-use", newTRStream().text("answer").record("a", false).toolUse().end("end_turn"), 0},
++		{"run-then-text", newTRStream().text("answer").record("a", false).text("more").end("end_turn"), 0},
++		{"run-then-ping-then-text", newTRStream().text("answer").record("a", false).ping().text("more").end("end_turn"), 0},
++		{"tool-use-before-the-text", newTRStream().toolUse().text("answer").record("a", false).end("end_turn"), 0},
++		{"tool-use-between", newTRStream().text("answer").toolUse().record("a", false).end("end_turn"), 0},
++		{"server-tool-and-its-result", newTRStream().serverTool().text("answer").record("a", false).end("end_turn"), 0},
++		{"stop-tool-use", newTRStream().thinking().text("answer").record("a", false).end("tool_use"), 0},
++		{"stop-pause-turn", newTRStream().thinking().text("answer").record("a", false).end("pause_turn"), 0},
++		{"stop-max-tokens", newTRStream().thinking().text("answer").record("a", false).end("max_tokens"), 0},
++		{"stop-absent", newTRStream().thinking().text("answer").record("a", false).end(nil), 0},
++		{"stop-unknown", newTRStream().thinking().text("answer").record("a", false).end("gwtest_unknown_reason"), 0},
++		{"comment-and-unknown-event-in-the-queue", newTRStream().text("answer").record("a", false).comment().unknown().end("end_turn"), 0},
++		{"second-message-delta", newTRStream().text("answer").record("a", false).delta("end_turn").delta("end_turn").stop(), 0},
++	}
++}
++
++// trailingRecordFailures are streams that end before a qualifying end: every
++// frame reaches the client once, in order.
++func trailingRecordFailures() []trCase {
++	return []trCase{
++		{"error-while-queued", newTRStream().text("answer").record("a", false).errorEvent(), 0},
++		{"end-while-queued", newTRStream().text("answer").record("a", false), 0},
++		{"error-after-the-delta", newTRStream().text("answer").record("a", false).delta("end_turn").errorEvent(), 0},
++		{"end-after-the-delta", newTRStream().text("answer").record("a", false).delta("end_turn"), 0},
++	}
++}
++
++type trLog struct {
++	mu    sync.Mutex
++	lines []string
++}
++
++func (*trLog) Levels() []log.Level { return log.AllLevels }
++func (h *trLog) Fire(entry *log.Entry) error {
++	if strings.Contains(entry.Message, "openrouter reasoning record removed") {
++		h.mu.Lock()
++		h.lines = append(h.lines, entry.Level.String()+" "+entry.Message)
++		h.mu.Unlock()
++	}
++	return nil
++}
++
++func (h *trLog) take() []string {
++	h.mu.Lock()
++	defer h.mu.Unlock()
++	lines := h.lines
++	h.lines = nil
++	return lines
++}
++
++func trCaptureLog(t *testing.T) *trLog {
++	t.Helper()
++	hook := &trLog{}
++	logger := log.StandardLogger()
++	saved := make(log.LevelHooks)
++	for level, hooks := range logger.Hooks {
++		saved[level] = append([]log.Hook(nil), hooks...)
++	}
++	logger.AddHook(hook)
++	t.Cleanup(func() { logger.ReplaceHooks(saved) })
++	return hook
++}
++
++func trWantLog(records int) []string {
++	if records == 0 {
++		return nil
++	}
++	return []string{fmt.Sprintf("info openrouter reasoning record removed: records=%d", records)}
++}
++
++// drive pushes every frame through a filter, then ends the stream, and
++// returns what the client gets.
++func drive(s *claudeTrailingRecordStream, frames [][]byte) []byte {
++	var out [][]byte
++	for _, frame := range frames {
++		out = append(out, s.Push(frame)...)
++	}
++	out = append(out, s.End()...)
++	return bytes.Join(out, nil)
++}
++
++// A qualifying reply loses its run's frames and nothing else; every other
++// shape, and every stream that ends early, reaches the client unchanged.
++func TestClaudeTrailingRecordStreamShapes(t *testing.T) {
++	logs := trCaptureLog(t)
++	for _, tc := range append(trShapes(), trailingRecordFailures()...) {
++		t.Run(tc.name, func(t *testing.T) {
++			want := tc.stream.bytes()
++			if tc.records > 0 {
++				want = tc.stream.kept()
++			}
++			if got := drive(newClaudeTrailingRecordStream(context.Background(), true), tc.stream.frames); !bytes.Equal(got, want) {
++				t.Fatalf("client stream:\n%s\nwant:\n%s", got, want)
++			}
++			if got := logs.take(); fmt.Sprint(got) != fmt.Sprint(trWantLog(tc.records)) {
++				t.Fatalf("log lines %q, want %q", got, trWantLog(tc.records))
++			}
++		})
++	}
++}
++
++// Every frame up to the run's start goes out when it arrives: the answer text
++// is never held, and only the run's own frames and what follows them wait.
++func TestClaudeTrailingRecordStreamSendsTheTextAtOnce(t *testing.T) {
++	stream := newTRStream().thinking().text("answer").record("a", true).end("end_turn")
++	filter := newClaudeTrailingRecordStream(context.Background(), true)
++	first := len(stream.frames)
++	for i := range stream.frames {
++		if stream.removed[i] {
++			first = i
++			break
++		}
++	}
++	for i, frame := range stream.frames[:first] {
++		if got := filter.Push(frame); len(got) != 1 || !bytes.Equal(got[0], frame) {
++			t.Fatalf("frame %d: sent %q at arrival, want the frame itself", i, got)
++		}
++	}
++	for i, frame := range stream.frames[first : len(stream.frames)-1] {
++		if got := filter.Push(frame); got != nil {
++			t.Fatalf("frame %d after the text: sent %q, want it to wait for the message's end", first+i, got)
++		}
++	}
++}
++
++// With small test limits: a stream that keeps sending records past the byte
++// limit, and a frame that arrives after the time limit, each send every pending
++// frame once, in order; the rest passes as it arrives. A stream that goes
++// silent with frames pending gets them, in order, at its end.
++func TestClaudeTrailingRecordStreamLimits(t *testing.T) {
++	t.Run("bytes", func(t *testing.T) {
++		stream := newTRStream().text("answer")
++		for i := 0; i < 50; i++ {
++			stream.record(fmt.Sprint(i), false)
++		}
++		stream.end("end_turn")
++		filter := newClaudeTrailingRecordStream(context.Background(), true)
++		filter.maxBytes = 3 * len(stream.frames[4])
++		var out [][]byte
++		released := -1
++		for i, frame := range stream.frames {
++			sent := filter.Push(frame)
++			if released >= 0 && (len(sent) != 1 || !bytes.Equal(sent[0], frame)) {
++				t.Fatalf("frame %d after the release: sent %q, want the frame itself", i, sent)
++			}
++			if released < 0 && len(sent) > 1 {
++				released = i
++			}
++			out = append(out, sent...)
++		}
++		out = append(out, filter.End()...)
++		if released < 0 || released >= 10 {
++			t.Fatalf("released at frame %d, want within the byte limit", released)
++		}
++		if got := bytes.Join(out, nil); !bytes.Equal(got, stream.bytes()) {
++			t.Fatalf("client stream:\n%s\nwant:\n%s", got, stream.bytes())
++		}
++	})
++	t.Run("time", func(t *testing.T) {
++		stream := newTRStream().text("answer").record("a", false).ping().end("end_turn")
++		filter := newClaudeTrailingRecordStream(context.Background(), true)
++		clock := time.Unix(1_800_000_000, 0)
++		filter.now = func() time.Time { return clock }
++		filter.maxWait = 50 * time.Millisecond
++		var out [][]byte
++		for i, frame := range stream.frames {
++			if i == len(stream.frames)-3 { // the ping after the record
++				clock = clock.Add(filter.maxWait + time.Millisecond)
++				sent := filter.Push(frame)
++				if len(sent) != 3 {
++					t.Fatalf("late ping released %d frames, want the record's two and itself", len(sent))
++				}
++				out = append(out, sent...)
++				continue
++			}
++			out = append(out, filter.Push(frame)...)
++		}
++		out = append(out, filter.End()...)
++		if got := bytes.Join(out, nil); !bytes.Equal(got, stream.bytes()) {
++			t.Fatalf("client stream:\n%s\nwant:\n%s", got, stream.bytes())
++		}
++	})
++	t.Run("silent-then-end", func(t *testing.T) {
++		stream := newTRStream().text("answer").record("a", false)
++		filter := newClaudeTrailingRecordStream(context.Background(), true)
++		var out [][]byte
++		for _, frame := range stream.frames {
++			out = append(out, filter.Push(frame)...)
++		}
++		pending := filter.End()
++		if len(pending) != 2 {
++			t.Fatalf("end of stream released %d frames, want the record's two", len(pending))
++		}
++		if again := filter.End(); again != nil {
++			t.Fatalf("a second end released %q, want nothing", again)
++		}
++		if got := bytes.Join(append(out, pending...), nil); !bytes.Equal(got, stream.bytes()) {
++			t.Fatalf("client stream:\n%s\nwant:\n%s", got, stream.bytes())
++		}
++	})
++}
++
++// The one-body form: the run's elements and the separators before them are
++// cut, and every other byte is the body as it came.
++func TestClaudeTrailingRecordBody(t *testing.T) {
++	record := func(name string) string {
++		return `{"type":"redacted_thinking","data":"` + claudeTrailingRecordPrefix + `gwtest-record-` + name + `"}`
++	}
++	thinking := `{"type":"thinking","thinking":"gwtest fixture reasoning","signature":""}`
++	text := `{"type":"text","text":"answer"}`
++	body := func(stop string, blocks ...string) string {
++		return `{"id":"msg_gwtest_trailing","type":"message","role":"assistant","model":"` + trModel +
++			`","content":[` + strings.Join(blocks, ",") + `],"stop_reason":` + stop +
++			`,"stop_sequence":null,"usage":{"input_tokens":7,"output_tokens":9}}`
++	}
++	cases := []struct{ name, in, want string }{
++		{"one-record", body(`"end_turn"`, thinking, text, record("a")), body(`"end_turn"`, thinking, text)},
++		{"two-records", body(`"end_turn"`, thinking, text, record("a"), record("b")), body(`"end_turn"`, thinking, text)},
++		{"spacing-is-kept", "{\n  \"content\": [\n    " + text + " ,\n    " + record("a") + "\n  ],\n  \"stop_reason\": \"end_turn\"\n}\n",
++			"{\n  \"content\": [\n    " + text + "\n  ],\n  \"stop_reason\": \"end_turn\"\n}\n"},
++		{"no-record", body(`"end_turn"`, thinking, text), ""},
++		{"record-before-the-text", body(`"end_turn"`, thinking, record("a"), text), ""},
++		{"trailing-redacted-without-the-prefix", body(`"end_turn"`, text, `{"type":"redacted_thinking","data":"gwtest-provider-reasoning"}`), ""},
++		{"mixed-run", body(`"end_turn"`, text, record("a"), `{"type":"redacted_thinking","data":"gwtest-provider-reasoning"}`), ""},
++		{"record-only", body(`"end_turn"`, record("a")), ""},
++		{"thinking-then-record", body(`"end_turn"`, text, thinking, record("a")), ""},
++		{"tool-use-before", body(`"end_turn"`, `{"type":"tool_use","id":"toolu_gwtest","name":"gwtest_tool","input":{}}`, text, record("a")), ""},
++		{"server-tool", body(`"end_turn"`, `{"type":"server_tool_use","id":"srvtoolu_gwtest","name":"web_search","input":{}}`,
++			`{"type":"web_search_tool_result","tool_use_id":"srvtoolu_gwtest","content":[]}`, text, record("a")), ""},
++		{"stop-tool-use", body(`"tool_use"`, text, record("a")), ""},
++		{"stop-pause-turn", body(`"pause_turn"`, text, record("a")), ""},
++		{"stop-max-tokens", body(`"max_tokens"`, text, record("a")), ""},
++		{"stop-null", body(`null`, text, record("a")), ""},
++		{"stop-unknown", body(`"gwtest_unknown_reason"`, text, record("a")), ""},
++		{"stop-absent", `{"content":[` + text + `,` + record("a") + `]}`, ""},
++		{"content-twice", `{"content":[` + text + `,` + record("a") + `],"content":[` + text + `,` + record("a") + `],"stop_reason":"end_turn"}`, ""},
++		{"unknown-block", body(`"end_turn"`, `{"type":"gwtest_unknown"}`, text, record("a")), ""},
++		{"trailing-bytes", body(`"end_turn"`, text, record("a")) + `{}`, ""},
++		{"not-json", "event: message_start\ndata: {}\n\n", ""},
++	}
++	logs := trCaptureLog(t)
++	for _, tc := range cases {
++		t.Run(tc.name, func(t *testing.T) {
++			want, records := tc.want, 0
++			if want == "" {
++				want = tc.in
++			} else {
++				records = strings.Count(tc.in, claudeTrailingRecordPrefix)
++			}
++			if got := string(omitClaudeTrailingRecord(context.Background(), true, []byte(tc.in))); got != want {
++				t.Fatalf("body:\n%s\nwant:\n%s", got, want)
++			}
++			if got := logs.take(); fmt.Sprint(got) != fmt.Sprint(trWantLog(records)) {
++				t.Fatalf("log lines %q, want %q", got, trWantLog(records))
++			}
++			if got := string(omitClaudeTrailingRecord(context.Background(), false, []byte(tc.in))); got != tc.in {
++				t.Fatalf("an entry that does not qualify changed the body:\n%s", got)
++			}
++		})
++	}
++}
++
++// trailingRecordOrigin answers every request the executor sends, whatever
++// origin it names, from a local server.
++type trailingRecordOrigin struct{ target *url.URL }
++
++func (o trailingRecordOrigin) RoundTrip(req *http.Request) (*http.Response, error) {
++	clone := req.Clone(req.Context())
++	clone.URL.Scheme, clone.URL.Host, clone.Host = o.target.Scheme, o.target.Host, o.target.Host
++	return http.DefaultTransport.RoundTrip(clone)
++}
++
++type trEntry struct {
++	name     string
++	auth     func(server string) *cliproxyauth.Auth
++	official bool // the entry names Anthropic's own origin
++	removes  bool
++}
++
++func trEntries() []trEntry {
++	const oauthToken = "sk-ant-oat01-gwtest-fixture-token"
++	const account = "00000000-0000-4000-8000-00000000a11c"
++	oauth := func(attributes map[string]string) *cliproxyauth.Auth {
++		return &cliproxyauth.Auth{ID: "gwtest-trailing-oauth", Provider: "claude", Attributes: attributes,
++			Metadata: map[string]any{"type": "claude", "access_token": oauthToken, "email": "gwtest@example.invalid",
++				"account_uuid": account}}
++	}
++	return []trEntry{
++		{"third-party-api-key", func(server string) *cliproxyauth.Auth {
++			return &cliproxyauth.Auth{Attributes: map[string]string{"api_key": "dummy-gwtest-key", "base_url": server}}
++		}, false, true},
++		{"first-party-oauth", func(string) *cliproxyauth.Auth { return oauth(nil) }, true, false},
++		{"oauth-at-a-custom-origin", func(server string) *cliproxyauth.Auth {
++			return oauth(map[string]string{"base_url": server})
++		}, false, false},
++		{"api-key-at-anthropics-origin", func(string) *cliproxyauth.Auth {
++			return &cliproxyauth.Auth{Attributes: map[string]string{"api_key": "dummy-gwtest-key", "base_url": "https://api.anthropic.com"}}
++		}, true, false},
++		{"setup-token-as-api-key-at-a-custom-origin", func(server string) *cliproxyauth.Auth {
++			return &cliproxyauth.Auth{Attributes: map[string]string{"api_key": oauthToken, "base_url": server},
++				Metadata: map[string]any{"account_uuid": account}}
++		}, false, false},
++	}
++}
++
++func trServer(t *testing.T, contentType string, body []byte) *httptest.Server {
++	t.Helper()
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
++		w.Header().Set("Content-Type", contentType)
++		_, _ = w.Write(body)
++	}))
++	t.Cleanup(server.Close)
++	return server
++}
++
++func trContext(t *testing.T, entry trEntry, server *httptest.Server) context.Context {
++	t.Helper()
++	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
++	t.Cleanup(cancel)
++	if entry.official {
++		target, _ := url.Parse(server.URL)
++		ctx = context.WithValue(ctx, "cliproxy.roundtripper", http.RoundTripper(trailingRecordOrigin{target}))
++	}
++	return ctx
++}
++
++func trExecuteStream(t *testing.T, ctx context.Context, auth *cliproxyauth.Auth) ([]byte, []error) {
++	t.Helper()
++	result, err := NewClaudeExecutor(&config.Config{}).ExecuteStream(ctx, auth, cliproxyexecutor.Request{
++		Model:   trModel,
++		Payload: []byte(`{"model":"` + trModel + `","max_tokens":16,"messages":[{"role":"user","content":"gwtest"}],"stream":true}`),
++	}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatClaude, ResponseFormat: sdktranslator.FormatClaude})
++	if err != nil {
++		t.Fatalf("ExecuteStream: %v", err)
++	}
++	var out bytes.Buffer
++	var errs []error
++	for chunk := range result.Chunks {
++		if chunk.Err != nil {
++			errs = append(errs, chunk.Err)
++			continue
++		}
++		out.Write(chunk.Payload)
++	}
++	return out.Bytes(), errs
++}
++
++// Only a third-party API-key entry has the run left out. First-party OAuth, an
++// OAuth credential at a custom origin, an API key at Anthropic's origin and a
++// setup token given as an API key get the very bytes that qualify on it,
++// unchanged, streamed and as one body.
++func TestClaudeTrailingRecordEntries(t *testing.T) {
++	logs := trCaptureLog(t)
++	stream := newTRStream().thinking().text("answer").record("a", true).end("end_turn")
++	body := []byte(`{"id":"msg_gwtest_trailing","type":"message","role":"assistant","model":"` + trModel +
++		`","content":[{"type":"thinking","thinking":"gwtest fixture reasoning","signature":""},{"type":"text","text":"answer"},` +
++		`{"type":"redacted_thinking","data":"` + claudeTrailingRecordPrefix + `gwtest-record-a"}],"stop_reason":"end_turn",` +
++		`"stop_sequence":null,"usage":{"input_tokens":7,"output_tokens":9}}`)
++	kept := omitClaudeTrailingRecord(context.Background(), true, body)
++	logs.take()
++	for _, entry := range trEntries() {
++		t.Run(entry.name+"/stream", func(t *testing.T) {
++			server := trServer(t, "text/event-stream", stream.bytes())
++			got, errs := trExecuteStream(t, trContext(t, entry, server), entry.auth(server.URL))
++			want, records := stream.bytes(), 0
++			if entry.removes {
++				want, records = stream.kept(), 1
++			}
++			if len(errs) != 0 || !bytes.Equal(got, want) {
++				t.Fatalf("errors %v, client stream:\n%s\nwant:\n%s", errs, got, want)
++			}
++			if lines := logs.take(); fmt.Sprint(lines) != fmt.Sprint(trWantLog(records)) {
++				t.Fatalf("log lines %q, want %q", lines, trWantLog(records))
++			}
++		})
++		t.Run(entry.name+"/unary", func(t *testing.T) {
++			server := trServer(t, "application/json", body)
++			resp, err := NewClaudeExecutor(&config.Config{}).Execute(trContext(t, entry, server), entry.auth(server.URL),
++				cliproxyexecutor.Request{Model: trModel, Payload: []byte(`{"model":"` + trModel +
++					`","max_tokens":16,"messages":[{"role":"user","content":"gwtest"}]}`)},
++				cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatClaude, ResponseFormat: sdktranslator.FormatClaude})
++			want, records := body, 0
++			if entry.removes {
++				want, records = kept, 1
++			}
++			if err != nil || !bytes.Equal(resp.Payload, want) {
++				t.Fatalf("error %v, client body:\n%s\nwant:\n%s", err, resp.Payload, want)
++			}
++			if lines := logs.take(); fmt.Sprint(lines) != fmt.Sprint(trWantLog(records)) {
++				t.Fatalf("log lines %q, want %q", lines, trWantLog(records))
++			}
++		})
++	}
++}
++
++// A stream that ends early or errors while frames wait, with the client still
++// connected: every frame arrives once, unchanged and in order, before exactly
++// one error, the one the executor reports for that ending today. No end of the
++// message is invented.
++func TestClaudeTrailingRecordFailurePaths(t *testing.T) {
++	entry := trEntries()[0]
++	for _, tc := range trailingRecordFailures() {
++		t.Run(tc.name, func(t *testing.T) {
++			server := trServer(t, "text/event-stream", tc.stream.bytes())
++			got, errs := trExecuteStream(t, trContext(t, entry, server), entry.auth(server.URL))
++			if !bytes.Equal(got, tc.stream.bytes()) {
++				t.Fatalf("client stream:\n%s\nwant:\n%s", got, tc.stream.bytes())
++			}
++			if len(errs) != 1 {
++				t.Fatalf("errors %v, want exactly one", errs)
++			}
++			if strings.HasPrefix(tc.name, "end-") && !strings.Contains(errs[0].Error(), "message_stop") {
++				t.Fatalf("error %q, want the stream's truncation error", errs[0])
++			}
++			if bytes.Contains(got, []byte("message_stop")) {
++				t.Fatal("the client got a message_stop the upstream never sent")
++			}
++		})
++	}
++}
++
++// A client that goes away while the run waits gets nothing more: the response
++// goroutine drops the pending frames, sends nothing and ends.
++func TestClaudeTrailingRecordClientGoneWhileQueued(t *testing.T) {
++	stream := newTRStream().text("answer").record("a", true)
++	upstreamDone := make(chan struct{})
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		defer close(upstreamDone)
++		w.Header().Set("Content-Type", "text/event-stream")
++		_, _ = w.Write(stream.bytes())
++		w.(http.Flusher).Flush()
++		select {
++		case <-r.Context().Done():
++		case <-time.After(10 * time.Second):
++		}
++	}))
++	defer server.Close()
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	result, err := NewClaudeExecutor(&config.Config{}).ExecuteStream(ctx, trEntries()[0].auth(server.URL), cliproxyexecutor.Request{
++		Model:   trModel,
++		Payload: []byte(`{"model":"` + trModel + `","max_tokens":16,"messages":[{"role":"user","content":"gwtest"}],"stream":true}`),
++	}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatClaude, ResponseFormat: sdktranslator.FormatClaude})
++	if err != nil {
++		t.Fatalf("ExecuteStream: %v", err)
++	}
++	textStop := stream.frames[len(stream.frames)-3]
++	var received bytes.Buffer
++	for chunk := range result.Chunks {
++		received.Write(chunk.Payload)
++		if bytes.HasSuffix(received.Bytes(), textStop) {
++			break
++		}
++	}
++	// The record's frames are already read upstream; give the goroutine the
++	// time to queue them, then go away.
++	time.Sleep(50 * time.Millisecond)
++	cancel()
++	deadline := time.After(5 * time.Second)
++	for {
++		select {
++		case chunk, open := <-result.Chunks:
++			if !open {
++				if bytes.Contains(received.Bytes(), []byte("redacted_thinking")) {
++					t.Fatalf("a client that went away was sent the pending frames:\n%s", received.Bytes())
++				}
++				select {
++				case <-upstreamDone:
++				case <-time.After(5 * time.Second):
++					t.Fatal("the upstream request was not ended")
++				}
++				return
++			}
++			received.Write(chunk.Payload)
++		case <-deadline:
++			t.Fatal("the response goroutine did not end after the client went away")
++		}
++	}
++}
++
++// The entry test reads the credential's kind, the executor's OAuth-token
++// decision and the request's origin, nothing else.
++func TestClaudeTrailingRecordEntryPredicate(t *testing.T) {
++	key := func(attributes map[string]string) *cliproxyauth.Auth {
++		return &cliproxyauth.Auth{Attributes: attributes}
++	}
++	cases := []struct {
++		name  string
++		auth  *cliproxyauth.Auth
++		url   string
++		oauth bool
++		want  bool
++	}{
++		{"api-key-custom-origin", key(map[string]string{"api_key": "dummy-gwtest-key"}), "https://openrouter.example/api/v1/messages?beta=true", false, true},
++		{"api-key-loopback", key(map[string]string{"api_key": "dummy-gwtest-key"}), "http://127.0.0.1:8080/v1/messages?beta=true", false, true},
++		{"api-key-anthropic", key(map[string]string{"api_key": "dummy-gwtest-key"}), "https://api.anthropic.com/v1/messages?beta=true", false, false},
++		{"api-key-anthropic-port-443", key(map[string]string{"api_key": "dummy-gwtest-key"}), "https://api.anthropic.com:443/v1/messages", false, false},
++		{"api-key-anthropic-over-http", key(map[string]string{"api_key": "dummy-gwtest-key"}), "http://api.anthropic.com/v1/messages", false, true},
++		{"setup-token-as-api-key", key(map[string]string{"api_key": "sk-ant-oat01-gwtest-fixture"}), "https://openrouter.example/api/v1/messages", true, false},
++		{"oauth-kind-attribute", key(map[string]string{"api_key": "dummy-gwtest-key", "auth_kind": "oauth"}), "https://openrouter.example/api/v1/messages", false, false},
++		{"oauth-metadata", &cliproxyauth.Auth{Metadata: map[string]any{"access_token": "gwtest-access"}}, "https://openrouter.example/api/v1/messages", false, false},
++		{"no-credential", &cliproxyauth.Auth{}, "https://openrouter.example/api/v1/messages", false, false},
++		{"nil-auth", nil, "https://openrouter.example/api/v1/messages", false, false},
++		{"no-host", key(map[string]string{"api_key": "dummy-gwtest-key"}), "/v1/messages", false, false},
++	}
++	for _, tc := range cases {
++		t.Run(tc.name, func(t *testing.T) {
++			if got := claudeTrailingRecordEntry(tc.auth, tc.url, claudeFingerprintPolicy{AuthIsOAuthToken: tc.oauth}); got != tc.want {
++				t.Fatalf("claudeTrailingRecordEntry = %t, want %t", got, tc.want)
++			}
++		})
++	}
++}

@@ -1485,5 +1485,194 @@ class DoNotRetryProbe(_GatedCase):
         self.assertEqual(observed_class, DO_NOT_RETRY_CLASS, detail)
 
 
+# ------------------------------------------------- the trailing reasoning record
+
+
+_RECORD_ALIAS = "gwtest-cc-output-config-high"  # a third-party key line of the harness gateway
+_RECORD_ANSWER = "PROBE-RECORD-ANSWER"
+_RECORD_AGENT_TASK = "PROBE-RECORD-AGENT-TASK"
+_RECORD_AGENT_ANSWER = "PROBE-RECORD-AGENT-ANSWER"
+_RECORD_LEAD_DONE = "PROBE-RECORD-LEAD-DONE"
+_RECORD_SPAWN_ID = "toolu_record_agent"
+
+
+def _record_user_texts(body: dict[str, Any]) -> list[str]:
+    texts = []
+    for message in body.get("messages") or ():
+        if isinstance(message, dict) and message.get("role") == "user":
+            content = message.get("content")
+            texts.append(content if isinstance(content, str) else json.dumps(content))
+    return texts
+
+
+def _record_agent_report(body: dict[str, Any]) -> list[str]:
+    """What the lead's request carries back from its subagent: the text of the
+    Agent call's tool result (a foreground agent), or the completion notice
+    (a background agent)."""
+    found = []
+    for message in body.get("messages") or ():
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        content = message.get("content")
+        parts = [content] if isinstance(content, str) else content if isinstance(content, list) else []
+        for part in parts:
+            if isinstance(part, str):
+                if "<task-notification>" in part:
+                    found.append(part)
+            elif isinstance(part, dict) and part.get("type") == "tool_result" and part.get(
+                    "tool_use_id") == _RECORD_SPAWN_ID:
+                inner = part.get("content")
+                found.append(inner if isinstance(inner, str) else "".join(
+                    item.get("text", "") for item in inner or () if isinstance(item, dict)))
+            elif isinstance(part, dict) and part.get("type") == "text" and "<task-notification>" in part.get("text", ""):
+                found.append(part["text"])
+    return found
+
+
+class _RecordUpstream:
+    """The upstream behind the gateway's third-party key line. A reply that
+    answers ends the way OpenRouter's Messages endpoint ends one for Gemini 4:
+    ``thinking`` with an empty signature, the answer ``text``, then a
+    ``redacted_thinking`` record with OpenRouter's prefix. ``unary`` answers
+    the client's streamed main request with a stream holding no block, so the
+    client asks again without streaming and gets the reply as one body.
+    ``agent`` (``foreground`` or ``background``) makes the lead's first
+    request start a subagent, which gets the record-ending reply; the lead's
+    later requests get plain text and keep what they carry back."""
+
+    def __init__(self, *, unary: bool = False, agent: str | None = None) -> None:
+        self.unary, self.agent = unary, agent
+        self.lock = threading.Lock()
+        self.hits: list[tuple[str, bool]] = []
+        self.spawned = False
+        self.reports: list[str] = []
+
+    def __call__(self, path, body, _raw, _headers):  # noqa: ANN001
+        if path.endswith("/count_tokens"):
+            return 200, "application/json", b'{"input_tokens": 1}'
+        if not path.endswith("/v1/messages"):
+            return 404, "application/json", b'{"error":"unexpected fake upstream path"}'
+        harness = _record_harness()
+        stream = bool(body.get("stream"))
+        texts = _record_user_texts(body)
+        offered = {tool.get("name") for tool in body.get("tools") or [] if isinstance(tool, dict)}
+        model = body.get("model", "gwtest-wire")
+        answer = [harness.thinking_block(), None, harness.record_block()]
+        stop = "end_turn"
+        with self.lock:
+            if texts and _RECORD_AGENT_TASK in texts[0]:
+                kind, blocks = "subagent", [answer[0], harness.text_block(_RECORD_AGENT_ANSWER), answer[2]]
+            elif not offered:
+                kind, blocks = "auxiliary", [harness.text_block("PROBE-AUX")]
+            elif self.agent and not self.spawned and "Agent" in offered:
+                self.spawned = True
+                kind, stop = "spawn", "tool_use"
+                blocks = [harness.tool_use_block("Agent", _RECORD_SPAWN_ID, {
+                    "description": "client check trailing record", "prompt": _RECORD_AGENT_TASK,
+                    "subagent_type": "general-purpose", "run_in_background": self.agent == "background"})]
+            elif self.agent:
+                reports = _record_agent_report(body)
+                self.reports.extend(reports)
+                kind, blocks = "lead-after-agent", [harness.text_block(_RECORD_LEAD_DONE)]
+            else:
+                kind, blocks = "lead", [answer[0], harness.text_block(_RECORD_ANSWER), answer[2]]
+            self.hits.append((kind, stream))
+        if self.unary and stream and kind == "lead":
+            events = [event for event in harness.message_events((), None, model=model)
+                      if event[0] in ("message_start", "message_stop")]
+            return 200, "text/event-stream", b"".join(harness.sse_frame(k, v) for k, v in events)
+        if stream:
+            return 200, "text/event-stream", harness.message_stream(blocks, stop, model=model)
+        return 200, "application/json", json.dumps(harness.message_body(blocks, stop, model=model)).encode()
+
+
+def _record_harness():
+    import _gateway_harness  # the gateway fixtures (module import: no tests re-exported)
+    return _gateway_harness
+
+
+class TrailingRecordThroughGatewayTests(_GatedCase):
+    """The pinned client through charmer's gateway on a third-party key line
+    whose upstream ends a reply in OpenRouter's reasoning record after the
+    answer text (the shape OpenRouter's Messages endpoint gives Gemini 4). The
+    gateway leaves the record out, so the one-shot result is the answer, for a
+    streamed reply and for one in one body (measured empty without it). A
+    foreground and a background subagent's report reaches its lead with and
+    without it (the two controls)."""
+
+    probe_id = "trailing-record"
+
+    def _run(self, upstream: _RecordUpstream, prompt: str, *, agents: bool = False) -> dict[str, Any]:
+        import test_gateway_hint_client as recognition  # the relay (module import: no tests re-exported)
+
+        harness = _record_harness()
+        gateway = harness.GatewayHarness(upstream_factory=lambda path: harness.FakeUpstream(path, respond=upstream))
+        self.addCleanup(gateway.close)
+
+        class Relay(recognition._GatewayRelay):
+            def _observe(self, path, headers, hits, status, raw, document):
+                self.rows.append({"route": path.split("?", 1)[0], "status": status, "hits": len(hits),
+                                  "stream": bool(document.get("stream")) if isinstance(document, dict) else None})
+
+        fixture = self._fixture()
+        settings = probe.write_fixture_settings(fixture, "scope/settings.json", {
+            "availableModels": [_RECORD_ALIAS], "model": _RECORD_ALIAS,
+            "permissions": {"defaultMode": scope.PERMISSION_DEFAULT_MODE},
+            "env": {"CLAUDE_CODE_RETRY_WATCHDOG": "1", scope.FAST_MODE_ENV: "1",
+                    "ANTHROPIC_DEFAULT_HAIKU_MODEL": _RECORD_ALIAS}})
+        with Relay(gateway) as relay:
+            result = probe.run_native(
+                ("-p", prompt, "--settings", str(settings), "--model", _RECORD_ALIAS, "--output-format", "json",
+                 *(("--dangerously-skip-permissions",) if agents else ())),
+                trusted=self.trusted, fixture=fixture, provider=relay, timeout=180, allow_real=True,
+                environ=self.environ)
+            errors = relay.completion_errors()
+            rows = list(relay.rows)
+        if result.timed_out or result.returncode != 0:
+            raise _Inconclusive(f"the turn did not complete (rc={result.returncode}, timed_out={result.timed_out})")
+        if errors:
+            raise _Inconclusive("; ".join(errors))
+        documents = [json.loads(line) for line in (result.stdout or "").splitlines() if line.startswith("{")]
+        removed = sum(1 for line in gateway.log_path.read_text(errors="replace").splitlines()
+                      if "openrouter reasoning record removed: records=" in line)
+        return {"results": [document.get("result") for document in documents], "rows": rows,
+                "upstream": list(upstream.hits), "reports": list(upstream.reports), "removed": removed,
+                "gateway": gateway.version}
+
+    def _verdict(self, case: str, ok: bool, observed: dict[str, Any]) -> str:
+        detail = (f"results={observed['results']} upstream={observed['upstream']} removed={observed['removed']} "
+                  f"statuses={sorted({row['status'] for row in observed['rows']})} gateway={observed['gateway']} "
+                  f"client={self.gate.version}")
+        type(self).verdict = ("PASS" if ok else "FAIL", case, detail)
+        return detail
+
+    def test_the_one_shot_result_of_a_streamed_reply(self) -> None:
+        observed = self._guard(lambda: self._run(_RecordUpstream(), "client check trailing record stream"))
+        ok = observed["results"] == [_RECORD_ANSWER] and ("lead", True) in observed["upstream"]
+        self.assertTrue(ok, self._verdict("one-shot-stream", ok, observed))
+
+    def test_the_one_shot_result_of_a_reply_in_one_body(self) -> None:
+        # The client's streamed request gets a stream with no block, so it asks
+        # again without streaming: the gateway gets a non-streaming request.
+        observed = self._guard(lambda: self._run(_RecordUpstream(unary=True), "client check trailing record body"))
+        ok = observed["results"] == [_RECORD_ANSWER] and ("lead", False) in observed["upstream"]
+        self.assertTrue(ok, self._verdict("one-shot-body", ok, observed))
+
+    def _report_case(self, kind: str) -> None:
+        observed = self._guard(lambda: self._run(_RecordUpstream(agent=kind),
+                                                 f"client check trailing record {kind} agent", agents=True))
+        reports = [report for report in observed["reports"]
+                   if kind == "foreground" or "<task-notification>" in report]
+        ok = ("subagent", True) in observed["upstream"] and bool(reports) and all(
+            _RECORD_AGENT_ANSWER in report for report in reports)
+        self.assertTrue(ok, self._verdict(f"{kind}-subagent-report", ok, observed))
+
+    def test_what_the_lead_receives_from_a_foreground_subagent(self) -> None:
+        self._report_case("foreground")
+
+    def test_what_the_lead_receives_from_a_background_subagent(self) -> None:
+        self._report_case("background")
+
+
 if __name__ == "__main__":
     unittest.main()
