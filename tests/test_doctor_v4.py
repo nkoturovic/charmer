@@ -2803,6 +2803,92 @@ class CatalogAgentDriftTests(_DoctorCase):
                             for p in problems), problems)
         self.assertFalse([line for line in attention if "agent definitions differ" in line])
 
+    def _settings(self, edit) -> None:
+        path = self.live(self.mid) / scope.SETTINGS_RELPATH
+        document = strict_json.loads(path.read_bytes())
+        edit(document)
+        state.atomic_write(path, strict_json.canonical_file_bytes(document))
+
+    def _earlier_status_line(self, document: dict) -> None:
+        # As an earlier release compiled it into every scope.
+        document["subagentStatusLine"] = scope.status_line_setting(scope.status_line_shim_path(self.store.root))
+
+    def test_an_earlier_status_line_beside_catalog_agent_drift_is_attention(self) -> None:
+        slot = self._changed_role_text()
+        self._settings(self._earlier_status_line)
+        problems, _info, attention = _doctor(self)
+        self.assertEqual([p for p in problems if self.m8 in p], [])
+        self.assertTrue(any(line.startswith(f"session {self.m8}: its subagent status line differs") for line in attention),
+                        attention)
+        self.assertTrue(any(line.startswith(f"session {self.m8}: agent definitions differ from the installed catalog "
+                                            f"({slot}; ") for line in attention), attention)
+        code, output = _run_doctor(self, "--repair", self.mid)
+        self.assertEqual(code, 0, output)
+        self.assertIn(b"Revised.", self._agent(slot).read_bytes())
+        self.assertNotIn("subagentStatusLine", strict_json.loads((self.live(self.mid) / scope.SETTINGS_RELPATH).read_bytes()))
+        problems, _info, attention = _doctor(self)
+        self.assertFalse([line for line in problems + attention
+                          if "agent definitions differ" in line or "subagent status line differs" in line])
+
+    def test_a_settings_difference_beside_agent_drift_is_proven_alone_or_blocks(self) -> None:
+        settings_path = self.live(self.mid) / scope.SETTINGS_RELPATH
+        compiled = settings_path.read_bytes()
+
+        def blocks(*drift: str) -> None:
+            problems, _info, attention = _doctor(self)
+            mine = [p for p in problems if p.startswith(
+                f"session {self.m8}: scope differs from the record-authoritative compile (")]
+            self.assertEqual(len(mine), 1, problems)
+            self.assertTrue(mine[0].endswith(f"); run charmer doctor --repair {self.mid}"), mine)
+            for entry in drift:
+                self.assertIn(entry, mine[0])
+            self.assertFalse([line for line in attention
+                              if "agent definitions differ" in line or "subagent status line differs" in line])
+
+        # The same catalog: an agent edit is never tolerated, status line or not.
+        slot = next(iter(sorted(self.record["applied"]["agents"])))
+        agent = self._agent(slot)
+        original = agent.read_bytes()
+        state.atomic_write(agent, original + b"\n")
+        self._settings(self._earlier_status_line)
+        blocks("settings.json content differs", f".claude/agents/{slot}.md content differs")
+        state.atomic_write(agent, original)
+        state.atomic_write(settings_path, compiled)
+
+        slot = self._changed_role_text()
+        agent = self._agent(slot)
+        original = agent.read_bytes()
+        binding = self.record["applied"]["agents"][slot]
+        lineup_md = self.live(self.mid) / "lineup.md"
+        listed = lineup_md.read_bytes()
+        # Settings differences that no released-policy recognizer proves on its own.
+        settings_cases = {
+            "another status-line command": lambda document: document.update(
+                subagentStatusLine={"type": "command", "command": "/tmp/other"}),
+            "a settings edit": lambda document: document.update(disableWorkflows=not document["disableWorkflows"]),
+            "a deny edit": lambda document: document["permissions"]["deny"].append("Bash(fixture:*)"),
+        }
+        for label, edit in settings_cases.items():
+            with self.subTest(label):
+                self._settings(edit)
+                blocks("settings.json content differs", f".claude/agents/{slot}.md content differs")
+                state.atomic_write(settings_path, compiled)
+        # The earlier status line beside anything but validated agent drift.
+        other_cases = {
+            "a rebound agent": (agent, original.replace(f"model: {binding['selector']}\n".encode(),
+                                                        b"model: other-model\n"), f".claude/agents/{slot}.md"),
+            "a malformed agent": (agent, b"no frontmatter here\n", f".claude/agents/{slot}.md"),
+            "another differing file": (lineup_md, listed + b"edited\n", "lineup.md"),
+        }
+        for label, (path, data, relpath) in other_cases.items():
+            with self.subTest(label):
+                self.assertNotEqual(data, path.read_bytes())
+                state.atomic_write(path, data)
+                self._settings(self._earlier_status_line)
+                blocks("settings.json content differs", f"{relpath} content differs")
+                state.atomic_write(path, original if path == agent else listed)
+                state.atomic_write(settings_path, compiled)
+
 
 import test_operator_agents  # module import: no test classes re-exported
 
