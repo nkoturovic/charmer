@@ -30,11 +30,9 @@ saved as `OPENROUTER_CLAUDE_API_KEY` and sent only to
    ```
 
 The OpenRouter catalog lines are usable once the provider is connected.
-Only the New line, Carbon, has an optional admission badge; the Active
-lines do not need admission. Their evidence differs: the Gemini 4 lines
-were not checked by a live request in this release, as detailed below.
-The `models qualify` command is for lines you declare yourself, not
-catalog lines.
+The two New lines, Gemini 4 Carbon and Neon, have optional admission
+badges. Neither needs admission to use. The `models qualify` command is
+for lines you declare yourself, not catalog lines.
 
 <!-- generated: openrouter-lines (tools/docs_gen.py) -->
 
@@ -63,7 +61,7 @@ The shipped `openrouter` profile: OpenRouter only (billed per token): Opus lead 
 
 <!-- end of generated: openrouter-lines -->
 
-`or-gpt` moved to GPT-6.2 Sol in this release; its agent checks (smoke,
+`or-gpt` moved to GPT-6.2 Sol in 2.6.0; its agent checks (smoke,
 high and xhigh, forced named tool, streaming) passed on 2026-10-02 on
 GPT-6.1 Sol, not on 6.2. A managed high turn on 6.2 passed on 2026-11-18
 (HTTP 200, exit 0; Claude Code 2.1.326 / CLIProxyAPI 8.0.76), not a new
@@ -71,9 +69,9 @@ full battery or context-limit test. Low, medium and max are contract-level
 only (listing-advertised, not measured); xhigh has not been live-checked
 on 6.2. Default `high` stays. A session running on GPT-6.1 Sol keeps it
 until it resumes
-([models guide](../guides/models.md#lines-moved-in-this-release)).
+([models guide](../guides/models.md#lines-moved-in-260)).
 
-`or-gemini` now selects Gemini 4 Hydrogen (`google/gemini-4-hydrogen`),
+`or-gemini` moved to Gemini 4 Hydrogen (`google/gemini-4-hydrogen`) in 2.6.0,
 with low, medium, high and xhigh, default `high`. Low and medium are
 contract-level only (listing-advertised, not measured); the earlier
 high/xhigh battery ran on Gemini 3.8 Flash, not Hydrogen. The `openrouter`
@@ -83,23 +81,43 @@ its old wire through `or-gemini@3.8` until resume.
 
 `or-gemini-carbon` is a New line on `google/gemini-4-carbon`, with low,
 medium and high, default `high`, and selectors
-`charmer-or-gemini-carbon-<effort>[1m]`. It goes in no shipped profile:
-bind it in the profile editor, or select it in the Direct picker. Enter
-in Models only adds the optional admission badge; it does not bind the
-line.
+`charmer-or-gemini-carbon-<effort>[1m]`.
 
-Neither Gemini 4 line was checked by a live request in this release,
-by the operator's choice. OpenRouter's public models list, read 2026-11-18,
-gives each 1,048,576 context tokens and 943,718 max completion tokens
-(Hydrogen created 2026-11-12; Carbon created 2026-11-10). It lists tools,
-`tool_choice`, `reasoning`, `reasoning_effort` and `structured_outputs`;
-these are advertised support, not gateway acceptance. The provider bound
-stays 1M and the validated floor 200,000; neither is a Gemini 4 capacity
-measurement. Hydrogen's inherited `minimum_tested` pair (Claude Code
-2.1.286 / CLIProxyAPI 7.3.15) describes Gemini 3.8 Flash's 2026-10-02 tests.
-Carbon's pair is scaffold metadata: the inherited client floor 2.1.286
-and the current gateway baseline 8.0.76, not test evidence. Carbon has
-never been live-tested; its efforts are listing-based contracts only.
+`or-gemini-neon` is a New line on `google/gemini-4-neon`, with low,
+medium, high and xhigh, default `high`, and selectors
+`charmer-or-gemini-neon-<effort>[1m]`. Neither Carbon nor Neon is in a
+shipped profile. Bind either as lead or agent in the profile editor, or
+select it in the Direct picker. Enter in Models adds the optional
+admission badge; it does not bind the line.
+
+OpenRouter's public models list, read 2026-11-18, gives all three Gemini 4
+lines 1,048,576 context tokens and 943,718 max completion tokens. One
+AI Studio endpoint for Neon caps completion at 65,536. The listing dates
+are 2026-11-12 for Hydrogen, 2026-11-10 for Carbon and 2026-11-18 for
+Neon. All three list `reasoning` and `reasoning_effort`; Hydrogen and
+Carbon also list tools, `tool_choice` and `structured_outputs`. Google AI
+Studio lists Neon as stable with four thinking levels. These are listing
+facts, not tests through the gateway. The 1M provider bound is listing-based;
+the validated floor of 200,000 is not a Gemini 4 capacity measurement.
+Hydrogen's inherited `minimum_tested` pair (Claude Code 2.1.286 /
+CLIProxyAPI 7.3.15) describes Gemini 3.8 Flash's 2026-10-02 tests. For
+Carbon and Neon the pair (2.1.286 / 8.0.76) records the inherited client
+floor and the gateway baseline, not a test. Their efforts come from the
+listings.
+
+Live checks on Gemini 4: [LIVE-CHECK EVIDENCE, the lead completes this]
+
+### One-shot results
+
+OpenRouter can end a Gemini 4 reply with its reasoning record (a
+`redacted_thinking` block whose data starts `openrouter.reasoning:`) after
+the text. Since 2.6.1 the gateway leaves that record out when it directly
+follows the reply's text, the reply contains only text and reasoning, and
+it ends the turn (`end_turn`). A one-shot result (`claude -p` or an SDK
+caller) is then the text. The record never reaches Claude Code, so it is
+missing from that conversation from then on, a resume included. Replies
+with tool calls keep their records. Each removal logs
+`openrouter reasoning record removed: records=N`.
 
 ## 3. Provider and model family
 
@@ -263,6 +281,7 @@ sessions can spend.
 | --- | --- |
 | 401 from OpenRouter | the key is wrong or revoked: set a new one |
 | 402 in doctor's gateway lines | the account is out of credit: add credit, or move agents with `/cm fallback <provider>` |
+| a Gemini 4 reply has text but the one-shot result is empty | check `charmer --version` and `charmer gateway status`; [update from 2.6.0](../update.md#updating-from-260), or, if updated but the restart is pending, run the guarded `charmer gateway restart` between turns, then `charmer update --verify` |
 | one model refuses requests while others work | that model's upstream vendor may be unavailable on OpenRouter; bind another line with `/cm set <agent>=<model>` |
 | a model of your own fails qualification | the check names the failing part; choose another model, never a weaker tool contract |
 | a long session stops with a context-length error | the provider's context-window error does not start Claude Code's automatic compaction on this route: run `/compact`, then continue |

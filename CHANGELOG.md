@@ -8,8 +8,21 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [2.6.1] — 2026-11-18
 
+### Added
+
+- Gemini 4 Neon is available on OpenRouter as `or-gemini-neon`, an opt-in
+  lead or agent with low, medium, high and xhigh efforts (default `high`).
+  No shipped profile changes.
+
 ### Fixed
 
+- A one-shot result (`claude -p` and SDK callers) on an OpenRouter line
+  was empty when the reply ended with OpenRouter's reasoning record after
+  its text. This happened on Gemini 4 Hydrogen (`or-gemini`) and Carbon
+  (`or-gemini-carbon`) in 2.6.0; Neon has the same reply shape. The gateway
+  now leaves that record out of such a reply, streamed or in one body, so
+  the result is the text. The record never reaches the client, so it is
+  missing from that conversation from then on, a resume included.
 - Documentation: the quickstart's one-time folder-trust command now starts
   the pinned Claude Code with `DISABLE_AUTOUPDATER=1` and
   `DISABLE_UPDATES=1`, as every charmer session does. Without them that
@@ -18,6 +31,46 @@ follow [Semantic Versioning](https://semver.org/).
   own `claude` may be newer than you chose. The page also says that no
   question appears when a folder above the scopes folder is already
   trusted.
+
+### Changed
+
+- The gateway logs one info line per removal,
+  `openrouter reasoning record removed: records=N`, with nothing of the
+  record's content.
+- The gateway stays CLIProxyAPI 8.0.76, now with 31 local patches, built
+  with Go 1.27.4 (golang.org/x/crypto 0.59.0, x/net 0.63.0, oauth2 0.38.0,
+  fsnotify 1.10.1); its bytes change, so the update needs a gateway restart.
+  Run the guarded `charmer gateway restart` between turns
+  ([updating from 2.6.0](docs/update.md#updating-from-260)).
+- Catalog 46 ships with 2.6.1. Claude Code stays at 2.1.326; state and
+  record formats stay 4. A rollback checks for use of Neon before switching
+  and needs a guarded restart under 2.6.0
+  ([before going back to 2.6.0](docs/update.md#before-going-back-to-260)).
+
+### Known limits
+
+- A request that ended before the gateway recorded its result (a stopped
+  turn or an expired deadline) can still log a failed credential save
+  (`operation=result … stage=store category=error errno=0`), most often for
+  a Codex credential. This holds gateway stops, restarts and updates. Keep
+  the gateway running and wait for a persisted save of that credential;
+  sign in again only if none comes. If it still holds, check the credentials
+  with `charmer providers list`, then run `charmer gateway clear-hold` in a
+  plain terminal between turns and type `clear-hold` to confirm.
+- Subagent reports were not affected: on Claude Code 2.1.326, a foreground
+  and a background subagent each returned its text to the lead in a fixture
+  test.
+- The fix applies only to a native Claude Messages reply on a third-party
+  API key. It may contain only `thinking`, `redacted_thinking` and `text`
+  blocks; the OpenRouter records must directly follow a text block, and
+  the reply must end with `end_turn`. Replies with tool calls keep their
+  records.
+- A stream holds the pending records up to 8 MiB or 10 seconds. At either
+  limit it sends the held frames unchanged and in order. Time is checked
+  when a frame arrives and at the end of the stream, not on a timer.
+- Fixtures are synthetic; no raw OpenRouter stream was captured.
+
+The trailing record was measured live on 2026-11-18 on the shipped OpenRouter lines: [LIVE-CHECK RESULT, the lead completes this]
 
 ## [2.6.0] — 2026-11-18
 

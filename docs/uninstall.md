@@ -53,7 +53,8 @@ It refuses, removing nothing of the affected store, while:
   `--force` overrides and names them;
 - another charmer command is writing session state or one of the
   stores it would remove (it waits a moment first);
-- a sign-in save is unconfirmed (also with the gateway stopped);
+- a sign-in save is unconfirmed (also with the gateway stopped); follow
+  [the persistence hold](guides/gateway.md#the-persistence-hold);
 - an installer, update, machine move or service hand-off holds the
   gateway (the message names the owner and its fix);
 - the gateway service cannot be checked, or was not written by

@@ -95,13 +95,13 @@ installation (a source tree, or the prefix of an installed package: its
                                  # charmer-gateway.service by default)
 ```
 
-Release: 2.6.0 (catalog 45; `version.json` is the packaged identity).
+Release: 2.6.1 (catalog 46; `version.json` is the packaged identity).
 Current default: the **`balanced` seed profile**
 (`catalog/profiles/balanced.json`): Opus 5.5 lead at ultracode, Sol high
 explorer/xhigh analyst, Opus analyst-strong, Luna max / Sol xhigh / Sol max
 implementer grades, Sol max reviewer and Opus reviewer-strong.
 `sol` and `astra` are GPT-6.2 Sol and Astra and `or-gpt` is GPT-6.2 Sol on
-OpenRouter (catalog 45, generation-tagged selectors); the retired keys
+OpenRouter (generation-tagged selectors since catalog 45); the retired keys
 `sol@6.1`, `astra@6` and `or-gpt@6.1` keep running sessions on their
 earlier models until resume (not on the OpenAI API-key route, which serves
 reviewed lines only). No seed changed for the move. All three GPT-6.2 lines
@@ -109,8 +109,10 @@ had managed live turns on 2026-11-18; their `minimum_tested` is Claude Code
 2.1.326 / CLIProxyAPI 8.0.76, not a context-limit measurement.
 `or-gemini` is Gemini 4 Hydrogen with generation-tagged selectors;
 `or-gemini@3.8` keeps Gemini 3.8 Flash sessions until resume. The OpenRouter
-seed follows the key. `or-gemini-carbon` is a New line in no seed. Neither
-Gemini 4 line was checked by a live request in this release.
+seed follows the key. `or-gemini-carbon` and `or-gemini-neon` are New
+lines in no seed. Neon is an opt-in lead or agent with low, medium, high
+and xhigh efforts (default `high`). The [OpenRouter guide](docs/providers/openrouter.md)
+separates the listing facts from live checks on all three Gemini 4 lines.
 The `haiku` line is Haiku 5.5 on the Claude account, agents only (explorer
 and light writer), not an independent reviewer of Opus, Sonnet or Fable.
 `muse` is Muse Wonder 1.0; `or-deepseek` is DeepSeek V4.1 Flash 1017 and
@@ -123,8 +125,8 @@ The trusted catalog pins Claude
 **2.1.326** as the verified binary. The gateway is **CLIProxyAPI 8.0.76**
 (pinned in `gateway/UPSTREAM.json` and built by `tools/build.py` with the official
 Go 1.27.4 toolchain, `CGO_ENABLED=0`; see "Gateway build" in §4) with
-thirty local patches (admission ids 1–10, 12, 13, 15–23, 26–29, 31, 32
-and 34–36; 11 was never admitted, 14 retired with 8.0.33, 24 and 25 retired
+thirty-one local patches (admission ids 1–10, 12, 13, 15–23, 26–29, 31, 32
+and 34–37; 11 was never admitted, 14 retired with 8.0.33, 24 and 25 retired
 with 8.0.42, 33 retired with 8.0.44, and 30 was withdrawn) —
 loopback OAuth bind, Kimi/Claude compat, the non-Claude cache-retention
 boundary (§2 invariant 11), the read-only management allowlist (an
@@ -243,6 +245,16 @@ declaration is still the connection's own, so a reload that changes it
 stops a request in flight before any byte, TLS handshake included (Go gate `private-network-dial`, rows T1–T8 in
 `tests/test_gateway_private_network.py`, PN1). Without #36 the launcher
 renders nothing of such a provider.
+#37 leaves OpenRouter's trailing reasoning record (a run of `redacted_thinking`
+blocks whose `data` starts `openrouter.reasoning:`) out of a native Claude
+Messages reply on a third-party API-key entry, streamed and in one body,
+when the run directly follows a text block, the reply holds only `thinking`,
+`redacted_thinking` and `text` blocks and it ends with `end_turn`; a stream
+holds the run at most 8 MiB or 10 s, checked when a frame arrives and at the
+end, and any other outcome sends the held frames unchanged and in order.
+Each removal logs `openrouter reasoning record removed: records=N` at info
+(Go gate `trailing-reasoning-record`, rows RR1/RR2, controls RRC1/RRC2,
+pinned-client class `TrailingRecordThroughGatewayTests`).
 Refused credentialed redirects yield fixed local 502
 `upstream redirect refused`, with no upstream body/Location or path-bearing
 refusal log. Keyed-compat safety is
@@ -2346,7 +2358,8 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
      codex-api-key-safety → refresh-shutdown-join → openai-content-chunks →
      charmer-model-ids → output-cap → context-error-normalization →
      log-reduction → tool-call-integrity → initial-registration →
-     terminal-rejection-reload.
+     terminal-rejection-reload → codex-refresh-without-journal →
+     native-advisor-beta-order → private-network-dial → trailing-reasoning-record.
      Retry-After (11) is not
      admitted. New hunks must be generated against the
      **sequentially patched** source. Generate it offline against
@@ -2720,7 +2733,7 @@ the operator's approval. Doctor never retires backups.
   not live-checked on 6.2. Default high stays. No new full battery or
   context-limit test; provider bound 1M and validated floor 200,000 stay
   unchanged.
-- **Gemini 4 on OpenRouter (catalog 45):** `or-gemini` moves to Hydrogen
+- **Gemini 4 on OpenRouter:** in catalog 45, `or-gemini` moved to Hydrogen
   (`google/gemini-4-hydrogen`, generation `4`,
   `charmer-or-gemini-4-<effort>[1m]`, low/medium/high/xhigh, default high).
   Low and medium are contract-level only (listing-advertised, not
@@ -2729,18 +2742,17 @@ the operator's approval. Doctor never retires backups.
   selectors on `google/gemini-3.8-flash` until resume. `or-gemini-carbon`
   is new, in no seed (`google/gemini-4-carbon`, generation `4`,
   `charmer-or-gemini-carbon-<effort>[1m]`, low/medium/high, default high).
-  Both keep lead/agents capabilities and all roles. OpenRouter's public
-  list read 2026-11-18 gives each 1,048,576 context and 943,718 max completion
-  tokens (Hydrogen created 2026-11-12; Carbon 2026-11-10), with tools,
-  tool_choice, reasoning, reasoning_effort and structured_outputs.
-  Neither was checked by a live request in this release, by the operator's
-  choice. Provider bound 1M is listing-based; validated floor 200,000 is
-  conservative, not measured on Gemini 4. Hydrogen's inherited
-  `minimum_tested` 2.1.286 / 7.3.15 describes Gemini 3.8 Flash's 2026-10-02
-  tests. Carbon's 2.1.286 / 8.0.76 is scaffold metadata (inherited client
-  floor, current gateway baseline), not test evidence; it has never been
-  live-tested. `models qualify` refuses catalog lines; it is not their
-  requalification path.
+  Catalog 46 adds `or-gemini-neon`, also New and in no seed
+  (`google/gemini-4-neon`, generation `4`, `charmer-or-gemini-neon-<effort>[1m]`,
+  low/medium/high/xhigh, default high). All three support lead and agents,
+  all roles. OpenRouter's public list read 2026-11-18 gives each 1,048,576
+  context and 943,718 max completion tokens (65,536 on one AI Studio endpoint
+  for Neon). Provider bound 1M is listing-based; validated floor 200,000 is
+  conservative, not measured on Gemini 4. Hydrogen's inherited `minimum_tested`
+  2.1.286 / 7.3.15 describes Gemini 3.8 Flash's 2026-10-02 tests. For Carbon
+  and Neon, 2.1.286 / 8.0.76 records the inherited client floor and current
+  gateway baseline, not test evidence. `models qualify` refuses catalog lines;
+  it is not their requalification path.
 - **GPT-6 lines (catalog 33; current for Luna):** the approved 2026-09-26 acceptance probe
   (through the gateway) set the context: 868,925 input tokens accepted on
   gpt-6-sol/luna/astra, ~985K rejected on luna, so `provider_tokens` =
@@ -2981,7 +2993,7 @@ Messages-first onboarding is unchanged. The trusted
 through `cliproxy-openai-compat-v1`; T2 `openai-compatible` and equivalent T1
 shapes share the metadata-only closed-gate preflight and render precondition.
 It is not an approval, admission, qualification or LAN-agent/Platform grant.
-No new state version, catalog version, seed or gateway patch is introduced.
+The keyed audit itself adds no state version, catalog version, seed or gateway patch.
 
 The shared operator/secret-store/served-plan/qualification owners remain §3.2/§9/§10.
 One provider/key/nonempty model list, optional static canonical X-Client only,
@@ -3007,7 +3019,7 @@ Audit=true is guarded by `tests/fixtures/keyed-compat-audit.json` and
 manifest (equal to the actual patch bytes, the catalog order and the packaged
 contract), each shipped patch numbered by its reviewed admission id
 (`test_packaging.PATCH_IDS`, never inferred from position or series length;
-11, 14, 24 and 25 are excluded, 30 was withdrawn), mandatory 3/9/10,
+11, 14, 24, 25 and 33 are excluded, 30 was withdrawn), mandatory 3/9/10,
 build definition, recipe and build tool, source/vendor, client and exact whole-file
 relevant-source identities plus complete core/audit/client/`J1` proof (34 rows:
 5 core, 11 audit, 9 client and 9 journeys). The shipped flag is true only with

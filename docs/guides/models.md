@@ -75,7 +75,7 @@ Every managed session names the model for Claude Code's own background requests
 the haiku model, otherwise the lead, so a value in your own or your project's
 settings cannot send them outside the session's models.
 
-### Lines moved in this release
+### Lines moved in 2.6.0
 
 - `sol` uses GPT-6.2 Sol (`gpt-6.2-sol`) and `astra` uses GPT-6.2 Astra
   (`gpt-6.2-astra`), on the ChatGPT account and on an OpenAI API key.
@@ -101,8 +101,7 @@ settings cannot send them outside the session's models.
   medium and max are contract-level only (listing-advertised, not
   measured); xhigh has not been live-checked on 6.2. Default `high` stays.
 - `or-gemini` uses Gemini 4 Hydrogen on OpenRouter
-  (`google/gemini-4-hydrogen`), not checked by a live request in this
-  release. Low and medium join high and xhigh as contract-level efforts
+  (`google/gemini-4-hydrogen`). Low and medium join high and xhigh as efforts
   (listing-advertised, not measured), with default `high`. The earlier
   high/xhigh battery ran on Gemini 3.8 Flash, not Hydrogen.
   The `openrouter` profile follows this key.
@@ -119,23 +118,33 @@ and `astra@6`, so such a session needs its resume, onto GPT-6.2, right away
 ([the GPT-6.2 lines](../update.md#the-gpt-62-lines)); `or-gpt@6.1` and
 `or-gemini@3.8` stay served on OpenRouter.
 
-The new `or-gemini-carbon` line selects `google/gemini-4-carbon`, with low,
-medium and high, default `high`, and selectors
-`charmer-or-gemini-carbon-<effort>[1m]`. It is in no shipped profile: bind
-it in the profile editor, or select it in the Direct picker. Enter in
-Models only adds the optional admission badge; it does not bind the line.
-Carbon has never been checked by a live request.
+### Gemini 4 on OpenRouter
 
-Both Gemini 4 lines use OpenRouter's public models list of 2026-11-18:
-Hydrogen was created on 2026-11-12, Carbon on 2026-11-10; each lists
-1,048,576 context tokens and 943,718 max completion tokens. The 1M provider
-bound is listing-based, and the validated 200,000-token floor is
-conservative, not measured on Gemini 4. Hydrogen's inherited
-`minimum_tested` pair, Claude Code 2.1.286 / CLIProxyAPI 7.3.15, describes
-Gemini 3.8 Flash's tests. Carbon's pair is scaffold metadata, not a test:
-Claude Code 2.1.286 inherited from that line and the current gateway
-baseline, CLIProxyAPI 8.0.76. The `models qualify` command is for lines you
-declare yourself, not catalog lines.
+The `openrouter` profile uses Hydrogen (`or-gemini`) for its reviewer.
+Carbon and Neon are opt-in lines. Choose either in the Direct picker or
+bind it as lead or agent in the profile editor; no shipped profile selects
+it. Enter in Models adds an optional badge, not a binding.
+
+| Line | OpenRouter model | Efforts (default) | Selector |
+| --- | --- | --- | --- |
+| `or-gemini-carbon` | `google/gemini-4-carbon` | low, medium, high (`high`) | `charmer-or-gemini-carbon-<effort>[1m]` |
+| `or-gemini-neon` | `google/gemini-4-neon` | low, medium, high, xhigh (`high`) | `charmer-or-gemini-neon-<effort>[1m]` |
+
+OpenRouter's public list of 2026-11-18 gives all three Gemini 4 lines
+1,048,576 context tokens and 943,718 max completion tokens, with a 65,536
+completion cap on one AI Studio endpoint for Neon. The 1M provider bound
+and the efforts are listing-based; the validated floor of 200,000 is not
+a Gemini 4 capacity measurement. Hydrogen's `minimum_tested` pair describes
+Gemini 3.8 Flash's tests. For Carbon and Neon it records the inherited
+client floor and gateway baseline, not a test. The `models qualify` command
+is for lines you declare yourself, not catalog lines.
+
+Live checks on Gemini 4: [LIVE-CHECK EVIDENCE, the lead completes this]
+
+When OpenRouter ends a text-and-reasoning reply with its reasoning record
+directly after the text, the gateway leaves the record out at `end_turn`.
+A one-shot caller gets the text; the removed record is missing on later
+turns and on resume. See [one-shot results](../providers/openrouter.md#one-shot-results).
 
 ### Lines moved in 2.3.0
 

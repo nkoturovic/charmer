@@ -166,9 +166,10 @@ restart.
 | HTTP 400 `prompt_cache_retention is not supported on this model` | the running gateway predates the release: `charmer gateway restart` between turns |
 | after `charmer update`: two `gateway restart pending` rows | one `charmer gateway restart` between turns clears both; then `charmer update --verify` |
 | doctor: `private-network providers are served only after the gateway restarts`, or `gateway reloaded without the private-network selector(s)` | `charmer gateway restart` between turns |
+| an update or rollback says “the gateway cannot be replaced now” after a failed save | keep the gateway running; wait for a persisted save of that credential, signing in again only if none comes. If still held, check `charmer providers list`, then `charmer gateway clear-hold` in a plain terminal between turns (type `clear-hold`). When status shows no hold, retry the update or rollback |
 | doctor: “gateway persistence hold: HELD because part of the log could not be evaluated” | keep it running; `charmer providers list`, then `charmer gateway clear-hold` in a terminal outside Claude Code |
 | the gateway does not start after `charmer update`; doctor: “if this began after charmer update” | `charmer update --rollback`, then `charmer gateway start` |
-| `charmer update --rollback` lists what the previous version “cannot read”, or `--yes` refuses | apply the listed fixes, or run `charmer update --rollback` without `--yes` and confirm to roll back anyway |
+| the rollback preflight lists what the previous version “cannot read”, and `--yes` refuses | apply the listed fixes, or run `charmer update --rollback` without `--yes` and confirm to roll back anyway |
 | doctor: “continuity alias <alias> is not served”, or aliases “not used by any running session” | `charmer doctor --prune-aliases --preview` to review the plan, then `charmer doctor --prune-aliases`; name aliases only to keep some |
 
 ### Providers and models
@@ -181,6 +182,7 @@ restart.
 | “… changed while you were deciding — nothing written” | run the command again and check its new preview |
 | `providers rm <id> --yes`: the key was kept | `charmer providers remove-key <provider>` (with `--name`, as printed) |
 | a keyed OpenAI-compatible provider: “keyed generic openai-compatible routes are unavailable in this build: their compatibility audit gate is closed” | this build's keyed OpenAI-compatible audit is closed; use the vendor's Anthropic-compatible endpoint, OpenRouter, or a keyless server on your network ([providers/openai-compatible.md](providers/openai-compatible.md)) |
+| OpenRouter: a Gemini 4 one-shot result is empty despite text in the reply | `charmer --version`, then `charmer gateway status`; [update from 2.6.0](update.md#updating-from-260) or, for a pending restart after the update, `charmer gateway restart` between turns, then `charmer update --verify` |
 | doctor: “gateway substitution:” | the provider served another model; rebind the agent if it matters |
 | Anthropic or OpenAI on its API key: doctor “<name> is not set — charmer providers set-key” | save the key: `charmer providers set-key <provider>`, or G → K on the provider; or back to the account: `charmer providers transport <provider> oauth-pool` ([providers/api-keys.md](providers/api-keys.md#openai)) |
 | doctor: “the <choice> transport of <provider> is not approved for the current …” or “its selectors are not served” | `charmer providers transport <provider> api-key` again (terminal), or back: `charmer providers transport <provider> oauth-pool` |

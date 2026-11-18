@@ -142,8 +142,9 @@ and error code, refresh failures) without account details, and
 
 When a signed-in account's refreshed credentials may not have been saved
 (a failed or unconfirmed save, or a log not fully read), charmer
-holds the gateway: stop, restart, an update or an uninstall that would
-replace it are refused, because restarting could lose the only good copy.
+holds the gateway. It refuses a stop, restart or uninstall, and any update
+or rollback that would replace the gateway. Restarting could lose the only
+good copy.
 Keep it running, free disk space if that was the cause, and wait for a
 confirmed save; sign in again only if none comes. Once you have checked
 the credentials (`charmer providers list`),
@@ -199,10 +200,19 @@ What to do depends on the reason:
   and doctor. A new gateway instance needs a new check, and later failed saves
   still hold. Unreadable system-journal drop notices remain advisory as
   described above.
-- **A credential save failed:** keep the gateway running and wait for a
-  persisted save of that credential (sign in again only if none comes),
-  and clear only after checking it. A restart-risk or observation problem
-  never turns a failed save into a coverage-only hold.
+- **A credential save failed:** if a turn stops or a request reaches its
+  deadline before the gateway records its result, the gateway can log a
+  failed save (`operation=result … stage=store category=error errno=0`),
+  most often for a Codex credential. A real store error can produce the
+  same evidence. The 2.6.0 updater refuses to switch to 2.6.1 while the
+  gateway is held; installing 2.6.1 does not remove this limit. Keep the
+  gateway running and wait for a persisted save of that credential; sign
+  in again only if none comes. If it still holds, check the credentials
+  with `charmer providers list`, then run `charmer gateway clear-hold` in
+  a plain terminal outside Claude Code between turns. Type `clear-hold`
+  to confirm. When `charmer gateway status` shows no hold, run the update
+  again (or retry the restart if the update already finished). A gap in
+  log coverage never turns a failed save into a coverage-only hold.
 
 The process-start observation needs systemd 248 or newer. On older systemd,
 its unavailability is a coverage gap you can acknowledge after checking the
@@ -276,6 +286,14 @@ before they reach Claude Code.
   the marker never reaches a provider. After a switch to a model on another
   route, Claude Code drops those preambles itself. Tool calls and tool
   results are kept; reasoning is replayed only with a compatible signature.
+- On a third-party API key using native Claude Messages, the gateway leaves
+  out OpenRouter reasoning records at the end of a text-and-reasoning reply
+  when they directly follow a text block and the reply ends with `end_turn`.
+  Tool calls, first-party traffic and translated replies are unchanged.
+  A stream holds the pending records up to 8 MiB or 10 seconds, checked on
+  the next frame or at stream end. At either limit it sends the held frames
+  unchanged, in order. See [one-shot results](../providers/openrouter.md#one-shot-results)
+  for what the caller gets and what is missing on resume.
 
 ## Thinking from content chunks
 

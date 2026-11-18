@@ -40,14 +40,96 @@ to do, 1 refused or failed, 2 usage, 3 declined, 130 cancelled. Doctor and
 the card show how old the installed release is.
 
 A running gateway keeps the version it started from until you restart it
-between turns (`charmer gateway restart`); while its persistence hold
-is active, a switch that changes the gateway waits.
+between turns (`charmer gateway restart`). While its persistence hold is
+active, an update or rollback that changes the gateway is refused.
+
+### Updating from 2.6.0
+
+charmer 2.6.1 keeps the gateway on CLIProxyAPI 8.0.76, now with 31 local
+patches, built with Go 1.27.4. The gateway's bytes change, so this update
+needs a gateway restart. It fixes the [empty one-shot result on
+OpenRouter](providers/openrouter.md#one-shot-results). Catalog 46 adds
+Gemini 4 Neon as `or-gemini-neon`; no shipped profile changes. Claude Code
+stays at 2.1.326; state and record formats stay 4.
+
+In a plain terminal outside Claude Code, between turns, run each step only
+after checking the previous result:
+
+```bash
+charmer update
+charmer --version
+charmer gateway status
+charmer gateway restart
+charmer update --verify
+charmer doctor
+```
+
+**If the update is held**, 2.6.0's updater refuses before it switches:
+
+> charmer update: `the gateway cannot be replaced now: the gateway's persistence hold is active: <reason> — <remedy>; nothing was changed`
+>
+> `fix: keep the gateway running until charmer gateway status shows the hold cleared, then run the update again`
+
+A stopped turn or an expired request can leave a failed credential save,
+most often on Codex. Keep the gateway running. Wait for a persisted save of the same
+credential; sign in again only if none comes. If the hold remains, verify
+the credentials with `charmer providers list`, then run
+`charmer gateway clear-hold` in a plain terminal between turns and type
+`clear-hold` to confirm. When `charmer gateway status` shows no hold, run
+`charmer update` again. The update does not remove this limit.
+
+**After a successful update**, a running gateway still uses 2.6.0's bytes.
+Status shows `gateway restart pending` for the binary. There is no new
+restart row for start arguments or the environment filter. The guarded
+restart checks ownership and the hold again. If it is held, leave the
+gateway running, follow [the persistence hold](guides/gateway.md#the-persistence-hold)
+and retry the restart, not the update. On Linux, `charmer update --verify`
+reports `running-gateway: different-running-build` before the restart and
+`running-gateway: current-match` after it; on macOS this check reports
+`unavailable`.
+
+If you declared `google/gemini-4-neon` on OpenRouter yourself, your line
+yields to `or-gemini-neon`. Remove it with the command doctor gives, for
+example `charmer models rm custom-google-gemini-4-neon --successor or-gemini-neon`
+([models you added that now ship](#models-you-added-that-now-ship)).
+
+#### Before going back to 2.6.0
+
+If 2.6.0 is the retained release, `charmer update --rollback` checks your
+state against its catalog before it asks. 2.6.0 has no `or-gemini-neon`
+line. The check lists profiles, named bindings, the Settings workflow
+default and running sessions that use Neon. For example:
+
+```text
+Profiles and named bindings 2.6.0 cannot evaluate (docs/update.md#rolling-back):
+  - Settings workflow_default_binding.model: unknown model key 'or-gemini-neon' — change or clear the workflow default in Settings (charmer, then O)
+  - bindings.neon-review.model: unknown model 'or-gemini-neon' — rebind it in the profile editor (charmer, then P)
+  - profile neon: lead.model: unknown model 'or-gemini-neon' — charmer profile edit neon
+Running sessions on selectors 2.6.0 does not serve (docs/update.md#rolling-back):
+  - session 88888888 uses charmer-or-gemini-neon-xhigh, which 2.6.0 does not serve — exit it first (end the session; after the rollback, charmer -r 88888888-8888-4888-8888-888888888888 resumes it on 2.6.0's models)
+```
+
+With a finding, the default is No and `--yes` refuses. Rebind the listed
+profiles and bindings, change or clear the workflow default (**O** on the
+card), and exit sessions running on Neon. Also choose a 2.6.0-compatible
+lineup for any session you intend to resume on that release: exiting does
+not change its saved lineup. Then run `charmer update --rollback` again.
+A persistence hold is separate from these findings: confirming the
+rollback does not waive it.
+
+After the rollback, run the guarded `charmer gateway restart` under 2.6.0
+between turns. This restores 2.6.0's handling of OpenRouter replies.
+Check `charmer update --verify`, then run `charmer doctor --repair-all`.
+State and record formats stay 4.
 
 ### Updating from 2.5.0
 
+The changes below describe the update from 2.5.0 to 2.6.0. If updating
+straight to 2.6.1, also see [updating from 2.6.0](#updating-from-260).
+
 charmer 2.6.0 moves the gateway to CLIProxyAPI 8.0.76 with 30 local patches,
 built with Go 1.27.4, and Claude Code from 2.1.322 to 2.1.326. Catalog 45
-ships with this release; the bundled CPython stays 3.15.2
+ships with 2.6.0; the bundled CPython stays 3.15.2
 (python-build-standalone 20261110). The gateway's bytes change, so this
 update needs a gateway restart. Updating switches the installation, not the
 running gateway. Between turns, in a plain terminal outside Claude Code, run
@@ -117,7 +199,7 @@ installation, even without an OpenRouter key, until you optionally admit
 the line. It is informational, not a blocker; neither admission nor use
 is required.
 
-If you declared a model yourself that this release now ships as a line, the
+If you declared a model yourself that 2.6.0 added as a line, the
 shipped line serves it and yours yields, with one Attention row and its
 remedy: `charmer models rm <line> --successor <line>`
 ([models you added that now ship](#models-you-added-that-now-ship)). For
@@ -133,9 +215,9 @@ This section also covers `or-gemini`'s move to Gemini 4 Hydrogen.
 
 Catalog 45 moves `sol` to GPT-6.2 Sol and `astra` to GPT-6.2 Astra, on the
 ChatGPT account and on an OpenAI API key, and `or-gpt` to GPT-6.2 Sol on
-OpenRouter ([models guide](guides/models.md#lines-moved-in-this-release)).
+OpenRouter ([models guide](guides/models.md#lines-moved-in-260)).
 `or-gemini` moves the same way, from Gemini 3.8 Flash to Gemini 4 Hydrogen
-on OpenRouter, but was not checked by a live request in this release.
+on OpenRouter, but was not checked by a live request before 2.6.0 shipped.
 Profiles and bindings that name these keys follow without reseeding or effort
 changes. On the Free, Free workspace and K-12 plans neither `sol` nor
 `astra` is served ([ChatGPT account](providers/chatgpt-account.md#5-use-it)).
@@ -782,9 +864,10 @@ release's own rules; nothing is changed by the check:
    providers apply, models add and models rm commands refuse. Each is
    listed with its file and line and its fix (`charmer models rm <line>`, or
    `charmer models edit <line>`).
-2. **Profiles and named bindings** — every error the previous version's
-   doctor would report for a profile or a named binding, with the profile to
-   edit.
+2. **Profiles and named bindings** — errors for a profile, a named binding
+   or the Settings workflow default under the previous catalog. Each finding
+   says where to rebind it; the workflow default can also be cleared in
+   Settings (**O** on the card).
 3. **Running sessions** — a session whose lead or agent runs on a selector
    this release serves and the previous version would not (its model picker
    does not count: the previous version recompiles it at the next resume).

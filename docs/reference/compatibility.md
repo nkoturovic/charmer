@@ -272,6 +272,13 @@ contexts or signed reasoning history.
   recognise, Claude Code 2.1.322 sends it up to five more times on the same
   model before it shows the error (2.1.312's first resend also dropped its
   thinking-token-count beta).
+- On Claude Code 2.1.326 an OpenRouter reasoning record after the reply's
+  text can leave a one-shot result empty. A foreground and a background
+  subagent still returned their reports to the lead in separate fixture
+  tests. For a text-and-reasoning reply ending `end_turn`, the gateway
+  leaves out the OpenRouter record directly after the final text: `claude -p`
+  and SDK callers get the text, but later turns and resumes lack the removed
+  record. Tool-call replies keep it ([one-shot results](../providers/openrouter.md#one-shot-results)).
 - A synthetic session made by 2.1.326, including a tool turn and manual
   compaction, resumes on the previous pin, 2.1.322, from its summary without
   replaying the old tool turn. This does not verify every operator session
