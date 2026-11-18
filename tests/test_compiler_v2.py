@@ -648,7 +648,7 @@ class EnvTests(unittest.TestCase):
                 fenced = {selector.removesuffix("[1m]") for selector in plan.settings["availableModels"]}
                 self.assertEqual(fenced - names, {"claude-opus-5-5", "claude-fable-5-2", "claude-sonnet-5-5",
                                                   "claude-opus-4-8", "claude-opus-5", "claude-sonnet-5"})
-                self.assertIn("gpt-multi-sol-6-1-high", names)
+                self.assertIn("gpt-multi-sol-6-2-high", names)
                 self.assertIn("charmer-or-opus-xhigh", names)
                 self.assertIn("charmer-or-grok-high", names)
 
