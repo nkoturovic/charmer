@@ -3364,27 +3364,30 @@ class GenerationMoveTests(unittest.TestCase):
                 self.assertEqual((context["provider_tokens"], context["client_tokens"], context["validated_tokens"]),
                                  (1000000, 1000000, 200000))
                 for fact in (f"OpenRouter models list, 2026-11-18: {wire}, created {created}",
-                             "max_completion_tokens 943,718", "Not measured, and no live request",
+                             "max_completion_tokens 943,718",
+                             "Live-checked at effort high on 2026-11-18/19 (charmer 2.6.1 live check, D316)",
                              "provider_tokens=1000000 is listing-based", "not measured on Gemini 4", "200,000 floor"):
                     self.assertIn(fact, context["qualification"])
                 if name == "Neon":
                     for fact in ("on every endpoint", "943,718 (65,536 on one AI Studio endpoint)",
                                  "reasoning and reasoning_effort accepted",
-                                 "Google AI Studio lists Neon as stable"):
+                                 "Google AI Studio lists Neon as stable",
+                                 "a one-shot turn succeeded through 2.6.1's gateway; no tool, continuation or subagent turn"):
                         self.assertIn(fact, context["qualification"])
                 else:
-                    self.assertIn("in this release by the operator's choice", context["qualification"])
-                    if name == "Carbon":
-                        self.assertIn("Carbon has never been live-tested", context["qualification"])
+                    self.assertIn("one-shot, Read-tool, continuation and subagent turns succeeded through 2.6.1's "
+                                  "gateway", context["qualification"])
+                    self.assertIn("known limit", context["qualification"])
+                self.assertIn("D316", line["routing_note"])
                 if status == "new":
                     self.assertIn("minimum_tested is scaffold metadata", context["qualification"])
-                    self.assertIn(f"{'/'.join(levels)}; these are contract-level efforts only "
-                                  "(listing-advertised, not measured)", context["qualification"])
+                    unmeasured = "/".join(level for level in levels if level != "high")
+                    self.assertIn(f"{unmeasured} are contract-level efforts only (listing-advertised, not measured)",
+                                  context["qualification"])
                 else:
                     self.assertIn("minimum_tested describes the earlier Gemini line", context["qualification"])
-                    self.assertIn("low and medium are contract-level only (listing-advertised, not measured)",
+                    self.assertIn("low/medium/xhigh are contract-level (listing-advertised, not measured)",
                                   context["qualification"])
-                    self.assertIn("high/xhigh were checked on Gemini 3.8 Flash, not Hydrogen", context["qualification"])
                 self.assertEqual(set(line["efforts"]), set(levels))
                 for level in levels:
                     spec = line["efforts"][level]

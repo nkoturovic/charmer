@@ -521,7 +521,7 @@
         "declared_tokens": 1048576,
         "ordinary_profile": "large",
         "provider_tokens": 1000000,
-        "qualification": "Listing context_length 1,048,576 (OpenRouter models list, 2026-11-18: google/gemini-4-hydrogen, created 2026-11-12), max_completion_tokens 943,718. Not measured, and no live request, in this release by the operator's choice. provider_tokens=1000000 is listing-based, not measured on Gemini 4; validated_tokens stays at the conservative 200,000 floor. minimum_tested describes the earlier Gemini line: Gemini 3.8 Flash's 2026-10-02 battery (smoke, high, xhigh, forced named tool, stream) and admission smoke passed on Claude Code 2.1.286, CLIProxyAPI 7.3.15. Hydrogen lists low/medium/high/xhigh: low and medium are contract-level only (listing-advertised, not measured); high/xhigh were checked on Gemini 3.8 Flash, not Hydrogen.",
+        "qualification": "Listing context_length 1,048,576 (OpenRouter models list, 2026-11-18: google/gemini-4-hydrogen, created 2026-11-12), max_completion_tokens 943,718. Live-checked at effort high on 2026-11-18/19 (charmer 2.6.1 live check, D316): one-shot, Read-tool, continuation and subagent turns succeeded through 2.6.1's gateway (a Read-tool turn's first request got HTTP 400 three times first; known limit). provider_tokens=1000000 is listing-based, not measured on Gemini 4; validated_tokens stays at the conservative 200,000 floor. minimum_tested describes the earlier Gemini line (Gemini 3.8 Flash; Claude Code 2.1.286, CLIProxyAPI 7.3.15). Hydrogen lists low/medium/high/xhigh: low/medium/xhigh are contract-level (listing-advertised, not measured).",
         "scalar_tokens": null,
         "validated_tokens": 200000
       },
@@ -558,7 +558,7 @@
       "provider": "openrouter",
       "registry_overlay": null,
       "roles": "all",
-      "routing_note": "Gemini 4 Hydrogen through OpenRouter (billed per token): Google-family reviewer. Not checked by a live request in this release. Retired or-gemini@3.8 keeps Gemini 3.8 Flash sessions until resume.",
+      "routing_note": "Gemini 4 Hydrogen through OpenRouter (billed per token): Google-family reviewer. Live-checked at effort high in 2.6.1 (D316). Retired or-gemini@3.8 keeps Gemini 3.8 Flash sessions until resume.",
       "status": "active",
       "wire_model": "google/gemini-4-hydrogen"
     },
@@ -572,7 +572,7 @@
         "declared_tokens": 1048576,
         "ordinary_profile": "large",
         "provider_tokens": 1000000,
-        "qualification": "Listing context_length 1,048,576 (OpenRouter models list, 2026-11-18: google/gemini-4-carbon, created 2026-11-10), max_completion_tokens 943,718. Not measured, and no live request, in this release by the operator's choice. provider_tokens=1000000 is listing-based, not measured on Gemini 4; validated_tokens stays at the conservative 200,000 floor. minimum_tested is scaffold metadata: Claude Code 2.1.286 inherited from the earlier Gemini line, CLIProxyAPI 8.0.76 from the catalog's gateway baseline. Carbon has never been live-tested. Carbon lists low/medium/high; these are contract-level efforts only (listing-advertised, not measured).",
+        "qualification": "Listing context_length 1,048,576 (OpenRouter models list, 2026-11-18: google/gemini-4-carbon, created 2026-11-10), max_completion_tokens 943,718. Live-checked at effort high on 2026-11-18/19 (charmer 2.6.1 live check, D316): one-shot, Read-tool, continuation and subagent turns succeeded through 2.6.1's gateway (a Read-tool turn's first request got HTTP 400 three times first; known limit). provider_tokens=1000000 is listing-based, not measured on Gemini 4; validated_tokens stays at the conservative 200,000 floor. minimum_tested is scaffold metadata (Claude Code 2.1.286, CLIProxyAPI 8.0.76). Carbon lists low/medium/high; low/medium are contract-level efforts only (listing-advertised, not measured).",
         "scalar_tokens": null,
         "validated_tokens": 200000
       },
@@ -605,7 +605,7 @@
       "provider": "openrouter",
       "registry_overlay": null,
       "roles": "all",
-      "routing_note": "Gemini 4 Carbon through OpenRouter (billed per token): opt-in Google-family lead or agent, in no seed. Not checked by a live request in this release; low/medium/high are listing-based contracts.",
+      "routing_note": "Gemini 4 Carbon through OpenRouter (billed per token): opt-in Google-family lead or agent, in no seed. Live-checked at effort high in 2.6.1 (D316); low/medium are listing-based contracts.",
       "status": "new",
       "wire_model": "google/gemini-4-carbon"
     },
@@ -619,7 +619,7 @@
         "declared_tokens": 1048576,
         "ordinary_profile": "large",
         "provider_tokens": 1000000,
-        "qualification": "Listing context_length 1,048,576 (OpenRouter models list, 2026-11-18: google/gemini-4-neon, created 2026-11-18) on every endpoint; max_completion_tokens 943,718 (65,536 on one AI Studio endpoint); reasoning and reasoning_effort accepted. Not measured, and no live request yet. provider_tokens=1000000 is listing-based, not measured on Gemini 4; validated_tokens stays at the conservative 200,000 floor. minimum_tested is scaffold metadata: Claude Code 2.1.286 inherited from the earlier Gemini line, CLIProxyAPI 8.0.76 from the catalog's gateway baseline. Google AI Studio lists Neon as stable with 1,048,576 context and thinking levels low/medium/high/xhigh; these are contract-level efforts only (listing-advertised, not measured).",
+        "qualification": "Listing context_length 1,048,576 (OpenRouter models list, 2026-11-18: google/gemini-4-neon, created 2026-11-18) on every endpoint; max_completion_tokens 943,718 (65,536 on one AI Studio endpoint); reasoning and reasoning_effort accepted. Live-checked at effort high on 2026-11-18/19 (charmer 2.6.1 live check, D316): a one-shot turn succeeded through 2.6.1's gateway; no tool, continuation or subagent turn. provider_tokens=1000000 is listing-based, not measured on Gemini 4; validated_tokens stays at the 200,000 floor. minimum_tested is scaffold metadata (Claude Code 2.1.286, CLIProxyAPI 8.0.76). Google AI Studio lists Neon as stable with thinking levels low/medium/high/xhigh; low/medium/xhigh are contract-level efforts only (listing-advertised, not measured).",
         "scalar_tokens": null,
         "validated_tokens": 200000
       },
@@ -656,7 +656,7 @@
       "provider": "openrouter",
       "registry_overlay": null,
       "roles": "all",
-      "routing_note": "Gemini 4 Neon through OpenRouter (billed per token): opt-in Google-family lead or agent, in no seed. Not yet live-checked; low/medium/high/xhigh are listing-based contracts.",
+      "routing_note": "Gemini 4 Neon through OpenRouter (billed per token): opt-in Google-family lead or agent, in no seed. One-shot live-checked at effort high in 2.6.1 (D316); low/medium/xhigh are listing-based contracts.",
       "status": "new",
       "wire_model": "google/gemini-4-neon"
     },

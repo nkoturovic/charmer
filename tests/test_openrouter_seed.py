@@ -232,7 +232,7 @@ class ShippedSeedTests(unittest.TestCase):
                                      set(provider["payload_contracts"]))
                 self.assertIn(f"Listing context_length {entry['context']['declared_tokens']:,} (OpenRouter models list",
                               entry["context"]["qualification"])
-                evidence = ("no live request" if key in ("or-gemini", "or-gemini-carbon", "or-gemini-neon")
+                evidence = ("Live-checked at effort high" if key in ("or-gemini", "or-gemini-carbon", "or-gemini-neon")
                             else "admission smoke passed")
                 self.assertIn(evidence, entry["context"]["qualification"])
                 self.assertEqual(entry["context"]["validated_tokens"], 200000)

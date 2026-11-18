@@ -139,7 +139,12 @@ Gemini 3.8 Flash's tests. For Carbon and Neon it records the inherited
 client floor and gateway baseline, not a test. The `models qualify` command
 is for lines you declare yourself, not catalog lines.
 
-Live checks on Gemini 4: [LIVE-CHECK EVIDENCE, the lead completes this]
+Live checks on Gemini 4: charmer 2.6.1's live check (2026-11-18 and 2026-11-19, effort `high`) passed
+one-shot, Read-tool, continuation and subagent turns on `or-gemini` and `or-gemini-carbon`, and a one-shot
+turn on `or-gemini-neon`. Their context bounds were not measured, and their other efforts are
+contract-level. On Hydrogen and Carbon, a turn that offers the Read tool can have its first request
+refused by OpenRouter with HTTP 400 a few times before it succeeds; the turn recovers without
+intervention.
 
 When OpenRouter ends a text-and-reasoning reply with its reasoning record
 directly after the text, the gateway leaves the record out at `end_turn`.
