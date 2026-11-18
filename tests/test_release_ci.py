@@ -1056,6 +1056,22 @@ fx() {
         for job in ("service-linux", "journeys-linux"):
             self.assertIn("JOURNEY_PERMISSIONS=1", jobs[job])
 
+    def test_the_evidence_job_stages_every_control_client(self) -> None:
+        """An essential record may need a control client (FD's gateway
+        boundary needs the fallback control): the evidence job downloads each
+        role and names it, and the runner accepts it only at its sha256."""
+
+        import _client_roles
+
+        job = _jobs((WORKFLOWS_DIR / "release.yml").read_text())["evidence"]
+        for env, attribute in ((_client_roles.PREVIOUS_ENV, "PREVIOUS"),
+                               (_client_roles.FALLBACK_CONTROL_ENV, "FALLBACK_CONTROL")):
+            with self.subTest(env):
+                self.assertIn(f"_client_roles.{attribute}[0]", job)
+                self.assertIn(f'echo "{env}=$RUNNER_TEMP/', job)
+        self.assertEqual(set(_client_roles.CONTROL_CLIENTS),
+                         {_client_roles.PREVIOUS_ENV, _client_roles.FALLBACK_CONTROL_ENV})
+
     def test_every_ci_install_journey_has_the_pinned_client(self) -> None:
         jobs = _jobs((WORKFLOWS_DIR / "release.yml").read_text())
         self.assertIn("JOURNEY_CLIENT=fetch sh .github/scripts/journey.sh install dist", jobs["journeys-linux"])
