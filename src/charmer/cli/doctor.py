@@ -2930,42 +2930,53 @@ def _check_scope_integrity(
     if disk is None:
         problems.append(repair(f"session {m8}: scope unreadable; charmer doctor --repair {mid}"))
     elif drifted:
-        agent_files = [] if recorded_ep is not None else _catalog_agent_drift(runtime, record, live, drifted)
-        if scope_mod.skill_policy_drift(live, ep.plan, drifted):
+        settings_drift = f"{scope_mod.SETTINGS_RELPATH} content differs"
+        agent_drift = [line for line in drifted if line != settings_drift]
+        agent_files = [] if recorded_ep is not None else _catalog_agent_drift(runtime, record, live, agent_drift)
+        policy_drift = drifted
+        if agent_files and agent_drift != drifted:
+            # A settings difference beside validated agent drift is lazy only
+            # when a released-policy recognizer proves it on its own; both
+            # findings are then reported. Anything else stays BLOCK.
+            policy_drift = [settings_drift]
+            if not _released_policy_drift(live, ep.plan, policy_drift):
+                agent_files, policy_drift = [], drifted
+        agent_definitions = (
+            f"session {m8}: agent definitions differ from the installed catalog "
+            f"({', '.join(agent_files)}; catalog content changed since launch, bindings "
+            f"unchanged); applies at the next resume (charmer -r {mid}) — or "
+            f"charmer doctor --repair {mid} now",
+            "agent-definitions",
+            "{n} sessions: agent definitions differ from the installed catalog (catalog content changed since "
+            "launch, bindings unchanged); each applies at its next resume — or charmer doctor --repair-all "
+            "now (stopped sessions)",
+        )
+        if scope_mod.skill_policy_drift(live, ep.plan, policy_drift):
             # The managed skill policy of another
             # release (with or without the skill deny): lazy, Attention, with the repair path.
             attention.append(lazy(cli_text.SKILL_POLICY_DRIFT.format(m8=m8, mid=mid), "skill-policy",
                                   cli_text.SKILL_POLICY_DRIFTS, repairable=True))
             lazy_alongside()
-        elif scope_mod.fork_policy_drift(live, ep.plan, drifted):
+        elif scope_mod.fork_policy_drift(live, ep.plan, policy_drift):
             # The fork deny and the model fence's failure policy of another
             # release: lazy, Attention, with the repair path.
             attention.append(lazy(cli_text.FORK_POLICY_DRIFT.format(m8=m8, mid=mid), "fork-policy",
                                   cli_text.FORK_POLICY_DRIFTS, repairable=True))
             lazy_alongside()
-        elif scope_mod.status_line_drift(live, ep.plan, drifted):
+        elif scope_mod.status_line_drift(live, ep.plan, policy_drift):
             # The subagent status line another release compiled, or one a
             # user-owned key now replaces: lazy, Attention, with the repair path.
             attention.append(lazy(*status_line, repairable=True))
             if scope_mod.default_mode_differs(live, ep.plan):
                 attention.append(lazy(*default_mode))
-        elif scope_mod.default_mode_drift(live, ep.plan, drifted):
+        elif scope_mod.default_mode_drift(live, ep.plan, policy_drift):
             # Decided once per launch; never BLOCK, repair never
             # adds or removes the key (the plan keeps the on-disk presence).
             attention.append(lazy(*default_mode))
         elif agent_files:
             # Only validated agent content moved,
             # and only because the installed catalog did: lazy, Attention.
-            attention.append(lazy(
-                f"session {m8}: agent definitions differ from the installed catalog "
-                f"({', '.join(agent_files)}; catalog content changed since launch, bindings "
-                f"unchanged); applies at the next resume (charmer -r {mid}) — or "
-                f"charmer doctor --repair {mid} now",
-                "agent-definitions",
-                "{n} sessions: agent definitions differ from the installed catalog (catalog content changed since "
-                "launch, bindings unchanged); each applies at its next resume — or charmer doctor --repair-all "
-                "now (stopped sessions)",
-                repairable=True))
+            attention.append(lazy(*agent_definitions, repairable=True))
         elif (deny_note := _deny_drift_note(runtime, live, ep.plan, m8, mid, drifted)) is not None:
             attention.append(deny_note)
         else:
@@ -2974,6 +2985,9 @@ def _check_scope_integrity(
                 f"session {m8}: scope differs from the record-authoritative compile ({drift}); "
                 f"run charmer doctor --repair {mid}"
             ))
+        if policy_drift is not drifted:
+            # The settings finding above, and the agent drift beside it.
+            attention.append(lazy(*agent_definitions, repairable=True))
     else:
         info.append(
             f"Scope: {m8} OK (lineup generation {record['lineup_generation']})."
