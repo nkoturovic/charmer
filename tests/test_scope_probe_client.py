@@ -687,11 +687,11 @@ with os.fdopen(fd, 'w') as out: out.write(json.dumps(r) + '\\n')
     def _onboarding():
         return [probe.PTYInteraction(b"Choose", b"2\r"), probe.PTYInteraction(b"Press", b"\r")]
 
-    def _turns(self, turns=(b"client probe",)):
+    def _turns(self, turns=(b"client probe",), done=b"PROBE-OK"):
         steps = self._onboarding()
         for turn in turns:
             steps += [probe.PTYInteraction(_PROMPT, turn + b"\r"),
-                      probe.PTYInteraction(b"PROBE-OK", b"", preserve_after_wait=True)]
+                      probe.PTYInteraction(done, b"", preserve_after_wait=True)]
         steps.append(probe.PTYInteraction(_PROMPT, b"/exit\r"))
         return steps
 
@@ -1848,10 +1848,17 @@ class SubagentExhaustionProbe(_ProbeCase, unittest.TestCase):
 # Each case runs twice: a default-tools subagent and one whose frontmatter
 # lists SendFeedback explicitly, so a client that withholds the tool from
 # every subagent is told apart from one that only needs it requested.
+# The terminal clients run the subagent in the background even when the spawn
+# asks otherwise, and /exit while it still runs opens the client's "Background
+# work is running" question, which nobody answers before the run deadline. So
+# the script types /exit only after the lead's reply to the subagent's
+# completion notice (_FEEDBACK_SETTLED) is on screen: by then no background
+# work is left. The reply text is the only change; tool lists are untouched.
 _FEEDBACK_TOOL = "SendFeedback"
 _FEEDBACK_FLAG = "tengu_juniper_relay"
 _FEEDBACK_AGENTS = {"": "", "-explicit": f"tools: {_FEEDBACK_TOOL}, Bash\n"}
 _FEEDBACK_CASES = tuple(f"{case}{shape}" for case in ("off", "notify") for shape in _FEEDBACK_AGENTS)
+_FEEDBACK_SETTLED = "PROBE-SETTLED"
 
 
 def _seed_feature_cache(fixture, features):
@@ -1859,6 +1866,15 @@ def _seed_feature_cache(fixture, features):
     document = strict_json.loads(state.read_private(path)) if path.exists() else {}
     document["cachedGrowthBookFeatures"] = dict(features)
     state.atomic_write(path, strict_json.canonical_file_bytes(document))
+
+
+def _task_notified(document):
+    # In-memory only: whether the client has told the lead a background task ended.
+    return any(block.get("type") == "text" and "<task-notification>" in str(block.get("text"))
+               for message in document.get("messages", [])
+               if isinstance(message, dict) and message.get("role") == "user"
+               and isinstance(message.get("content"), list)
+               for block in message["content"] if isinstance(block, dict))
 
 
 class _FeedbackResponder(_Recorder):
@@ -1874,6 +1890,8 @@ class _FeedbackResponder(_Recorder):
         if not child and "Agent" in record.tool_names and not self.spawned:
             self.spawned = True
             return _reply(document, [_spawn(1)], stop="tool_use")
+        if not child and _task_notified(document):
+            return _reply(document, [{"type": "text", "text": _FEEDBACK_SETTLED}])
         return _reply(document)
 
 
@@ -1933,6 +1951,10 @@ class FeedbackDraftsProbe(_ProbeCase, unittest.TestCase):
 
     probe_id = "FD"
 
+    def _settled_turns(self):
+        # /exit only once the lead answered the subagent's completion notice.
+        return self._turns(done=_FEEDBACK_SETTLED.encode())
+
     def _probe(self):
         observations = {}
         attempts = self.evidence["feedback_attempts"] = []
@@ -1951,17 +1973,17 @@ class FeedbackDraftsProbe(_ProbeCase, unittest.TestCase):
                 attempts.append(row)
                 try:
                     result, responder = self._run(
-                        fixture, responder=_FeedbackResponder(), steps=self._turns(),
+                        fixture, responder=_FeedbackResponder(), steps=self._settled_turns(),
                         document={"env": env, "availableModels": [_LEAD, _AGENT]})
                     row.update(returncode=result.returncode, timed_out=result.timed_out)
                     self._complete(result)
                     self.assertTrue(responder.spawned and responder.child, f"{case}: subagent stimulus not reached")
                 except probe.PTYTimeoutError as exc:
-                    # Both archived failures reached client exit.
-                    # Their stdio/timings were not retained, so do not invent a
-                    # shutdown cause or inflate the deadline. Allow ONE marked
-                    # retry across the entire matrix, in a fresh fixture. The
-                    # failed run stays failed in evidence and the gate log.
+                    # The known exit-phase cause, /exit while the subagent
+                    # still ran, is closed by the settled script; never inflate
+                    # the deadline for another. Allow ONE marked retry across
+                    # the entire matrix, in a fresh fixture. The failed run
+                    # stays failed in evidence and the gate log.
                     retry = exc.phase == "client-exit" and not retry_used
                     row.update(outcome="timeout", phase=exc.phase, retry=retry,
                                returncode=None, timed_out=True,
@@ -2009,14 +2031,14 @@ class FeedbackDraftsProbe(_ProbeCase, unittest.TestCase):
         _seed_feature_cache(fixture, {_FEEDBACK_FLAG: True})
         self._agent(fixture)
         result, responder = self._run(
-            fixture, responder=_FeedbackResponder(), steps=self._turns(), trusted=older,
+            fixture, responder=_FeedbackResponder(), steps=self._settled_turns(), trusted=older,
             document={"env": scope.feedback_drafts_env("notify"), "availableModels": [_LEAD, _AGENT]})
         self._complete(result)
         return {"version": _client_roles.FALLBACK_CONTROL[0], "lead_offered": any(responder.lead)}
 
 
 class FeedbackRetryTests(unittest.TestCase):
-    """Retry only the archived exit-phase signature, once, visibly."""
+    """/exit only after the settled reply; retry only the exit-phase signature, once, visibly."""
 
     def setUp(self):
         root = tempfile.TemporaryDirectory(prefix="cm-d95-retry-")
@@ -2055,6 +2077,28 @@ class FeedbackRetryTests(unittest.TestCase):
     @staticmethod
     def _timeout(phase="client-exit"):
         return probe.PTYTimeoutError(phase, 5 if phase == "client-exit" else 3, 5, 120.0)
+
+    def test_exit_waits_for_the_lead_to_answer_the_completion_notice(self):
+        self.case._probe()
+        self.assertEqual(self.runner.call_count, len(_FEEDBACK_CASES))
+        for call in self.runner.call_args_list:
+            steps = call.args[1]
+            self.assertEqual([(step.wait_for, step.send) for step in steps[-2:]],
+                             [(_FEEDBACK_SETTLED.encode(), b""), (_PROMPT, b"/exit\r")])
+        responder = _FeedbackResponder()
+
+        def text(messages, model=_LEAD, tools=("Agent", "Bash")):
+            _, payload = responder.message({"model": model, "messages": messages},
+                                           SimpleNamespace(model=model, tool_names=tools), {})
+            return [block.get("text") or block["name"] for block in payload["content"]]
+
+        launched = [{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_probe_1",
+                                                  "content": "launched; a <task-notification> follows"}]}]
+        notice = [{"role": "user", "content": [{"type": "text", "text": "<task-notification>\n"}]}]
+        self.assertEqual(text(launched), ["Agent"])  # the first offer spawns
+        self.assertEqual(text(launched), ["PROBE-OK"])
+        self.assertEqual(text(notice, model=_AGENT), ["PROBE-OK"])
+        self.assertEqual(text(launched + notice), [_FEEDBACK_SETTLED])
 
     def test_pty_retry_is_marked_and_retains_both_results_if_retry_selected(self):
         self.effects = [self._timeout()]
