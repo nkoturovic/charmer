@@ -1068,8 +1068,9 @@ class AppendixTests(unittest.TestCase):
             "- Operating ceiling" in appendix, context.window < context.min_provider_tokens
         )
         self.assertEqual("Context qualification" in appendix, not context.validated)
-        self.assertIn("- Process scalar: CLAUDE_CODE_MAX_CONTEXT_TOKENS=200000 is exported; it is the window "
-                      "of every model id without [1m].", appendix)
+        self.assertIn("- Process scalar: CLAUDE_CODE_MAX_CONTEXT_TOKENS=200000 is exported. It is the window "
+                      "class Claude Code gives a model id it does not recognise and that has no [1m] suffix; "
+                      "Claude's own ids keep their windows, and a smaller compaction window above still applies.", appendix)
         # Lower-context class with a native agent on: the inheritance line.
         bundle = _bundle()
         lcat = _lcat(bundle.docs)

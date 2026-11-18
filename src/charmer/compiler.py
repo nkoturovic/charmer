@@ -682,8 +682,10 @@ def generate_session_appendix(
             "route-capability claim."
         )
     lines.append(
-        f"- Process scalar: CLAUDE_CODE_MAX_CONTEXT_TOKENS={context.scalar} is exported; "
-        "it is the window of every model id without [1m]."
+        f"- Process scalar: CLAUDE_CODE_MAX_CONTEXT_TOKENS={context.scalar} is exported. "
+        "It is the window class Claude Code gives a model id it does not recognise and that "
+        "has no [1m] suffix; Claude's own ids keep their windows, and a smaller compaction "
+        "window above still applies."
     )
     if context.custom_bound:
         lines.append(
