@@ -9,8 +9,8 @@ evaluates the live state against it with this release's own validators:
   documents. A file or line the target's documents make invalid while this
   release's do not is listed, referenced or not: one invalid line makes the
   target's ``providers apply``, ``models add`` and ``models rm`` refuse;
-- **profiles and named bindings**, evaluated as doctor evaluates them, with a
-  lineup catalog built from the target's documents;
+- **profiles, named bindings and the Settings workflow default**, evaluated
+  as doctor evaluates them, with a lineup catalog built from the target's documents;
 - **running sessions**: a selector a live session runs on (its lead or one
   of its agents) that this release's gateway render serves and the target's
   would not. The session's picker fence (``availableModels``) is not a
@@ -209,9 +209,9 @@ def _declaration_remedy(file: str, key: str | None) -> str:
 
 
 def _profile_items(environ: Mapping[str, str], cat, merged: Mapping, snapshot) -> dict[str, str]:
-    """Doctor's profile and named-binding evaluation, as ``text -> remedy``."""
+    """Doctor's profile, named-binding and workflow-default errors, as ``text -> remedy``."""
 
-    from charmer import choices, profile as profile_mod, settings as settings_mod
+    from charmer import choices, profile as profile_mod, scope, settings as settings_mod
     from charmer.cli import runtime as runtime_mod
 
     env = dict(environ)
@@ -228,6 +228,11 @@ def _profile_items(environ: Mapping[str, str], cat, merged: Mapping, snapshot) -
     except settings_mod.SettingsError:
         effective = None
     items: dict[str, str] = {}
+    if effective is not None and effective.workflow_default_binding is not None:
+        try:
+            scope.workflow_default_selector(lcat, effective)
+        except scope.ScopeError as exc:
+            items[str(exc)] = "change or clear the workflow default in Settings (charmer, then O)"
     try:
         bindings = profile_mod.BindingStore(env).bindings()
     except (profile_mod.BindingError, profile_mod.ProfileError) as exc:

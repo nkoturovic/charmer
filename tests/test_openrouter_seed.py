@@ -225,15 +225,15 @@ class ShippedSeedTests(unittest.TestCase):
         self.assertNotIn("≈", views.review_sentence(lineup))
         for key, entry in _aggregator_lines(bundle.lines).items():
             with self.subTest(line=key):
-                self.assertEqual(entry["status"], "new" if key == "or-gemini-carbon" else "active")
+                self.assertEqual(entry["status"], "new" if key in ("or-gemini-carbon", "or-gemini-neon") else "active")
                 self.assertNotIn(entry["family"], catalog.UNDECLARED_FAMILIES)
                 # Efforts limited to the provider's reviewed contracts.
                 self.assertLessEqual({spec["proxy_contract"] for spec in entry["efforts"].values()},
                                      set(provider["payload_contracts"]))
                 self.assertIn(f"Listing context_length {entry['context']['declared_tokens']:,} (OpenRouter models list",
                               entry["context"]["qualification"])
-                evidence = ("no live request, in this release by the operator's choice"
-                            if key in ("or-gemini", "or-gemini-carbon") else "admission smoke passed")
+                evidence = ("no live request" if key in ("or-gemini", "or-gemini-carbon", "or-gemini-neon")
+                            else "admission smoke passed")
                 self.assertIn(evidence, entry["context"]["qualification"])
                 self.assertEqual(entry["context"]["validated_tokens"], 200000)
 
@@ -241,7 +241,7 @@ class ShippedSeedTests(unittest.TestCase):
         bundle = catalog.load_catalog(SHIPPED_ROOT)
         for key, entry in _aggregator_lines(bundle.lines).items():
             variant = "strict automatic tool use" if entry["family"] == "anthropic" else "forced named tool"
-            if key in ("or-gemini", "or-gemini-carbon"):
+            if key in ("or-gemini", "or-gemini-carbon", "or-gemini-neon"):
                 variant = "not measured on Gemini 4"
             with self.subTest(line=key):
                 self.assertIn(variant, entry["context"]["qualification"])

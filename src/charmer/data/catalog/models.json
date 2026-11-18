@@ -609,6 +609,57 @@
       "status": "new",
       "wire_model": "google/gemini-4-carbon"
     },
+    "or-gemini-neon": {
+      "capabilities": [
+        "lead",
+        "agents"
+      ],
+      "context": {
+        "client_tokens": 1000000,
+        "declared_tokens": 1048576,
+        "ordinary_profile": "large",
+        "provider_tokens": 1000000,
+        "qualification": "Listing context_length 1,048,576 (OpenRouter models list, 2026-11-18: google/gemini-4-neon, created 2026-11-18) on every endpoint; max_completion_tokens 943,718 (65,536 on one AI Studio endpoint); reasoning and reasoning_effort accepted. Not measured, and no live request yet. provider_tokens=1000000 is listing-based, not measured on Gemini 4; validated_tokens stays at the conservative 200,000 floor. minimum_tested is scaffold metadata: Claude Code 2.1.286 inherited from the earlier Gemini line, CLIProxyAPI 8.0.76 from the catalog's gateway baseline. Google AI Studio lists Neon as stable with 1,048,576 context and thinking levels low/medium/high/xhigh; these are contract-level efforts only (listing-advertised, not measured).",
+        "scalar_tokens": null,
+        "validated_tokens": 200000
+      },
+      "default_effort": "high",
+      "display": "Gemini 4 Neon · OpenRouter",
+      "efforts": {
+        "high": {
+          "proxy_contract": "output-config-high",
+          "selector": "charmer-or-gemini-neon-high[1m]"
+        },
+        "low": {
+          "proxy_contract": "output-config-low",
+          "selector": "charmer-or-gemini-neon-low[1m]"
+        },
+        "medium": {
+          "proxy_contract": "output-config-medium",
+          "selector": "charmer-or-gemini-neon-medium[1m]"
+        },
+        "xhigh": {
+          "proxy_contract": "output-config-xhigh",
+          "selector": "charmer-or-gemini-neon-xhigh[1m]"
+        }
+      },
+      "family": "google",
+      "generation": "4",
+      "lead": {
+        "effort": "ultracode",
+        "env": {}
+      },
+      "minimum_tested": {
+        "claude_code": "2.1.286",
+        "cliproxyapi": "8.0.76"
+      },
+      "provider": "openrouter",
+      "registry_overlay": null,
+      "roles": "all",
+      "routing_note": "Gemini 4 Neon through OpenRouter (billed per token): opt-in Google-family lead or agent, in no seed. Not yet live-checked; low/medium/high/xhigh are listing-based contracts.",
+      "status": "new",
+      "wire_model": "google/gemini-4-neon"
+    },
     "or-gpt": {
       "capabilities": [
         "lead",

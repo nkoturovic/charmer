@@ -3345,6 +3345,7 @@ class GenerationMoveTests(unittest.TestCase):
         for key, name, created, levels, status, prefix in (
             ("or-gemini", "Hydrogen", "2026-11-12", ("low", "medium", "high", "xhigh"), "active", "charmer-or-gemini-4"),
             ("or-gemini-carbon", "Carbon", "2026-11-10", ("low", "medium", "high"), "new", "charmer-or-gemini-carbon"),
+            ("or-gemini-neon", "Neon", "2026-11-18", ("low", "medium", "high", "xhigh"), "new", "charmer-or-gemini-neon"),
         ):
             with self.subTest(line=key):
                 line = bundle.lines[key]
@@ -3364,11 +3365,21 @@ class GenerationMoveTests(unittest.TestCase):
                                  (1000000, 1000000, 200000))
                 for fact in (f"OpenRouter models list, 2026-11-18: {wire}, created {created}",
                              "max_completion_tokens 943,718", "Not measured, and no live request",
-                             "in this release by the operator's choice", "not measured on Gemini 4", "200,000 floor"):
+                             "provider_tokens=1000000 is listing-based", "not measured on Gemini 4", "200,000 floor"):
                     self.assertIn(fact, context["qualification"])
+                if name == "Neon":
+                    for fact in ("on every endpoint", "943,718 (65,536 on one AI Studio endpoint)",
+                                 "reasoning and reasoning_effort accepted",
+                                 "Google AI Studio lists Neon as stable"):
+                        self.assertIn(fact, context["qualification"])
+                else:
+                    self.assertIn("in this release by the operator's choice", context["qualification"])
+                    if name == "Carbon":
+                        self.assertIn("Carbon has never been live-tested", context["qualification"])
                 if status == "new":
                     self.assertIn("minimum_tested is scaffold metadata", context["qualification"])
-                    self.assertIn("Carbon has never been live-tested", context["qualification"])
+                    self.assertIn(f"{'/'.join(levels)}; these are contract-level efforts only "
+                                  "(listing-advertised, not measured)", context["qualification"])
                 else:
                     self.assertIn("minimum_tested describes the earlier Gemini line", context["qualification"])
                     self.assertIn("low and medium are contract-level only (listing-advertised, not measured)",
@@ -3377,16 +3388,16 @@ class GenerationMoveTests(unittest.TestCase):
                 self.assertEqual(set(line["efforts"]), set(levels))
                 for level in levels:
                     spec = line["efforts"][level]
-                    self.assertEqual(spec, {"selector": f"{prefix}-{level}[1m]",
-                                            "proxy_contract": f"output-config-{level}"})
-                    self.assertEqual(routes.get(f"{prefix}-{level}"), {wire})
-                    self.assertIn(json.dumps({"output_config.effort": level}, sort_keys=True),
-                                  _effort_params(document, f"{prefix}-{level}"))
+                    alias = f"{prefix}-{level}"
+                    self.assertEqual(spec, {"selector": f"{alias}[1m]", "proxy_contract": f"output-config-{level}"})
+                    self.assertEqual(routes.get(alias), {wire})
+                    self.assertEqual(_effort_params(document, alias),
+                                     [json.dumps({"output_config.effort": level}, sort_keys=True)])
         for name, seed in bundle.seed_profiles.items():
             lineup = profile.resolve(seed, bundle)
             with self.subTest(seed=name):
-                self.assertNotIn("or-gemini-carbon", {lineup.lead.binding.key,
-                    *(agent.binding.key for agent in lineup.agents.values())})
+                keys = {lineup.lead.binding.key, *(agent.binding.key for agent in lineup.agents.values())}
+                self.assertEqual(keys & {"or-gemini-carbon", "or-gemini-neon"}, set())
 
     def test_or_kimi_keeps_xhigh_and_records_the_tool_choice(self) -> None:
         bundle = catalog.load_catalog(SHIPPED_ROOT)

@@ -32,7 +32,7 @@ from _layout import FIXTURES_ROOT, RESOURCES_ROOT
 from test_trust import SEED_A, signer_line
 from charmer import (catalog, continuity, custom, observations, operator as operator_mod,
                      profile as profile_mod, proxy, release_update as ru, render, rollback_preflight as rp,
-                     self_update as su, state, strict_json)
+                     self_update as su, settings, state, strict_json)
 
 DATA = FIXTURES_ROOT / "rollback-preflight"
 OLD, NEW = DATA / "2.2.1", DATA / "2.3.0"
@@ -450,20 +450,64 @@ PATCH_PROFILE = {"version": 2, "name": "patchline", "description": "a profile on
 
 
 class PatchReleaseRollbackTests(PreflightCase):
-    """This release → 2.6.0. The release changes no line, effort, seed or
-    selector, so what a default render serves here 2.6.0's data serves too,
-    and a profile on the shipped OpenRouter lines with a running session on
-    their selectors is no finding."""
+    """This release → 2.6.0: only Neon's selectors are new. Profiles,
+    bindings and running sessions on Neon are findings; existing OpenRouter
+    lineups still work."""
 
     def setUp(self) -> None:
         super().setUp()
         self.current_root = rp.compose_root(RESOURCES_ROOT, rp.read_target(RESOURCES_ROOT), self.root / "current-now")
 
-    def test_everything_served_here_is_served_by_260(self) -> None:
+    def test_only_neons_four_selectors_are_not_served_by_260(self) -> None:
         target = rp.compose_root(RESOURCES_ROOT, rp.read_target(DATA_260), self.root / "target-260")
-        self.assertEqual(self.served(self.current_root) - self.served(target), frozenset())
+        self.assertEqual(self.served(self.current_root) - self.served(target),
+                         {f"charmer-or-gemini-neon-{level}" for level in ("low", "medium", "high", "xhigh")})
+
+    def check_260(self) -> rp.Report:
+        roots = [self.root / "home", self.root / "config", self.root / "state", self.root / "secrets"]
+        before, scratch = tree(*roots), scratch_roots()
+        report = rp.check(environ=self.env, home=self.home, state_root=self.state_root,
+                          current_root=self.current_root, target_root=DATA_260, current="2.6.1", target="2.6.0")
+        self.assertEqual(tree(*roots), before)
+        self.assertEqual(scratch_roots(), scratch)
+        return report
+
+    def test_neon_profile_named_binding_and_live_session_are_findings_against_260(self) -> None:
+        save_profile(self.env, self.current_root, {**PATCH_PROFILE, "name": "neon", "agents": {},
+                     "lead": {"model": "or-gemini-neon", "effort": "low"}})
+        write_json(profile_mod.bindings_path(self.env), {"version": 1, "bindings": {
+            "neon-review": {"model": "or-gemini-neon", "effort": "medium"}}})
+        session(self.state_root, PATCH_SESSION, "charmer-or-gemini-neon-xhigh[1m]", {})
+        self.assertEqual(self.check_260().lines(), [
+            f"Profiles and named bindings 2.6.0 cannot evaluate ({ANCHOR}):",
+            "  - bindings.neon-review.model: unknown model 'or-gemini-neon' — rebind it in the profile editor "
+            "(charmer, then P)",
+            "  - profile neon: lead.model: unknown model 'or-gemini-neon' — charmer profile edit neon",
+            f"Running sessions on selectors 2.6.0 does not serve ({ANCHOR}):",
+            "  - session 88888888 uses charmer-or-gemini-neon-xhigh, which 2.6.0 does not serve — exit it first "
+            f"(end the session; after the rollback, charmer -r {PATCH_SESSION} resumes it on 2.6.0's models)",
+            "Also reported by 2.6.1: 0, unchanged by the rollback.",
+            "Checked with 2.6.1's rules against 2.6.0's data; 2.6.0 may still refuse what these rules accept.",
+        ])
+
+    def test_neon_workflow_default_alone_is_a_finding_against_260(self) -> None:
+        settings.SettingsStore(self.env).save({"version": 1, "workflow_default_binding": {
+            "model": "or-gemini-neon", "effort": "high"}}, catalog=catalog.load_catalog(self.current_root))
+        report = self.check_260()
+        self.assertEqual(report.findings, (rp.Finding(
+            rp.PROFILES, "Settings workflow_default_binding.model: unknown model key 'or-gemini-neon'",
+            "change or clear the workflow default in Settings (charmer, then O)"),))
+        self.assertEqual(report.lines(), [
+            f"Profiles and named bindings 2.6.0 cannot evaluate ({ANCHOR}):",
+            "  - Settings workflow_default_binding.model: unknown model key 'or-gemini-neon' — "
+            "change or clear the workflow default in Settings (charmer, then O)",
+            "Also reported by 2.6.1: 0, unchanged by the rollback.",
+            "Checked with 2.6.1's rules against 2.6.0's data; 2.6.0 may still refuse what these rules accept.",
+        ])
 
     def test_untouched_data_against_260_finds_nothing(self) -> None:
+        settings.SettingsStore(self.env).save({"version": 1, "workflow_default_binding": {
+            "model": "or-gemini-carbon", "effort": "high"}}, catalog=catalog.load_catalog(self.current_root))
         save_profile(self.env, self.current_root, PATCH_PROFILE)
         models = json.loads(rp.read_target(RESOURCES_ROOT)["catalog/models.json"])["models"]
         gemini = models["or-gemini"]["efforts"]["xhigh"]["selector"]
@@ -471,12 +515,7 @@ class PatchReleaseRollbackTests(PreflightCase):
         self.assertLessEqual({gemini.removesuffix("[1m]"), carbon.removesuffix("[1m]")}, self.served(self.current_root))
         session(self.state_root, PATCH_SESSION, "claude-opus-5-5[1m]",
                 {"cm-reviewer": gemini, "cm-explorer": carbon}, fence=[gemini, carbon])
-        roots = [self.root / "home", self.root / "config", self.root / "state", self.root / "secrets"]
-        before, scratch = tree(*roots), scratch_roots()
-        report = rp.check(environ=self.env, home=self.home, state_root=self.state_root,
-                          current_root=self.current_root, target_root=DATA_260, current="2.6.1", target="2.6.0")
-        self.assertEqual(tree(*roots), before)
-        self.assertEqual(scratch_roots(), scratch)
+        report = self.check_260()
         self.assertEqual(report.findings, ())
         self.assertIsNone(report.unreadable)
         self.assertEqual(report.lines(), [
