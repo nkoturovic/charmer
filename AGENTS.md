@@ -104,7 +104,13 @@ implementer grades, Sol max reviewer and Opus reviewer-strong.
 OpenRouter (catalog 45, generation-tagged selectors); the retired keys
 `sol@6.1`, `astra@6` and `or-gpt@6.1` keep running sessions on their
 earlier models until resume (not on the OpenAI API-key route, which serves
-reviewed lines only). No seed changed for the move.
+reviewed lines only). No seed changed for the move. All three GPT-6.2 lines
+had managed live turns on 2026-11-18; their `minimum_tested` is Claude Code
+2.1.326 / CLIProxyAPI 8.0.76, not a context-limit measurement.
+`or-gemini` is Gemini 4 Hydrogen with generation-tagged selectors;
+`or-gemini@3.8` keeps Gemini 3.8 Flash sessions until resume. The OpenRouter
+seed follows the key. `or-gemini-carbon` is a New line in no seed. Neither
+Gemini 4 line was checked by a live request in this release.
 The `haiku` line is Haiku 5.5 on the Claude account, agents only (explorer
 and light writer), not an independent reviewer of Opus, Sonnet or Fable.
 `muse` is Muse Wonder 1.0; `or-deepseek` is DeepSeek V4.1 Flash 1017 and
@@ -2672,7 +2678,8 @@ the operator's approval. Doctor never retires backups.
   unknown.
 - **New-line admission** is an optional badge stored in `settings.json`
   `admitted_lines` (the record snapshot, the Models screen's badge, doctor's
-  warning); it never decides whether a line is offered or fenced. The shipped catalog has no New line.
+  warning); it never decides whether a line is offered or fenced. The shipped
+  `or-gemini-carbon` line is New and stays out of every seed.
 - **Continuity window:** the first `charmer-proxy init`/`run`
   after an install creates `continuity.json` (seed from `retired.json` +
   live records); until then doctor shows config drift, as for any catalog
@@ -2692,7 +2699,10 @@ the operator's approval. Doctor never retires backups.
   provider-stated limit. OpenAI refuses GPT-6.2 to older Codex clients (a
   2.5.0 gateway, at 0.159.1, until its restart); the gateway and discover
   identity is 0.169.0 (`proxy.CODEX_CLIENT_VERSION`); patches #18 and #20
-  carry the same version.
+  carry the same version. Live checks on 2026-11-18 accepted Codex-route
+  smoke and low/medium/high/xhigh/max on Claude Code 2.1.322 / CLIProxyAPI
+  8.0.67, then a managed high turn on each on 2.1.326 / 8.0.76 (HTTP 200,
+  exit 0). `minimum_tested` records the latter pair; no context-limit test ran.
   The 6.2 move changed no seed. The 6.1 move bumped the quality/max seeds to
   version 2 and balanced/economy/openai to 3; role/effort adoption needs
   explicit reseeding. Stable-key generation movement does not reseed
@@ -2701,7 +2711,26 @@ the operator's approval. Doctor never retires backups.
 - **`or-gpt` (catalog 45):** GPT-6.2 Sol on OpenRouter
   (`charmer-or-gpt-6-2-<effort>[1m]`, `openai/gpt-6.2-sol`); `or-gpt@6.1`
   (family `openai`, 1M) keeps GPT-6.1 Sol sessions until resume. Its
-  2026-10-02 battery ran on GPT-6.1 Sol, not 6.2.
+  2026-10-02 battery ran on GPT-6.1 Sol, not 6.2. A managed high turn passed
+  on 2026-11-18 (HTTP 200, exit 0; Claude Code 2.1.326 / CLIProxyAPI 8.0.76,
+  its new `minimum_tested` pair). No new full battery or context-limit test;
+  provider bound 1M and validated floor 200,000 stay unchanged.
+- **Gemini 4 on OpenRouter (catalog 45):** `or-gemini` moves to Hydrogen
+  (`google/gemini-4-hydrogen`, generation `4`,
+  `charmer-or-gemini-4-<effort>[1m]`, high/xhigh, default high); the retired
+  `or-gemini@3.8` (family google, context 1M) keeps both old selectors on
+  `google/gemini-3.8-flash` until resume. `or-gemini-carbon` is new, in no
+  seed (`google/gemini-4-carbon`, generation `4`,
+  `charmer-or-gemini-carbon-<effort>[1m]`, low/medium/high, default high).
+  Both keep lead/agents capabilities and all roles. OpenRouter's public
+  list read 2026-11-18 gives each 1,048,576 context and 943,718 max completion
+  tokens (Hydrogen created 2026-11-12; Carbon 2026-11-10), with tools,
+  tool_choice, reasoning, reasoning_effort and structured_outputs.
+  Neither was checked by a live request in this release, by the operator's
+  choice. Provider bound 1M is listing-based; validated floor 200,000 is
+  conservative, not measured on Gemini 4. Their inherited `minimum_tested`
+  2.1.286 / 7.3.15 describes Gemini 3.8 Flash's 2026-10-02 tests, not Gemini 4.
+  `models qualify` refuses catalog lines; it is not their requalification path.
 - **GPT-6 lines (catalog 33; current for Luna):** the approved 2026-09-26 acceptance probe
   (through the gateway) set the context: 868,925 input tokens accepted on
   gpt-6-sol/luna/astra, ~985K rejected on luna, so `provider_tokens` =

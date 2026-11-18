@@ -17,9 +17,9 @@ turns (`charmer gateway restart`, guarded) and check
 `charmer update --verify`. Running managed sessions keep their client,
 compiled settings and routes until their next launch or resume.
 
-Catalog 45 moves `sol` and `astra` to GPT-6.2 Sol and Astra, and `or-gpt`
-to GPT-6.2 Sol on OpenRouter. Until the gateway restart, doctor also
-reports BLOCKED “the on-disk gateway config differs from a fresh render of
+Catalog 45 moves `sol` and `astra` to GPT-6.2 Sol and Astra, `or-gpt`
+to GPT-6.2 Sol on OpenRouter, and `or-gemini` to Gemini 4 Hydrogen. Until the
+gateway restart, doctor also reports BLOCKED “the on-disk gateway config differs from a fresh render of
 the installed catalog”: restart rather than running the
 `charmer providers apply` it suggests, because on a ChatGPT account 2.5.0's
 gateway identifies itself as Codex 0.159.1, which OpenAI refuses for
@@ -31,7 +31,7 @@ sessions before the restart and resume them after it
 ([the GPT-6.2 lines](docs/update.md#the-gpt-62-lines)).
 
 Before `charmer update --rollback` to 2.5.0, exit the sessions running on
-the GPT-6.2 lines: the rollback check lists each as
+the GPT-6.2 lines or Gemini 4 Hydrogen: the rollback check lists each as
 `session <id8> uses <selector>, which 2.5.0 does not serve`. After the
 rollback, 2.5.0's doctor names the move back for each session recorded on
 one (“the installed catalog resolves …”), and resuming it (`charmer -r`)
@@ -48,6 +48,12 @@ charmer never writes Claude Code's configuration; `-p` never asks.
 
 ### Added
 
+- `or-gemini-carbon` selects Gemini 4 Carbon on OpenRouter
+  (`google/gemini-4-carbon`), with low, medium and high efforts, default
+  `high`. It is a New line, in no shipped profile, and
+  not checked by a live request in this release.
+  The listing gives 1,048,576 context tokens and 943,718 max completion
+  tokens; these are not measurements. Its validated floor stays 200,000.
 - `charmer doctor` reports `CLAUDE_CODE_DISABLE_1M_CONTEXT` in a settings
   file's `env` as Info (managed sessions keep their 1M windows; plain
   `claude` holds 1M models to 200K) and
@@ -68,12 +74,24 @@ charmer never writes Claude Code's configuration; `-p` never asks.
   `gpt-multi-astra-6-2-<effort>[1m]`. Profiles and bindings follow the
   stable keys without reseeding or effort changes; running GPT-6.1 Sol and
   GPT-6 Astra sessions on the account keep their route until they are
-  resumed. A model you declared for GPT-6.2 Sol or Astra yourself yields to
+  resumed. Live-checked on 2026-11-18: Codex-route smoke and every effort
+  low to max passed on Claude Code 2.1.322 / CLIProxyAPI 8.0.67; a managed
+  high turn on each passed on 2.1.326 / 8.0.76. No context-limit test ran.
+  A model you declared for GPT-6.2 Sol or Astra yourself yields to
   the shipped line, with one Attention row and its remedy.
 - `or-gpt` now selects GPT-6.2 Sol on OpenRouter (`openai/gpt-6.2-sol`,
   selectors `charmer-or-gpt-6-2-<effort>[1m]`); its agent checks of
-  2026-10-02 ran on GPT-6.1 Sol. Running GPT-6.1 Sol sessions on
+  2026-10-02 ran on GPT-6.1 Sol. Live-checked on 2026-11-18: a managed
+  high turn passed on Claude Code 2.1.326 / CLIProxyAPI 8.0.76, not a new
+  full battery or context-limit test. Running GPT-6.1 Sol sessions on
   OpenRouter keep their route until they are resumed.
+- `or-gemini` now selects Gemini 4 Hydrogen on OpenRouter
+  (`google/gemini-4-hydrogen`, selectors `charmer-or-gemini-4-<effort>[1m]`),
+  not checked by a live request in this release. It keeps high and xhigh,
+  default `high`; the `openrouter` profile follows the key without reseeding.
+  Running Gemini 3.8 Flash sessions keep their old wire through
+  `or-gemini@3.8` until resume. Context 1,048,576 and max completion 943,718
+  are listing facts, not measurements; the validated floor stays 200,000.
 - From Claude Code 2.1.323 a model id the client does not know gets a 1M
   window even without `[1m]`. Managed sessions export
   `CLAUDE_CODE_MAX_CONTEXT_TOKENS` (200000 unless the lead set declares its

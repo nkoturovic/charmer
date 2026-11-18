@@ -122,7 +122,9 @@ remedy: `charmer models rm <line> --successor <line>`
 Catalog 45 moves `sol` to GPT-6.2 Sol and `astra` to GPT-6.2 Astra, on the
 ChatGPT account and on an OpenAI API key, and `or-gpt` to GPT-6.2 Sol on
 OpenRouter ([models guide](guides/models.md#lines-moved-in-this-release)).
-Profiles and bindings that name them follow without reseeding or effort
+`or-gemini` moves the same way, from Gemini 3.8 Flash to Gemini 4 Hydrogen
+on OpenRouter, but was not checked by a live request in this release.
+Profiles and bindings that name these keys follow without reseeding or effort
 changes. On the Free, Free workspace and K-12 plans neither `sol` nor
 `astra` is served ([ChatGPT account](providers/chatgpt-account.md#5-use-it)).
 
@@ -139,14 +141,14 @@ session launched or resumed on these lines before the restart gets
 selectors the running gateway does not serve.
 
 A session that was running on one of these lines keeps its model (GPT-6.1
-Sol, GPT-6 Astra, or GPT-6.1 Sol on OpenRouter) until its next resume
-(`/exit`, then `charmer -r <id>`), which moves it to GPT-6.2 at the same
-effort. On the ChatGPT account and on OpenRouter, the retired keys
-`sol@6.1`, `astra@6` and `or-gpt@6.1` keep its selectors served until
-then. With an OpenAI API key in use, the restarted gateway serves only the
-lines reviewed for the key, not `sol@6.1` and `astra@6` (`or-gpt@6.1` stays
-served on OpenRouter): exit such a session before the restart and resume it
-after. Until the resume, doctor names the move instead of both the
+Sol, GPT-6 Astra, GPT-6.1 Sol on OpenRouter, or Gemini 3.8 Flash) until its
+next resume (`/exit`, then `charmer -r <id>`), which moves it to GPT-6.2
+or Gemini 4 Hydrogen at the same effort. On the ChatGPT account and on
+OpenRouter, the retired keys `sol@6.1`, `astra@6`, `or-gpt@6.1` and
+`or-gemini@3.8` keep its selectors served until then. With an OpenAI API key
+in use, the restarted gateway serves only the lines reviewed for the key,
+not `sol@6.1` and `astra@6` (`or-gpt@6.1` and `or-gemini@3.8` stay served on
+OpenRouter): exit such a session before the restart and resume it after. Until the resume, doctor names the move instead of both the
 `fence/picker differ …` row and the status-line row, for example
 `session <id8>: the installed catalog resolves lead to gpt-multi-sol-6-2-high[1m] (recorded gpt-multi-sol-6-1-high[1m]); it applies at the next resume (charmer -r <id>)`.
 `charmer doctor --repair <id>` waits for that resume (exit 3, “Repair
@@ -180,9 +182,14 @@ Prepare first, between turns:
 - Exit the sessions it lists as
   `session <id8> uses <selector>, which 2.5.0 does not serve`: they run on
   a selector only 2.6.0 serves, such as the GPT-6.2 selectors of `sol`,
-  `astra` and `or-gpt` (for example `gpt-multi-sol-6-2-high`). After the
-  rollback, `charmer -r <id>` resumes each on 2.5.0's model for that line:
-  GPT-6.1 Sol, GPT-6 Astra, or GPT-6.1 Sol on OpenRouter.
+  `astra` and `or-gpt` (for example `gpt-multi-sol-6-2-high`), or
+  `or-gemini`'s Hydrogen selectors (`charmer-or-gemini-4-high` and
+  `charmer-or-gemini-4-xhigh`). After the rollback, `charmer -r <id>` resumes
+  each on 2.5.0's model for that line: GPT-6.1 Sol, GPT-6 Astra, GPT-6.1 Sol
+  on OpenRouter, or Gemini 3.8 Flash.
+- `or-gemini-carbon` is new in 2.6.0 and has no line in 2.5.0. Before going
+  back, choose another model for any profile or session using it; exit any
+  session still running on its selectors.
 
 After the rollback the running gateway is still 2.6.0's. Run the guarded
 `charmer gateway restart` between turns, then `charmer update --verify`:
@@ -196,8 +203,8 @@ doctor reports the sessions 2.6.0 launched
 or resumed as Attention, `its subagent status line differs from this release's compile`
 and `fence/picker differ from the installed catalog (catalog changed since launch); applies at the next resume`;
 `charmer doctor --repair-all` clears the first for stopped sessions. A
-session recorded on a GPT-6.2 selector gets neither row; 2.5.0's doctor
-names the move back instead, for example
+session recorded on a GPT-6.2 or `or-gemini` Hydrogen selector gets neither
+row; 2.5.0's doctor names the move back instead, for example
 `session <id8>: the installed catalog resolves lead to gpt-multi-sol-6-1-high[1m] (recorded gpt-multi-sol-6-2-high[1m]); it applies at the next resume (charmer -r <id>)`,
 and its repair waits for that resume (`charmer doctor --repair-all` counts
 it as deferred). A session still running Claude Code 2.1.326 shows

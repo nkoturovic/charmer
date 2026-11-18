@@ -46,7 +46,7 @@ usable for leads, agents and reviews.
 | `muse-contributor` | Muse Spark 1.3 Contributor | Meta | meta | low, medium, high, xhigh (high) | 1M class, provider window 1M | lead and agents | `charmer-muse-contributor-<effort>[1m]` |
 | `opus` | Opus 5.5 · 1M selector | Anthropic | anthropic | low, medium, high, xhigh, max (high) | 1M class, provider window 1M | lead and agents | `claude-opus-5-5[1m]` (the effort is chosen in Claude Code) |
 | `or-deepseek` | DeepSeek V4.1 Flash 1017 · OpenRouter | OpenRouter | deepseek | high, xhigh (high) | 1M class, provider window 1M | lead and agents | `charmer-or-deepseek-4-1-1017-<effort>[1m]` |
-| `or-gemini` | Gemini 3.8 Flash · OpenRouter | OpenRouter | google | high, xhigh (high) | 1M class, provider window 1M | lead and agents | `charmer-or-gemini-<effort>[1m]` |
+| `or-gemini` | Gemini 4 Hydrogen · OpenRouter | OpenRouter | google | high, xhigh (high) | 1M class, provider window 1M | lead and agents | `charmer-or-gemini-4-<effort>[1m]` |
 | `or-gpt` | GPT-6.2 Sol · OpenRouter | OpenRouter | openai | high, xhigh (high) | 1M class, provider window 1M | lead and agents | `charmer-or-gpt-6-2-<effort>[1m]` |
 | `or-grok` | Grok 4.7 · OpenRouter | OpenRouter | x-ai | high, xhigh (high) | 200K class, provider window 500K | lead and agents | `charmer-or-grok-<effort>` |
 | `or-kimi` | Kimi K3.1 Pro · OpenRouter | OpenRouter | moonshot | low, high, xhigh, max (high) | 1M class, provider window 1M | lead and agents | `charmer-or-kimi-3-1-<effort>[1m]` |
@@ -56,7 +56,7 @@ usable for leads, agents and reviews.
 | `sol` | GPT-6.2 Sol | OpenAI | openai | low, medium, high, xhigh, max (high) | 1M class, provider window 872K | lead and agents | `gpt-multi-sol-6-2-<effort>[1m]` |
 | `sonnet` | Sonnet 5.5 · 1M selector | Anthropic | anthropic | low, medium, high, xhigh, max (high) | 1M class, provider window 1M | lead and agents | `claude-sonnet-5-5[1m]` (the effort is chosen in Claude Code) |
 
-23 retired keys resolve to their successors; `charmer models` lists them.
+24 retired keys resolve to their successors; `charmer models` lists them.
 
 <!-- end of generated: model-lines -->
 
@@ -83,25 +83,49 @@ settings cannot send them outside the session's models.
   tokens of context, 922,000 of input and 128,000 of output. On the
   account route charmer keeps GPT-6's bound of 872K, not measured for 6.2,
   and a validated floor of 200,000 tokens, not a measurement of the new
-  models. Both keep efforts low to max with the default `high`. The
-  gateway's built-in model list does not include them; charmer adds them
+  models. Live checks on 2026-11-18 accepted Codex-route smoke and every
+  effort low to max on Claude Code 2.1.322 / CLIProxyAPI 8.0.67, then a
+  managed high turn on each on 2.1.326 / 8.0.76 (HTTP 200, exit 0).
+  No context-limit test ran. Both keep efforts low to max with the default
+  `high`. The gateway's built-in model list does not include them; charmer adds them
   to the account's list, except on the Free, Free workspace and K-12 plans
   ([ChatGPT account](../providers/chatgpt-account.md#5-use-it)).
 - `or-gpt` uses GPT-6.2 Sol on OpenRouter (`openai/gpt-6.2-sol`, listed on
   2026-11-17 with 1,050,000 tokens of context and up to 128,000 of output).
   Its agent checks (smoke, high and xhigh, forced named tool, streaming)
-  passed on 2026-10-02 on GPT-6.1 Sol, not on 6.2.
+  passed on 2026-10-02 on GPT-6.1 Sol, not on 6.2. A managed high turn on
+  6.2 passed on 2026-11-18 (HTTP 200, exit 0; Claude Code 2.1.326 /
+  CLIProxyAPI 8.0.76); no new full battery or context-limit test ran.
+- `or-gemini` uses Gemini 4 Hydrogen on OpenRouter
+  (`google/gemini-4-hydrogen`), not checked by a live request in this release.
+  It keeps high and xhigh, default `high`, although Hydrogen also lists low
+  and medium. The `openrouter` profile follows this key.
 
 Their `/model` selectors name the generation:
-`gpt-multi-sol-6-2-<effort>[1m]`, `gpt-multi-astra-6-2-<effort>[1m]` and
-`charmer-or-gpt-6-2-<effort>[1m]`. Profiles and bindings that name the keys
-follow them without reseeding or effort changes. A session running on GPT-6.1
-Sol, GPT-6 Astra or GPT-6.1 Sol on OpenRouter keeps its model until it
-resumes, through the retired keys `sol@6.1`, `astra@6` and `or-gpt@6.1`.
+`gpt-multi-sol-6-2-<effort>[1m]`, `gpt-multi-astra-6-2-<effort>[1m]`,
+`charmer-or-gpt-6-2-<effort>[1m]` and `charmer-or-gemini-4-<effort>[1m]`.
+Profiles and bindings that name the keys follow them without reseeding or
+effort changes. A session running on GPT-6.1 Sol, GPT-6 Astra, GPT-6.1 Sol
+on OpenRouter or Gemini 3.8 Flash keeps its model until it resumes, through
+the retired keys `sol@6.1`, `astra@6`, `or-gpt@6.1` and `or-gemini@3.8`.
 With an OpenAI API key in use, the key's route does not serve `sol@6.1`
 and `astra@6`, so such a session needs its resume, onto GPT-6.2, right away
-([the GPT-6.2 lines](../update.md#the-gpt-62-lines)); `or-gpt@6.1` stays
-served on OpenRouter.
+([the GPT-6.2 lines](../update.md#the-gpt-62-lines)); `or-gpt@6.1` and
+`or-gemini@3.8` stay served on OpenRouter.
+
+The new `or-gemini-carbon` line selects `google/gemini-4-carbon`, with low,
+medium and high, default `high`, and selectors
+`charmer-or-gemini-carbon-<effort>[1m]`. It is in no shipped profile; choose
+it explicitly in Models or the profile editor. It, too, is
+not checked by a live request in this release.
+
+Both Gemini 4 lines use OpenRouter's public models list of 2026-11-18:
+Hydrogen was created on 2026-11-12, Carbon on 2026-11-10; each lists
+1,048,576 context tokens and 943,718 max completion tokens. The 1M provider
+bound is listing-based, and the validated 200,000-token floor is conservative,
+not measured on Gemini 4. Their `minimum_tested` pair, Claude Code 2.1.286 /
+CLIProxyAPI 7.3.15, describes the earlier Gemini 3.8 Flash tests, not Gemini 4.
+The `models qualify` command is for lines you declare yourself, not catalog lines.
 
 ### Lines moved in 2.3.0
 
