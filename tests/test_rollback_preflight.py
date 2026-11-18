@@ -438,6 +438,54 @@ class PrivateNetworkRollbackTests(PreflightCase):
                                           "Also reported by 2.5.0: 1, unchanged by the rollback.", LIMITS_240])
 
 
+DATA_260 = DATA / "2.6.0"
+PATCH_SESSION = "88888888-8888-4888-8888-888888888888"
+PATCH_PROFILE = {"version": 2, "name": "patchline", "description": "a profile on shipped OpenRouter lines",
+                 "lead": {"model": "or-opus", "effort": "xhigh"},
+                 "agents": {"cm-reviewer": {"model": "or-gemini", "effort": "xhigh"},
+                            "cm-explorer": {"model": "or-gemini-carbon", "effort": "medium"},
+                            "cm-analyst": {"model": "or-gpt", "effort": "max"}},
+                 "native_agents": {"explore": "replace", "general_purpose": "off", "plan": "native"},
+                 "workflows": "native"}
+
+
+class PatchReleaseRollbackTests(PreflightCase):
+    """This release → 2.6.0. The release changes no line, effort, seed or
+    selector, so what a default render serves here 2.6.0's data serves too,
+    and a profile on the shipped OpenRouter lines with a running session on
+    their selectors is no finding."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.current_root = rp.compose_root(RESOURCES_ROOT, rp.read_target(RESOURCES_ROOT), self.root / "current-now")
+
+    def test_everything_served_here_is_served_by_260(self) -> None:
+        target = rp.compose_root(RESOURCES_ROOT, rp.read_target(DATA_260), self.root / "target-260")
+        self.assertEqual(self.served(self.current_root) - self.served(target), frozenset())
+
+    def test_untouched_data_against_260_finds_nothing(self) -> None:
+        save_profile(self.env, self.current_root, PATCH_PROFILE)
+        models = json.loads(rp.read_target(RESOURCES_ROOT)["catalog/models.json"])["models"]
+        gemini = models["or-gemini"]["efforts"]["xhigh"]["selector"]
+        carbon = models["or-gemini-carbon"]["efforts"]["medium"]["selector"]
+        self.assertLessEqual({gemini.removesuffix("[1m]"), carbon.removesuffix("[1m]")}, self.served(self.current_root))
+        session(self.state_root, PATCH_SESSION, "claude-opus-5-5[1m]",
+                {"cm-reviewer": gemini, "cm-explorer": carbon}, fence=[gemini, carbon])
+        roots = [self.root / "home", self.root / "config", self.root / "state", self.root / "secrets"]
+        before, scratch = tree(*roots), scratch_roots()
+        report = rp.check(environ=self.env, home=self.home, state_root=self.state_root,
+                          current_root=self.current_root, target_root=DATA_260, current="2.6.1", target="2.6.0")
+        self.assertEqual(tree(*roots), before)
+        self.assertEqual(scratch_roots(), scratch)
+        self.assertEqual(report.findings, ())
+        self.assertIsNone(report.unreadable)
+        self.assertEqual(report.lines(), [
+            "Nothing found that 2.6.0 cannot read.",
+            "Also reported by 2.6.1: 0, unchanged by the rollback.",
+            "Checked with 2.6.1's rules against 2.6.0's data; 2.6.0 may still refuse what these rules accept.",
+        ])
+
+
 class JourneyTests(test_release_update.JourneyTestCase):
     """The question: a finding refuses --yes and makes No the default; only
     unreadable data falls through to the question as it was."""

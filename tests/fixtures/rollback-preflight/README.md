@@ -11,6 +11,7 @@ copied byte for byte from the release tag with `git show <commit>:<path>`
 | `2.3.0/`  | `v2.3.0` | `2fe786954ee93e18a2d25ab722bc602c122bc3e0` |
 | `2.4.0/`  | `v2.4.0` | `762af5628e1e42b43fc94b7b50c221ebfca477dd` |
 | `2.5.0/`  | `v2.5.0` | `3bd928e84906100dbcb11a71353a5f0030682382` |
+| `2.6.0/`  | `v2.6.0` | `971bc42b0cc141d7b81e3e712dafd1508d72d4dd` |
 
 Files: `version.json`, `catalog/gateway.json`, `catalog/models.json`,
 `catalog/native-contract.json`, `catalog/providers.json`,

@@ -82,6 +82,12 @@ HISTORICAL_FILES = {
     "tests/fixtures/rollback-preflight/2.5.0/catalog/retired.json": (
         "5bc9a5796c52ac35393dad5cb2bbdc9d5f88a746c172180ec32d765f815ca0a2",
         "2.5.0's packaged retired map, copied from the v2.5.0 tag (rollback preflight input)"),
+    "tests/fixtures/rollback-preflight/2.6.0/catalog/native-contract.json": (
+        "5cda11f08f10d3342e9c1a94c230996ba858b38ede67d1ccf91d6ebd35e96521",
+        "2.6.0's packaged native contract, copied from the v2.6.0 tag (rollback preflight input)"),
+    "tests/fixtures/rollback-preflight/2.6.0/catalog/retired.json": (
+        "101cc67efb8de41f1e9c9089d0b9a20caa5068720518e21eb67f696aec3cebc5",
+        "2.6.0's packaged retired map, copied from the v2.6.0 tag (rollback preflight input)"),
 }
 
 # Exact spans of a file (path -> [(span, occurrences, reason)]): each span
