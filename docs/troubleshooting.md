@@ -2,11 +2,11 @@
 
 Start with `charmer doctor`. It reports **Ready**, **Attention**
 (a warning to assess, with a remedy) or **BLOCKED** (something is
-broken, and what). Plain `charmer doctor` makes no repairs and fetches no
-release metadata; repair, pruning and token rotation require their explicit
-options, and launcher initialization may refresh shared helpers. Use
-`charmer doctor --json` for a report that does not write local state
-(machine-readable). Opening **H** fetches no release metadata either.
+broken, and what). Plain `charmer doctor` makes no repairs, fetches no
+release metadata and writes nothing; repair, pruning and token rotation
+require their explicit options. `charmer doctor --json` gives the same
+check, machine-readable, as a report that does not write local state.
+Opening **H** fetches no release metadata either.
 The tables below go from a symptom to the doctor finding, the safest fix
 and how to check it worked. [CHEATSHEET.md](CHEATSHEET.md) has the short
 version.
@@ -92,7 +92,7 @@ keeps restart, integrity and readiness checks separate.
 | --- | --- | --- | --- |
 | sessions cannot connect; Claude Code reports a connection refused | “local gateway: <error> — <fix>” | `charmer gateway start`; if it does not come up, `charmer gateway logs` shows why it stopped | `charmer gateway status` says ready; the session's next request succeeds (its token helper reconnects by itself) |
 | a new installation: nothing renders or starts | the gateway is not set up yet | `charmer setup --step gateway` | `charmer gateway status` |
-| automatic starts stopped after repeated crashes | three starts in ten minutes | read `charmer gateway logs`, fix the cause, then `charmer gateway start` | status shows one instance running |
+| automatic starts stopped after repeated crashes (the on-demand gateway) | three starts in ten minutes | read `charmer gateway logs`, fix the cause, then `charmer gateway start` | status shows one instance running |
 | a change did not take effect | “gateway did not reload the current render (sentinel missing) — restart required” | between turns, `charmer gateway restart` (not while the persistence hold is active) | `charmer doctor` |
 | the configuration on disk is stale | “the on-disk gateway config differs from a fresh render of the installed catalog” | `charmer providers apply` | doctor no longer reports it |
 | a model is missing from the gateway | “the running gateway does not serve rendered selector” | `charmer gateway restart` between turns | `charmer doctor` |
@@ -105,6 +105,7 @@ keeps restart, integrity and readiness checks separate.
 | commands refuse: another state directory | “gateway managed for root <A>; this command used <B>” | run with the managed state directory (check `XDG_STATE_HOME`) | doctor |
 | `charmer gateway service install` on Ubuntu 23.10 or later: the gateway exited during its start | the on-demand gateway is kept; doctor does not diagnose the AppArmor restriction | keep the on-demand gateway, or ask an administrator to assess the system-wide security trade-off of allowing unprivileged user namespaces ([service requirements](guides/gateway.md#the-supervised-service-linux)) | `charmer gateway status`; after an approved system change, retry service install and check `charmer gateway service status` |
 | the gateway service keeps restarting | “gateway working directory <path> holds a .env file” | move that `.env` aside, then `charmer gateway restart` | `charmer gateway service status` |
+| the supervised service stopped restarting the gateway (five starts within 300 seconds, then the unit is failed) | “local gateway: …”, naming “if it failed (start limit hit)” | read why with `charmer gateway logs` (the unit's journal), fix the cause, then run the reset-and-start command that remedy names; it ends with `charmer gateway start` | `charmer gateway status` says ready |
 | doctor: the installed service unit differs, or its restart is pending | the unit or the package it runs changed | `charmer gateway service install` (refreshes it), then follow its line | `charmer gateway service status` |
 | status or doctor says `gateway same binary on another path; restart optional` | the recorded and installed files have matching on-disk SHA-256 hashes; running bytes are not verified by this check | no restart is needed for the path change alone; to move to this installation, use `charmer gateway restart` between turns, subject to the persistence hold | [verify the running bytes separately](update.md#verify-an-installation); the old running path stays protected from cleanup |
 | status or doctor says `gateway restart pending` for the binary | the on-disk files differ, or a file or comparison is unavailable | restore a missing or unreadable binary as directed, then `charmer gateway restart` between turns; never bypass a persistence hold | `charmer gateway status`, then `charmer update --verify` and doctor |
@@ -114,7 +115,7 @@ keeps restart, integrity and readiness checks separate.
 | journald's current process start could not be observed | the system-manager query is missing, denied, timed out, inactive, invalid or unsupported on older systemd | keep the gateway running; check the credentials, then `charmer gateway clear-hold` to acknowledge the coverage gap for this running instance. Only a clear whose report showed it as unavailable counts; a clear made while it was available does not create an acknowledgement. The observation stays unavailable; later failed saves still hold | `charmer gateway status` shows the acknowledged limitation and no hold, unless another reason still holds |
 | the gateway does not start after `charmer update` | “local gateway: …”, with “if this began after charmer update: charmer update --rollback, then charmer gateway start (returns to <version>'s gateway; sessions keep their records)” | read why (`charmer gateway logs`); to go back to the previous release's gateway: `charmer update --rollback`, then `charmer gateway start`. Shown only for an installed release whose previous version has another gateway and accepts the state on disk | `charmer gateway status` says ready |
 | a continuity alias is not served, or aliases left by earlier lines are unused | “continuity alias <alias> is not served … charmer doctor --prune-aliases <alias>”, or one grouped row saying the aliases are “not used by any running session” | the grouped finding lists only aliases no running session uses: `charmer doctor --prune-aliases --preview` shows the plan, `charmer doctor --prune-aliases` removes all of them (**H** → Enter previews and confirms the listed group); name aliases only to keep some; removing a stale captured copy never removes an alias a shipped line owns | doctor no longer lists it |
-| after `charmer update` to 2.5.0, two `gateway restart pending` rows | the gateway binary changed, and the running gateway was started by 2.4.0 with other start arguments or environment filter | one `charmer gateway restart` between turns clears both, subject to the persistence hold | `charmer update --verify` says `running-gateway: current-match` |
+| after `charmer update`, `gateway restart pending: the running gateway runs …, this install provides … (different on-disk SHA-256 hashes)` in status and doctor | the release changed the gateway binary; from 2.4.0 to 2.5.0 doctor also says the running gateway was started by 2.4.0 with other start arguments or environment filter | one `charmer gateway restart` between turns clears them, subject to the persistence hold | `charmer update --verify` says `running-gateway: current-match` |
 | a private-network provider's requests fail with HTTP 502 `upstream address refused: outside the provider's private network (tailnet)` (or its class) | doctor says what the server's name resolves to now | the name resolved outside the declared class, or the overlay is down or runs in userspace mode: fix the name or the network, run the overlay client in kernel mode, or declare the class the address is really in and approve again ([self-hosted](guides/self-hosted.md)) | `charmer doctor` |
 | `gateway reloaded without the private-network selector(s)` | the running gateway predates the private-network guard | `charmer gateway restart` between turns | `charmer doctor` |
 | doctor says `private-network providers are served only after the gateway restarts` | the provider is declared, but the running gateway is older | `charmer gateway restart` between turns | `charmer doctor` |
@@ -234,7 +235,7 @@ report it.
 | `/fork` shows its usage line, or `/fork` with a directive starts an agent on the lead's model | managed sessions keep Claude Code's agent view off, so `/fork` is Claude Code's fork-subagent command, not a session copy. To copy a session use `charmer -r <id> --fork` (or **N** on the sessions screen); to keep the lineup's models, ask the lead to use a `cm-*` agent |
 | “scope differs from its recorded launch resolution … repair is deferred for the catalog move” | the session's model line moved in the catalog (for example `fable` to a new generation) and its scope files do not match what it launched with, so repair waits for the move: resume it with `charmer -r <id>`, which rebuilds the scope |
 | “scope unreadable” | doctor could not verify the scope, including a read failure during a concurrent resume's scope swap; use the printed `charmer doctor --repair <id>` command |
-| “its subagent status line differs from this release's compile” | expected after a release or your status-line settings change: resume with `charmer -r <id>`, or run `charmer doctor --repair <id>` now (`charmer doctor --repair-all` for stopped sessions); this is Attention, not damage |
+| “its subagent status line differs from this release's compile” | expected for a session an earlier release compiled with charmer's subagent status line, which this release compiles into no session: resume with `charmer -r <id>`, or run `charmer doctor --repair <id>` now (`charmer doctor --repair-all` for stopped sessions); this is Attention, not damage |
 | after updating, doctor says `fence/picker differ from the installed catalog (catalog changed since launch); applies at the next resume` | exit and resume with `charmer -r <id>`; the new catalog and the background-request and compaction settings apply then, not to the already running client ([update details](update.md#settings-at-the-next-resume)) |
 | after a live Haiku bind, doctor says `session <id8>: background requests move to claude-haiku-5-5[1m] at the next resume` | exit and resume with `charmer -r <id>` to change the model for background requests; after unbinding, the message names the lead's selector instead. Reloading plugins alone does not change this launch-time setting |
 | doctor groups the finding as `{n} sessions: background requests move with their lineup's haiku binding; each at its next resume` | resume each affected session when ready; `charmer doctor -v` names every session separately |
@@ -254,8 +255,9 @@ More: [guides/sessions.md](guides/sessions.md).
 
 | Symptom | Fix |
 | --- | --- |
-| your own agent rows appear instead of charmer's | a user, project or local `subagentStatusLine` setting wins; doctor reports that choice. To use charmer's rows, remove your override, fix any unreadable settings layer, then resume ([the agent panel](guides/sessions.md#the-agent-panels-rows)) |
-| only Claude Code's native agent rows appear | run `charmer doctor`: an earlier scope compile needs a resume or `charmer doctor --repair <id>`; if a settings file cannot be read, fix its JSON, size or access first, then resume. Repair alone does not fix unreadable user settings |
+| only Claude Code's native agent rows appear | expected: managed sessions no longer get charmer's subagent status line, because Claude Code 2.1.326 shows a deprecation notice at every start while the key is set. To keep charmer's rows, set `subagentStatusLine` in `~/.claude/settings.json` to the command doctor's `subagent status line:` row names, accept the notice and resume ([the agent panel](guides/sessions.md#the-agent-panels-rows)) |
+| every start says `subagentStatusLine is deprecated in favor of mods and will stop working in a future release` | a settings layer sets `subagentStatusLine`: your own (doctor says “subagent status line: user-owned”), or the scope of a session an earlier release compiled, until its next resume or `charmer doctor --repair <id>`. Remove your own key to stop the notice; charmer's rows go with it |
+| a terminal launch, resume or fork asks "Adding a new directory" for the session's scope folder | Claude Code 2.1.326 asks before it adds a folder you have not trusted. "Yes, add it" holds for that session; "No, exit" ends the launch with status 1. To answer once for every session, trust charmer's scopes folder ([quickstart](quickstart.md#3-launch)) |
 | `/cm` fails: `charmer` not found | `charmer` must be on the session's PATH |
 | `/cm` changed nothing for new agents | type `/reload-plugins`, then start agents fresh |
 | `/model` refuses a model | it is outside the lead set: relaunch with a profile whose lead is that model |
@@ -266,8 +268,12 @@ More: [guides/sessions.md](guides/sessions.md).
 | a Codex capacity refusal (429) asks for a long wait | on both OpenAI routes the refusal carries the provider's `Retry-After` delay; wait for it, or switch route |
 | a refusal is retried despite the provider's retry headers | the gateway does not forward a provider's `x-should-retry`; on Claude routes it answers a 429 or 529 with a `Retry-After` of its own instead of the provider's, and the client applies its own retry rules; assess the final error before retrying |
 | doctor reports `DISABLE_AUTO_COMPACT` as Info | managed sessions re-enable compaction despite this user setting; plain `claude` does not compact. No managed-session remedy is needed |
-| managed compaction is disabled; doctor reports `DISABLE_COMPACT` as Attention | remove `DISABLE_COMPACT` from your Claude Code user settings env, then `/exit` and resume with `charmer -r <id>`; the compiled setting cannot override it on 2.1.311 |
+| managed compaction is disabled; doctor reports `DISABLE_COMPACT` as Attention | remove `DISABLE_COMPACT` from your Claude Code user settings env, then `/exit` and resume with `charmer -r <id>`; the compiled setting cannot override it on 2.1.326. Until then a 1M gateway lead stops with "Prompt is too long" near 200K instead of compacting |
+| doctor reports `CLAUDE_CODE_DISABLE_1M_CONTEXT` as Info | managed sessions keep their 1M windows (each states it `0`); only plain `claude` holds 1M models to 200K. No managed-session remedy is needed |
+| doctor reports `CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT` as Attention: it “defeats the charmer session policy” | it turns off Claude Code's window check for model ids it does not know: remove it from the settings file doctor names, then `/exit` and resume with `charmer -r <id>` |
 | an installed mod changes an agent's model | an `agent.spawn` mod can choose another lineup model; a `settings.read` mod can also widen the allowed model list. Disable the mod if the compiled lineup must hold; charmer's fence does not constrain user-installed code ([client limits](reference/compatibility.md#verified-behavior-and-limits)) |
+| an installed mod runs a tool the session denies | expected from Claude Code 2.1.326: a mod's own tool calls are not checked against the session's deny rules. Install only mods you trust, and none that let the model drive arbitrary tool calls ([security](security.md#model-and-permission-fences)) |
+| a worktree-isolated agent's outputs are gone after it finished | files it left only in gitignored paths are deleted with its worktree (upstream #110235; Claude Code 2.1.322 and 2.1.326 alike). Have an isolated `cm-*` writer commit its outputs, or write them outside gitignored paths, before it finishes |
 | implementers “unavailable here” | start the session in a Git repository (`git init`) |
 | Remote Control, `/schedule` or claude.ai connectors are missing | expected in managed sessions; use plain `claude` for these |
 
@@ -288,7 +294,8 @@ See [client fixes](reference/compatibility.md#deferred-client-fixes).
 
 ### Late-stream completion limit
 
-Re-measured on 2026-10-27 with Claude Code 2.1.311 and CLIProxyAPI 8.0.45,
+Re-measured with Claude Code 2.1.326 and CLIProxyAPI 8.0.76 (first on
+2026-10-27 with 2.1.311 and 8.0.45),
 a stream missing `message_stop` after completed content and a terminal
 `message_delta` can make the client report success without recovery, despite
 the gateway's SSE error. A successful client result is not proof of complete

@@ -100,7 +100,7 @@ charmer direct [--model <model>] [--no-subagents] [--force] [--print-launch] [-c
 
 ### charmer doctor
 
-Check this installation and its sessions. The verdict is Ready, Attention or BLOCKED; each finding names one fix. Plain doctor makes no repairs and fetches no release metadata; launcher initialization may refresh shared helpers. Use charmer doctor --json for a report that does not write local state. --repair, --prune and --rotate-token act.
+Check this installation and its sessions. The verdict is Ready, Attention or BLOCKED; each finding names one fix. Plain doctor makes no repairs, fetches no release metadata and writes nothing. Use charmer doctor --json for the same check as a report that does not write local state. --repair, --prune and --rotate-token act.
 
 ```text
 charmer doctor [--json | --repair <id> | --repair-all | --prune | --rotate-token | --prune-aliases [<alias>…]] [-v] [--first-run] [--preview] [--include-live]

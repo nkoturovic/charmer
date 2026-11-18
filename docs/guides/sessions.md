@@ -27,6 +27,9 @@ charmer -r <id>             # resume one session (id, 8+ character prefix, or na
 charmer -r                  # open the sessions screen
 ```
 
+When a managed session ends, Claude Code prints
+`Resume this session with: charmer --resume <id>`; that command resumes it.
+
 Resume reopens the same transcript with the recorded lineup, compiled
 fresh against the installed release, plus any change you recorded for it
 (the resume card shows that change). Resume runs from the recorded
@@ -51,6 +54,14 @@ when something needs a decision:
 
 A resume after a release that changes a session's agent context class
 shows each move, for example "agent class 200K → 1M".
+
+Every launch, resume and fork adds the session's scope folder to Claude
+Code (`--add-dir`). In a terminal, the pinned Claude Code asks before it
+adds a folder you have not trusted ("Adding a new directory"); "No, exit"
+is preselected and ends the launch with status 1, and "Yes" holds for that
+session only. To answer once for every session, trust charmer's scopes
+folder as [the quickstart](../quickstart.md#3-launch) shows. Headless runs
+(`-p`) never ask.
 
 ## The sessions screen
 
@@ -97,8 +108,7 @@ or billed tokens.
 
 ## The agent panel's rows
 
-In a managed session, charmer draws Claude Code's agent panel: one row
-per agent, for example
+charmer can draw Claude Code's agent panel: one row per agent, for example
 
 ```text
 cm-reviewer requested: charmer-sol-xhigh · xhigh · 23% 250K/1.0M · Reading the diff
@@ -111,25 +121,23 @@ its current task as fits. `requested:` marks a charmer selector: the model the
 agent asked for, not proof of the model the provider served (`charmer
 explain` shows what was served).
 
-Every managed session runs this as Claude Code's `subagentStatusLine`
-setting (`~/.local/state/charmer/bin/charmer-statusline`). When your own
-Claude Code settings define `subagentStatusLine` (`~/.claude/settings.json`,
-or the project's `.claude/settings.json` or `.claude/settings.local.json`),
-charmer sets none and yours is used. That is also how to turn charmer's rows
-off: a `subagentStatusLine` of your own, even one that prints nothing:
+Managed sessions no longer get these rows by default: Claude Code 2.1.326
+shows "subagentStatusLine is deprecated in favor of mods and will stop
+working in a future release" at every start while any settings layer sets
+Claude Code's `subagentStatusLine`, so charmer compiles none into a session.
+To keep the rows, set it yourself in `~/.claude/settings.json` to the
+stable command charmer keeps for it, and accept the notice:
 
 ```json
-"subagentStatusLine": {"type": "command", "command": "true"}
+"subagentStatusLine": {"type": "command", "command": "~/.local/state/charmer/bin/charmer-statusline"}
 ```
 
-If one of those files cannot be read (not valid JSON, larger than 1 MiB,
-not a regular file, or not readable), charmer sets none either, so your
-setting is never overridden. `charmer doctor` names which applies: a
-user-owned setting, else an unreadable file, else charmer's line. A change
-to those files applies at the next resume (`charmer -r <id>`).
-
-For adoption after an update and scope repair after rollback, see
-[updating from 2.1.0](../update.md#updating-from-210).
+Use the path `charmer doctor` prints in its `subagent status line:` row.
+The command runs `charmer statusline subagents`; as a setting of your own it
+also draws the rows in plain `claude`. A change to your settings applies at
+the next resume (`charmer -r <id>`). A session an earlier release compiled
+with charmer's line keeps it until its next resume or
+`charmer doctor --repair <id>` ([updating from 2.5.0](../update.md#updating-from-250)).
 
 charmer never sets Claude Code's main `statusLine`. To use charmer's, add
 this to `~/.claude/settings.json`:

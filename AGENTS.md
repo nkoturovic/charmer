@@ -95,7 +95,7 @@ installation (a source tree, or the prefix of an installed package: its
                                  # charmer-gateway.service by default)
 ```
 
-Release: 2.5.0 (catalog 44; `version.json` is the packaged identity).
+Release: 2.6.0 (catalog 45; `version.json` is the packaged identity).
 Current default: the **`balanced` seed profile**
 (`catalog/profiles/balanced.json`): Opus 5.5 lead at ultracode, Sol high
 explorer/xhigh analyst, Opus analyst-strong, Luna max / Sol xhigh / Sol max
@@ -357,7 +357,9 @@ Profile lineups and direct lineups, one compile path:
    moves profiles, bindings, settings and the override (`sessions.config_root`) but not the
    catalog-pinned token location.
    The fourth stable shim, `<state>/bin/charmer-statusline`, runs
-   `charmer statusline subagents`. It forwards rows only after a successful
+   `charmer statusline subagents`; no scope compiles it any more (invariant
+   7), and doctor names it for a `subagentStatusLine` of the user's own. It
+   forwards rows only after a successful
    launcher exit; otherwise it prints nothing and exits 0, including when
    its selected launcher predates the command. Before launching it closes
    stderr with `exec 2>&-`, then runs
@@ -384,17 +386,19 @@ Profile lineups and direct lineups, one compile path:
    Nothing else without a demonstrated failure case (`apiKeyHelper`
    earned its place via the daemon env-scrub incident; `modelPicker`
    (v2 scopes only) because without it `/model` does not list the lead
-   set). `subagentStatusLine` supplies the agent-panel rows through the
-   stable shim; the pinned client's `--settings` key replaces a user key,
-   so `managed.subagent_status_line_layers` withholds ours if any user,
-   project or local layer defines it (any value) or cannot be read. Launch,
-   resume, repair and doctor use that same decision. `statusLine` is never
-   compiled. A delta confined to a missing key or recognized literal shim
-   setting from another compile is lazy drift (Attention); any other command
-   remains BLOCK
+   set). `subagentStatusLine` stays in the allowlist only so that the
+   stable-shim key an earlier release compiled is recognised: the pinned
+   client 2.1.326 shows "subagentStatusLine is deprecated in favor of mods
+   and will stop working in a future release" at every start while any
+   settings layer sets it, the `--settings` document included (client check
+   S17-notice), so launch, resume and repair compile none. `statusLine` is
+   never compiled. A delta confined to a recognized literal shim setting
+   from another compile is lazy drift (Attention) that the next resume or
+   `doctor --repair` drops; any other command remains BLOCK
    `scope differs`. Recognition requires a normalized absolute path in its
-   canonical shell-quoted form, never shell syntax. Doctor reports the
-   user-owned key first, otherwise an unreadable layer, otherwise ours.
+   canonical shell-quoted form, never shell syntax. Doctor reports a
+   user-owned key (`managed.subagent_status_line_layers`), otherwise that
+   none is compiled, with the shim path a user key of their own can name.
    The feedback-drafts preference (§3.2) travels in `env`, not as a
    new key. `permissions.defaultMode` (inside the allowed `permissions`
    key; the demonstrated failure: 2.1.284+ starts an unconfigured session in
@@ -419,7 +423,23 @@ Profile lineups and direct lineups, one compile path:
    `autoCompactEnabled:false` silently wedges 1M sessions). Doctor reports a user `DISABLE_AUTO_COMPACT` as Info:
    managed sessions re-enable compaction, while plain `claude` does not
    compact. A user settings env `DISABLE_COMPACT` still stops managed
-   compaction on 2.1.311; doctor reports Attention and asks to remove it.
+   compaction on 2.1.326, and the exported `CLAUDE_CODE_MAX_CONTEXT_TOKENS`
+   then acts as a hard limit: a `[1m]` gateway lead ends "Prompt is too
+   long" near 200K (`CompactionWindowProbe` records it, never gating);
+   doctor reports Attention and asks to remove it.
+   `CLAUDE_CODE_MAX_CONTEXT_TOKENS` is exported by every launch (200000, or
+   the lead set's own declared scalar when every lead-set class is below
+   1M): from 2.1.323 the client gives an id it does not know 1M even
+   without `[1m]`, and the scalar holds such ids to the 200K class while
+   `[1m]` selectors and Claude's own ids keep 1M. The flag settings env
+   states `CLAUDE_CODE_DISABLE_1M_CONTEXT="0"` (a user's `1` would hold
+   every `[1m]` role to 200K and drop the lead's own picker row); it and
+   `CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT` are
+   policy-defeating keys, unset at launch and reserved in lead env. Doctor
+   reports a user's `CLAUDE_CODE_DISABLE_1M_CONTEXT` as Info and the
+   enforcement key as Attention. The process env also carries
+   `CLAUDE_CODE_RESUME_HINT_COMMAND=charmer`, so the client's exit hint
+   prints `charmer --resume <id>` (the flag settings env does not reach it).
    `ANTHROPIC_DEFAULT_HAIKU_MODEL` is pinned to the lineup's Haiku selector,
    else the lead, so user or project settings cannot move helper or
    background requests outside the session's models. The fence is **split**:
@@ -438,8 +458,8 @@ Profile lineups and direct lineups, one compile path:
    `CLAUDE_CODE_RETRY_WATCHDOG_SCOPE=""` are pinned in the durable settings
    env; the latter is scrubbed from the launch environment and reserved in
    lead env, so an inherited `capacity` cannot narrow recovery.
-   Earlier-cut recovery remains a required gate. With client 2.1.311 and the
-   tested 8.0.45 gateway candidate, missing `message_stop` after completed
+   Earlier-cut recovery remains a required gate. With client 2.1.326 and
+   gateway 8.0.76 (first measured with 2.1.311 and 8.0.45), missing `message_stop` after completed
    content and terminal `message_delta` can instead produce client
    false-success without recovery, despite the gateway’s SSE error. This
    disclosed known negative is not recovery or proof of harmlessness; see
@@ -605,7 +625,7 @@ Profile lineups and direct lineups, one compile path:
 | `composition.py` | the legacy v1 composition reader + the context-policy constants | only `CompositionError`, `LEAD_ID`, `WORKFLOWS_VOCABULARY`, `AUTO_COMPACT_PERCENT`/`AUTO_COMPACT_OUTPUT_RESERVE`/`AUTO_COMPACT_REACTIVE_HEADROOM`/`OPERATING_WINDOW_CEILING` (800K), `operating_window`, `auto_compact_trigger` ((capacity−20K)×90%; `compiler.py` imports the constants and these two), and the catalog-independent `validate_document`/`load_composition_file` (`profile migrate` reads legacy presets with them; `schemas/composition.schema.json` and `catalog.SUPPORTED_DATA_VERSION` stay for the same reason). Tests that need legacy session snapshots build them with `tests/_v3.py` (a verbatim copy of the resolver and `validate_composition` over `tests/fixtures/v3/default-composition.json`) |
 | `profile.py` | profiles v2, named bindings, lineup resolution, review routing, `BindingStore`, `ProfileStore` | pure except `load_profile_file`, the stores and the import-time schema reads (profile + bindings schemas read and checked **once at import**, so `evaluate`/`resolve` never touch the filesystem); never imports `cli`, `tui`, `compiler`, `scope`, `launch`, `transition` or `composition.py`; `parse` (E1 version before the schema, schema errors verbatim, E2 binding shape: exactly `{model, effort}` or `{use}`); `evaluate(doc, cat, *, bindings=, effective=, ad_hoc=)` → `Evaluation(errors, lineup)` — collects every error (never raises for content; an invalid catalog — unknown provider, malformed line, missing role — is an error, not a KeyError), resolves retired keys through `catalog.resolve_key_in` (successor + notice; a null successor is an error on the lead and an unbind + notice on an agent, and structural rules then fail closed with a hint), `effective=None` = no New line admitted and every provider enabled, E7 refuses a custom model except an ad-hoc direct lead; `resolve` raises `ProfileValidationError`; `ResolvedLineup` (lead + `session_effort` + `comparison_effort` + `lead_class`, bound agents in `AGENT_ROLE_IDS` order with `RoleSpec` and `lead_step`, `unbound`, `spread`/`spread_text`, `outsiders`, `named_bindings`, `applied_bindings()`, `relaunch_fields()`, `settings_overrides`); optional fields default `workflows` `native`, `description` `""`, `lead_providers` None, `settings_overrides` `{}`; `settings_overrides` = only `compaction_percent` (`OVERRIDABLE_SETTINGS`, bounds from `settings.COMPACTION_PERCENT_*`); warnings include (`same-family-review`, `lead-strong-concentration`, `strong-not-stronger`, `fan-out-quota`, `context-below-lead-class`; `primary_provider` suppresses concentration/fan-out for that provider) plus `strict-tool-schema` (any slot on `STRICT_TOOL_SCHEMA_PROVIDERS` = `meta`; a warning, never an error); `role_window(selector, *, client_tokens, provider_tokens, policy, decide)` is the one context-class rule (an agent on a `[1m]` line whose provider bound is below the policy window runs on the alias without `[1m]` in the 200K class; otherwise its class runs at min(class, window)); `evaluate` decides agent bindings under `session_policy` (the lead set of the resolved lead, the effective ceiling, the document's percent) and carries it as `ResolvedLineup.policy`; `binding_selector(entry, provider, effort, *, lead)` is the single selector rule (client-effort → the line selector; gateway-effort → `efforts[effort]`, an ultracode lead → `efforts[default_effort]`) for the lead set, the agent files and the live switch; `derive_routing`: review routing from families only (authors = lead + bound writer grades; no bound reviewer → empty cells, never an error); `ad_hoc_direct(model, effort)`. **`BindingStore`** (`<config root>/bindings.json`, `{"version": 1, "bindings": {<name>: {model, effort}}}`, 0600; operator state, never a catalog document): B1–B9 on added or changed names only (name grammar, collision with live keys/retired keys/`@` bases, line/effort checks, B8 delete refused while referenced, B9 a change that would newly invalidate a referencing profile is refused when `profiles=` is given); `load` tolerates stale collisions and retired models (`conflicts()` reports them). **`ProfileStore`** (`<config root>/profiles/<name>.json` over `Catalog.seed_profiles`): a seed without a user file is served virtually; `new`/`duplicate` refuse an existing name (P1), seeds refuse `rename`/`delete`, `reseed` is the only seed overwrite, `install_seeds()` writes only absent seeds and is called only from write-allowed entry points, `seed_updates()` reports newer shipped seed versions (doctor Attention), `referencing(name)`; saves are schema-only (semantic checks are the caller's `evaluate`); `commit` (`save`/`new` returning the digest of the bytes it wrote: an editor's next expected digest, never an unlocked re-read), `seed_snapshot` (a seed's state and the digest of the same bytes) and `refresh_unedited` (a batch reseed that re-judges every planned seed under one lock acquisition before writing any; `ProfileBatchError.changed` names every profile whose file a part-way failure left replaced — the one it stopped at too when only a later step of it, such as its install record, failed — so no message calls a changed profile unchanged and each gets the propagation offer). Both stores: construction and reads are side-effect-free; every mutator runs state-marker check → `ensure_private_dir` → **one** acquisition of the store's leaf lock (`bindings.json.lock`, `profiles.lock`) → load/check/mutate → unlocked atomic write — a store method never re-acquires its own lock |
 | `compiler.py` | pure launch plan (argv/env/lead prompt) | one compile path for every session: Direct lists v2 lines through `views.line_rows` and the v3 hook reconcile resolves selectors on v2 lines in `cli._direct_model_for_selector`; requires scope_dir, hook_command **and** `token_helper_command`, and asserts the scope `apiKeyHelper` (fails closed); unsets `CREDENTIAL_ENV_KEYS`; never PATH-fallbacks; family defaults = `family_default_env`: `ANTHROPIC_DEFAULT_{FABLE,OPUS,SONNET}_MODEL` = the `fable`/`opus`/`sonnet` line's `wire_model` (+`[1m]` for a 1M line) — a missing or New (`status: new`) line omits its variable, a non-Anthropic family line raises; `compile_lineup_launch(*, docs, prompt_bodies, lineup, effective, session_action, lineup_generation, state_root, scope_dir, hook_command, token_helper_command, launch_epoch, passthrough, no_subagents, session_cwd, launch_environ, worktree_available)` → one `CompileResult` for every session, managed or direct; reads only v2 data (`profile.LineupCatalog.from_docs`; callers pass merged catalog ∪ custom docs); argv `--session-id\|--resume <id> --name <lineup_session_name> --settings <scope>/settings.json --model <lead selector> --effort <session_effort> --add-dir <scope> --append-system-prompt-file <prompt>` + passthrough (resume pins `--model`/`--effort`; name `cm:<profile>` or `cm:direct:<lead key>`, plus the legacy `@project` suffix); process env from `lead_set_context(fence, percent, ceiling=)` (`profile.window_policy` over the lead set: window = min(`Effective.window_ceiling`, the smallest provider bound), `reactive_trigger`, scalar only below a 1M client class), `percent = settings.compaction_percent_for(eff, lineup.settings_overrides)` (a profile override wins; `Effective` stays Settings-level); a lineup whose `policy.window` differs from the compiled window is refused (its agent classes were decided for another window); `agent_context_gaps` fails a bound agent whose provider bound is below its client window and the process window; `env_unset` = `v2_env_unset`: `V2_ENV_UNSET` (credential keys, family defaults, Explore cap, subagent model keys, compaction keys) + `POLICY_DEFEATING_ENV_KEYS` + `GATEWAY_SECRET_ENV_KEYS` (`MANAGEMENT_PASSWORD` and mixed-case inherited spellings) + every merged provider `secret_ref` env name + every `*_API_KEY` of `launch_environ`, never `ENV_UNSET_KEEP` (`CLAUDE_CODE_MESSAGING_TOKEN`, `CHARMER_SECRET_ENV`: product names only, an operator's MCP key is unset like any other; the gateway render reads secrets from the secret file, never the process env); family defaults and the Explore cap live only in the scope's flag settings; `generate_session_appendix` is lineup-independent (relaunch-only inputs + the `lineup.md` path) and the lead prompt path is content-addressed `lead-prompt-<sha256[:16]>-<uuid>.md` (the prune regex shape); `git_work_tree(cwd)` is the one-`git rev-parse` seam that marks writer grades unavailable outside a git work tree; `workflow_default_line` is the one text for `workflow_default_binding` (workflow `agent()` without a `cm-*` agentType and native general-purpose, never Explore/Plan, as the placement probe shows); `CompileResult` carries `fence` and `lineup_generation` |
-| `scope.py` | scope plan/write/gate, four stable shims | `resolve_hook_command`/`ensure_hook_shim`/`hook_shim_path`; shim chmod repaired unconditionally; `ensure_token_helper_command`/`gateway_token_shim_path` (apiKeyHelper); `ensure_status_line_shim`/`status_line_shim_path`/`status_line_setting` (subagentStatusLine, omitted under a user-owned or unreadable settings layer); `CatalogMeta.gateway_base_url`; exact `cm-*` collision gate; **The one scope compile** (`swap_scope`/`restore_prev_scope`/`remove_live_scope` are the `.new`/`.prev` swap every launch and converge uses): `compile_lineup_scope(lineup, cat, eff, prompt_bodies, meta, *, lineup_generation, managed_id, hook_command, launch_epoch, token_helper_command, no_subagents, worktree_available)` → `ScopePlan`, pure and fail-closed: agent files per bound id in `AGENT_ROLE_IDS` order (`name, description, model, effort[, isolation][, disallowedTools]` from roles v2, description = role text + sentinel, agent `ultracode` refused; the legacy tool-list guard is deleted); the **split fence** (`compile_fence` → `Fence`): lead set = offered lead-capable lines of the lead class, narrowed by `lead_providers`, one `LeadSetRow` per effort selector through `profile.binding_selector` (a list-shaped/custom line gives one row); agent set = every selector of every offered agents-capable line plus the selector its agents run on under the session window (`profile.role_window`: the alias without `[1m]` for a bound below the window) and the selector of every agent bound on an offered line; fallback-only = `REFUSAL_FALLBACK_WIRES` + `[1m]` iff a lead row is Anthropic-family (in `availableModels` only); `availableModels` = sorted union; `fence_gaps` (exact membership, never prefix) asserts the lead, every bound agent and the workflow default; `modelPicker` = the lead set with `replaceBuiltInOptions`; settings env = family defaults over offered lines + `CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP` + `CLAUDE_CODE_SUBAGENT_MODEL` from Settings `workflow_default_binding` (`workflow_default_selector`/`workflow_default_window`, its class decided under the session policy; FORCE never); `worktree.baseRef: head` and `autoCompactEnabled` always; `disableWorkflows` also under `--no-subagents`; `SECRET_PATH_DENIES` (the fixed HOME-relative Read/Edit denies) on every v2 scope, plus `secret_path_denies(environ)`'s environment-dependent ones (a moved Anthropic config folder, a key file `CHARMER_SECRET_ENV` names outside the protected folders); six hooks through shim-3 ending `--hook-protocol 3`, no matcher (the legacy shim is refused) plus `CLAUDE_CODE_RETRY_WATCHDOG` for direct too; `ScopePlan.other_files` = `lineup.md` (`lineup_md_bytes`, ≤ `LINEUP_MD_MAX_BYTES` 16 KiB: lead, agents, provider exhaustion, routing table, round cap, rules, checks), `lineup.gen` (`<N> <sha256(lineup.md)[:12]>`), `lead-set.json` (lead, rows, launch-time `context` window/trigger/percent/scalar — never rewritten by a live apply) and `.claude/skills/cm/SKILL.md` (`SKILL_MD_BYTES`, `'$ARGUMENTS'` single-quoted); `plan_hash` covers `other_files` only when non-empty (legacy hashes unchanged); `line_view` is the single merged-view seam (`OfferedLine.source` `catalog`/`custom`); effects `stage_plan` (all relpaths validated before any write), `write_scope` = stage + swap, `live_drift` (the moved `transition._live_drift` body, `other_files` included), `read_disk_plan`; `find_skill_collisions` (read-only). **Shim-3:** `hook_shim_v3_text`/`ensure_hook_shim_v3`/`hook_shim_v3_path` (`<state>/bin/charmer-hook-3`, same write discipline as the legacy shim, whose frozen text is `hook_shim_text`): the UserPromptSubmit fast path reads the runtime id only from a payload that starts with `{"session_id":"` (the client's order; linear), requires lowercase UUIDv4 ids, and exits 0 starting no process but `cat` when `scopes/<mid>/lineup.gen` equals `notice/<rid>.seen`; the shim never execs, forwards launcher stdout only on exit 0, passes the status through for `start`/`end` only and exits 0 for every other event (older-launcher argparse rejection, missing launcher, signal); `premodel` fails closed: a missing launcher or a non-zero exit prints the fixed deny (`hooks.premodel_fail_closed_response`, rendered into the shim text) |
+| `scope.py` | scope plan/write/gate, four stable shims | `resolve_hook_command`/`ensure_hook_shim`/`hook_shim_path`; shim chmod repaired unconditionally; `ensure_token_helper_command`/`gateway_token_shim_path` (apiKeyHelper); `ensure_status_line_shim`/`status_line_shim_path`/`status_line_setting` (the shim a user-owned subagentStatusLine can name; no compile states the key, and an earlier release's literal shim setting is lazy drift); `CatalogMeta.gateway_base_url`; exact `cm-*` collision gate; **The one scope compile** (`swap_scope`/`restore_prev_scope`/`remove_live_scope` are the `.new`/`.prev` swap every launch and converge uses): `compile_lineup_scope(lineup, cat, eff, prompt_bodies, meta, *, lineup_generation, managed_id, hook_command, launch_epoch, token_helper_command, no_subagents, worktree_available)` → `ScopePlan`, pure and fail-closed: agent files per bound id in `AGENT_ROLE_IDS` order (`name, description, model, effort[, isolation][, disallowedTools]` from roles v2, description = role text + sentinel, agent `ultracode` refused; the legacy tool-list guard is deleted); the **split fence** (`compile_fence` → `Fence`): lead set = offered lead-capable lines of the lead class, narrowed by `lead_providers`, one `LeadSetRow` per effort selector through `profile.binding_selector` (a list-shaped/custom line gives one row); agent set = every selector of every offered agents-capable line plus the selector its agents run on under the session window (`profile.role_window`: the alias without `[1m]` for a bound below the window) and the selector of every agent bound on an offered line; fallback-only = `REFUSAL_FALLBACK_WIRES` + `[1m]` iff a lead row is Anthropic-family (in `availableModels` only); `availableModels` = sorted union; `fence_gaps` (exact membership, never prefix) asserts the lead, every bound agent and the workflow default; `modelPicker` = the lead set with `replaceBuiltInOptions`; settings env = family defaults over offered lines + `CLAUDE_CODE_DISABLE_EXPLORE_INHERIT_CAP` + `CLAUDE_CODE_SUBAGENT_MODEL` from Settings `workflow_default_binding` (`workflow_default_selector`/`workflow_default_window`, its class decided under the session policy; FORCE never); `worktree.baseRef: head` and `autoCompactEnabled` always; `disableWorkflows` also under `--no-subagents`; `SECRET_PATH_DENIES` (the fixed HOME-relative Read/Edit denies) on every v2 scope, plus `secret_path_denies(environ)`'s environment-dependent ones (a moved Anthropic config folder, a key file `CHARMER_SECRET_ENV` names outside the protected folders); six hooks through shim-3 ending `--hook-protocol 3`, no matcher (the legacy shim is refused) plus `CLAUDE_CODE_RETRY_WATCHDOG` for direct too; `ScopePlan.other_files` = `lineup.md` (`lineup_md_bytes`, ≤ `LINEUP_MD_MAX_BYTES` 16 KiB: lead, agents, provider exhaustion, routing table, round cap, rules, checks), `lineup.gen` (`<N> <sha256(lineup.md)[:12]>`), `lead-set.json` (lead, rows, launch-time `context` window/trigger/percent/scalar — never rewritten by a live apply) and `.claude/skills/cm/SKILL.md` (`SKILL_MD_BYTES`, `'$ARGUMENTS'` single-quoted); `plan_hash` covers `other_files` only when non-empty (legacy hashes unchanged); `line_view` is the single merged-view seam (`OfferedLine.source` `catalog`/`custom`); effects `stage_plan` (all relpaths validated before any write), `write_scope` = stage + swap, `live_drift` (the moved `transition._live_drift` body, `other_files` included), `read_disk_plan`; `find_skill_collisions` (read-only). **Shim-3:** `hook_shim_v3_text`/`ensure_hook_shim_v3`/`hook_shim_v3_path` (`<state>/bin/charmer-hook-3`, same write discipline as the legacy shim, whose frozen text is `hook_shim_text`): the UserPromptSubmit fast path reads the runtime id only from a payload that starts with `{"session_id":"` (the client's order; linear), requires lowercase UUIDv4 ids, and exits 0 starting no process but `cat` when `scopes/<mid>/lineup.gen` equals `notice/<rid>.seen`; the shim never execs, forwards launcher stdout only on exit 0, passes the status through for `start`/`end` only and exits 0 for every other event (older-launcher argparse rejection, missing launcher, signal); `premodel` fails closed: a missing launcher or a non-zero exit prints the fixed deny (`hooks.premodel_fail_closed_response`, rendered into the shim text) |
 | `hooks.py` | protocol-3 hook handlers: lineup notice, model-switch fence, postmodel warnings, spawn log | `cli.main` dispatches `SCOPE_ONLY_EVENTS` (`prompt`, `premodel`, `postmodel`, `subagent`) **before** Runtime: no catalog load, shim write, store dir or record lock; imports only stdlib + `client_check`, `lineup_files`, `lineup_log`, `sessions`, `state`, `strict_json`, `platform.posix_fs` (the flock) (the set is pinned by `test_hooks`; never `cli`/`compiler`/`catalog`/`profile`/`scope`); never raises, `dispatch` always returns 0, stdout carries at most one JSON document written once; payload ≤ 4 MiB strict JSON; an internal error → `{"systemMessage": "charmer <event> failed: <Class> — run charmer doctor"}` (`premodel`: an explicit deny carrying it, `premodel_fail_closed_response`, the same fixed deny that shim-3 and `cli.main`'s argparse rejection answer), one sanitised stderr line and one metadata line (time, event, managed id, class — never payload) in `<state>/hook-errors.log` (0600, 256 KiB, one rotation; doctor counts it); `prompt`: the notice when `<state>/notice/<rid>.seen` ≠ `lineup.gen`, `.seen` written after stdout (never on an md/gen hash mismatch); `premodel` (`classify_switch`): exact `normalize_model(to_model)` against `lead-set.json` rows (never wire/prefix; `requested_model` ignored) → deny outside, ask on a family change, else allow; `from_model` unmatched → the compiled lead; damaged `lead-set.json` → deny naming `doctor --repair`; `postmodel` (`USER_SWITCH_SOURCES` `command`/`picker`/`sdk` only): warns on an out-of-set target and on a charmer selector saved as `model` in the user's Claude settings (read only, never written; the launcher's postmodel path records `applied.lead`); `subagent`: one lineup-log line (`agent_type`, `agent_id`, `lineup_gen`, `scope_selector` from the agent frontmatter, `label` "binding at gen N (reload unconfirmed)"); `read_notice`/`notice_text`/`notice_response` build the notice (in-process notices add "Lineup gen N staged — active after /reload-plugins in this session"; `read_notice(lead=)` is the `applied.lead` seam, None → `lead-set.json` lead); `migration_lock_held` probes `<state>/migration.lock` shared and non-blocking, never creating it; `transcript_path` and `CLAUDE_CODE_SESSION_ID` are never read |
 | `lineup_files.py` | names + pure helpers shared by `scope.py` and `hooks.py` | stdlib-only leaf: `LINEUP_MD`, `LINEUP_GEN`, `LEAD_SET_JSON`, `SKILL_RELPATH`, `LINEUP_MD_MAX_BYTES`, `GEN_LINE`, `normalize_model` (lower-case, one trailing `[1m]` removed), lineup-log path helpers; no filesystem access |
 | `lineup_log.py` | the per-session lineup log | `<state>/lineup-log/<managed_id>.log` — outside the scope, so never plan content, hash, drift or golden; canonical JSON lines ≤ 4096 bytes appended under `flock` on an `O_APPEND\|O_NOFOLLOW\|O_NONBLOCK` fd that must be a 0600 regular owner file (symlink/dir/FIFO/foreign/0644 refused, never followed); one rotation to `.log.1` at 1 MiB (`append_bounded`, shared with the hook error log); `binding_label(N)`; `remove`/`log_ids` for forget and `doctor --prune`; imports only `state`, `strict_json`, `lineup_files`, `platform.posix_fs` (the flock) |
@@ -1645,7 +1665,10 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
 - **Client contracts.** `tests/test_client_gateway_fallbacks.py` covers
   effort, context-management, system-turn and tool-search fallback controls,
   HTTP MCP retry eligibility, keepalive display and the broad retry-watchdog
-  policy. `tests/test_client_statusline.py` covers the subagent status-line
+  policy. The stream-idle case of `tests/test_client_headless_idle.py`
+  (about ten minutes) runs only with `CHARMER_TEST_STREAM_IDLE=1` and skips
+  otherwise; select it by name when a release needs it.
+  `tests/test_client_statusline.py` covers the subagent status-line
   precedence and task document with the shipped renderer; renderer, shim,
   settings ownership, doctor drift and lightweight entry-point tests live in
   `tests/test_statusline.py`. These are fixture checks, not real-provider
@@ -1907,9 +1930,13 @@ On memory-tight hosts the suite's tmpfs fixture copies can fail with
   changed finding fingerprint adds a comment, an unchanged one stays
   silent, and failed checks still leave evidence. CPython advisories are
   accepted only by explicit entries in
-  `.github/vulnerability-watch-reviewed.json` bound to the advisory id,
-  aliases, modified time, runtime version and an expiry — never a blanket
-  exemption), and `zizmor-online.yml` (a weekly read-only online zizmor
+  `.github/vulnerability-watch-reviewed.json` (format 2; a format-1 file is
+  refused with a re-review message) bound to the advisory id, its aliases,
+  the runtime version and an unexpired re-review date, and to either the
+  advisory's exact modified time or its unchanged summary and details
+  (UTF-8 SHA-256) and affected status: a re-publication with unchanged text
+  stays reviewed and the report names both revisions; an alias alone never
+  matches — never a blanket exemption), and `zizmor-online.yml` (a weekly read-only online zizmor
   audit; the pull-request lint stays `--offline`). CI-only Go (the gateway
   recipe's toolchain archive and digest from `gateway/UPSTREAM.json`, with
   `GOTOOLCHAIN=local`) and ShellCheck come from `.github/scripts/ci_tools.sh`
@@ -2538,6 +2565,27 @@ the operator's approval. Doctor never retires backups.
 - **Context refusals:** the normalized Codex account/API-key errors recover
   before and after headers; OpenRouter and other OpenAI-compatible errors
   are not normalized and require `/compact` (`docs/troubleshooting.md`).
+- **Directory trust (client 2.1.326):** a terminal launch, resume or fork
+  asks before the client adds the untrusted `--add-dir` scope ("No, exit"
+  focused, exit status 1; "Yes" lasts the session and stores nothing); a
+  trusted scopes folder (outside git) or the exact scope stops it, `-p`
+  never asks (`tests/test_client_trust.py`). charmer never writes
+  `~/.claude.json`: trusting the scopes folder once is a documented user
+  step (`docs/quickstart.md`). Terminal fixtures trust the scopes root or
+  the exact scope only in the fixture's own client configuration
+  (`probe.seed_fixture_project_trust`).
+- **Installed mods' tool calls (client 2.1.326):** a mod's own `$.tool.call`
+  is no longer checked against the session's deny rules (upstream's mod
+  types say deny rules bind the model). `client check mod-policy` gates
+  that class for installed mods, so a client that restores the checks flips
+  it visibly; every model-path case stays denied and `mod-authoring` stays
+  `AP-closed`, so the model → mod → key-file chain stays closed
+  (`docs/security.md`).
+- **Ignored-only outputs of an isolated agent (upstream #110235):** files a
+  worktree-isolated agent leaves only in gitignored paths are deleted with
+  its worktree, on 2.1.322 and 2.1.326 alike; an isolated `cm-*` writer
+  commits or writes elsewhere before it finishes
+  (`docs/reference/compatibility.md`).
 
 - **Gateway unit:** the supervised unit is verified with `ProtectHome=tmpfs`
   and all 17 Tier-B hardening keys, none relaxed or removed.
@@ -2719,8 +2767,12 @@ the operator's approval. Doctor never retires backups.
   pinned client applies them to a `[1m]` subagent like the lead). An agent on a
   1M-class line whose provider bound is at least the session window keeps
   `[1m]` and compacts at the window; one whose bound is below it uses the same
-  alias without `[1m]` (the 200K class, or the exported scalar), so it never
-  overflows its route; lines below the 1M class keep their own class.
+  alias without `[1m]`, so it never overflows its route. Every selector
+  without `[1m]` runs in the class of the exported scalar
+  (`CLAUDE_CODE_MAX_CONTEXT_TOKENS`, 200K unless the lead set declares a
+  scalar of its own), whatever the line's `client_tokens`: from 2.1.323 the
+  client gives an id it does not know 1M, and the scalar is what holds it
+  (client checks one-m-suffix and `AgentWindowProbe`, trigger 162,000).
   `profile.evaluate` decides it once the lead resolves (`session_policy`,
   `ResolvedLineup.policy`) for agent bindings, the agent gate's window
   condition and (through `scope`) the agent set and the workflow default;
