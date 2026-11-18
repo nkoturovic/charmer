@@ -3368,7 +3368,8 @@ class GenerationMoveTests(unittest.TestCase):
                              "provider_tokens=1000000 is listing-based", "not measured on Gemini 4", "200,000 floor"):
                     self.assertIn(fact, context["qualification"])
                 if name == "Neon":
-                    for fact in ("on every endpoint", "reasoning and reasoning_effort",
+                    for fact in ("on every endpoint", "943,718 (65,536 on one AI Studio endpoint)",
+                                 "reasoning and reasoning_effort accepted",
                                  "Google AI Studio lists Neon as stable"):
                         self.assertIn(fact, context["qualification"])
                 else:
@@ -3387,11 +3388,11 @@ class GenerationMoveTests(unittest.TestCase):
                 self.assertEqual(set(line["efforts"]), set(levels))
                 for level in levels:
                     spec = line["efforts"][level]
-                    self.assertEqual(spec, {"selector": f"{prefix}-{level}[1m]",
-                                            "proxy_contract": f"output-config-{level}"})
-                    self.assertEqual(routes.get(f"{prefix}-{level}"), {wire})
-                    self.assertIn(json.dumps({"output_config.effort": level}, sort_keys=True),
-                                  _effort_params(document, f"{prefix}-{level}"))
+                    alias = f"{prefix}-{level}"
+                    self.assertEqual(spec, {"selector": f"{alias}[1m]", "proxy_contract": f"output-config-{level}"})
+                    self.assertEqual(routes.get(alias), {wire})
+                    self.assertEqual(_effort_params(document, alias),
+                                     [json.dumps({"output_config.effort": level}, sort_keys=True)])
         for name, seed in bundle.seed_profiles.items():
             lineup = profile.resolve(seed, bundle)
             with self.subTest(seed=name):
