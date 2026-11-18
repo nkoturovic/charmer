@@ -1728,9 +1728,9 @@ _ROUTING_SOURCES = {
     "sonnet": _SONNET,
     "haiku": f"{_HAIKU}[1m]",
     "or-opus": "charmer-or-opus-xhigh[1m]",
-    "astra": "gpt-multi-astra-high[1m]",
+    "astra": "gpt-multi-astra-6-2-high[1m]",
     "kimi": "charmer-kimi-code-high[1m]",
-    "or-gpt": "charmer-or-gpt-high[1m]",
+    "or-gpt": "charmer-or-gpt-6-2-high[1m]",
     "or-grok": "charmer-or-grok-high",
 }
 
@@ -2143,14 +2143,14 @@ class RefusalRoutingMatrixProbe(_SpikeTestCase):
         """Lead-only and non-Anthropic lead-set fences, the openai and
         openrouter seeds' compiled leads, server-named targets and 404s."""
 
-        no_fallback = ("gpt-multi-astra-high[1m]", "charmer-kimi-code-high[1m]", "charmer-or-gpt-high[1m]",
+        no_fallback = ("gpt-multi-astra-6-2-high[1m]", "charmer-kimi-code-high[1m]", "charmer-or-gpt-6-2-high[1m]",
                        "charmer-or-opus-xhigh[1m]", _SONNET)
         cases = [self._shaped_case(f"leadonly-{kind}-cyber", source, "cyber", ())
                  for kind, source in _ROUTING_SOURCES.items()]
         cases += [self._shaped_case(f"nofallback-{kind}-{category}", _ROUTING_SOURCES[kind], category, no_fallback)
                   for kind in ("astra", "kimi", "or-opus") for category in ("cyber", "frontier_llm")]
         cases += [self._compiled_case(f"seed-{seed}-lead-{category}", seed, managed_lead, category)
-                  for seed, managed_lead in (("openai", "gpt-multi-astra-high[1m]"),
+                  for seed, managed_lead in (("openai", "gpt-multi-astra-6-2-high[1m]"),
                                              ("openrouter", "charmer-or-opus-xhigh[1m]"))
                   for category in ("cyber", "bio", "frontier_llm")]
         for kind in ("opus", "astra", "or-opus"):
@@ -2185,12 +2185,12 @@ class RefusalRoutingMatrixProbe(_SpikeTestCase):
         lead's model."""
 
         agents = (
-            ("balanced", "cm-explorer", "gpt-multi-sol-6-1-high[1m]"),
+            ("balanced", "cm-explorer", "gpt-multi-sol-6-2-high[1m]"),
             ("balanced", "cm-analyst-strong", _OPUS),
             ("claude", "cm-explorer", _SONNET),
             ("claude", "cm-reviewer-strong", _FABLE),
             ("openrouter", "cm-implementer-strong", "charmer-or-opus-xhigh[1m]"),
-            ("openrouter", "cm-analyst", "charmer-or-gpt-high[1m]"),
+            ("openrouter", "cm-analyst", "charmer-or-gpt-6-2-high[1m]"),
             ("openrouter", "cm-reviewer-strong", "charmer-or-grok-xhigh"),
         )
         cases = [self._compiled_case(f"subagent-{seed}-{agent}-{category or 'uncategorized'}", seed, source,
@@ -2308,10 +2308,10 @@ class RefusalRoutingMatrixProbe(_SpikeTestCase):
             cases.append(self._compiled_case(f"uncountered-lead-{kind}-cyber", "balanced", _ROUTING_SOURCES[kind],
                                              "cyber", without_counter=True))
         cases.append(self._compiled_case("uncountered-subagent-balanced-cm-explorer-cyber", "balanced",
-                                         "gpt-multi-sol-6-1-high[1m]", "cyber", path="subagent", spawn="cm-explorer",
+                                         "gpt-multi-sol-6-2-high[1m]", "cyber", path="subagent", spawn="cm-explorer",
                                          without_counter=True, expected="claude-opus-4-8"))
         cases.append(self._compiled_case("uncountered-workflow-balanced-cm-explorer-bio", "balanced",
-                                         "gpt-multi-sol-6-1-high[1m]", "bio", path="workflow", spawn="cm-explorer",
+                                         "gpt-multi-sol-6-2-high[1m]", "bio", path="workflow", spawn="cm-explorer",
                                          without_counter=True, expected="claude-opus-5"))
         cases.append(self._compiled_case(
             "uncountered-catch-all-astra-uncategorized", "balanced", _ROUTING_SOURCES["astra"], None,
