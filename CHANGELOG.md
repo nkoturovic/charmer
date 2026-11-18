@@ -101,6 +101,11 @@ charmer never writes Claude Code's configuration; `-p` never asks.
 - The non-use review of CPython CVE-2026-124249 is bound to the advisory's
   text and affected versions as well as its revision: a re-publication with
   unchanged text keeps it, and any other change asks for a new review.
+- `charmer doctor` reports BLOCKED, not Attention, when a generated agent
+  file's tool denies (`disallowedTools`) or its worktree isolation were
+  removed or changed, also after the installed catalog changed since the
+  session started. Before, such a file passed as catalog drift while its
+  name, model and effort still matched.
 
 ### Known limits
 
@@ -120,6 +125,11 @@ charmer never writes Claude Code's configuration; `-p` never asks.
   them outside gitignored paths, before it finishes.
 - With `DISABLE_COMPACT` in your Claude Code settings, a 1M gateway lead
   stops with "Prompt is too long" near 200K instead of compacting.
+- After the installed catalog changed since a session started, doctor checks
+  a generated agent file's settings against the current release, but it
+  cannot tell a catalog-caused change of the agent's instructions from an
+  edit: such a text difference is Attention and is replaced at the next
+  resume or `charmer doctor --repair`.
 - The Nix development shell keeps GnuPG 2.4.9 (FreePG).
 
 ## [2.5.0] — 2026-11-13
