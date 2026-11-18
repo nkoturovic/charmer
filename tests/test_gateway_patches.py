@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from charmer import probe, render, state
 from _catalog import SHIPPED_ROOT, uses_shipped_catalog
+from _layout import UPSTREAM_JSON
 import _gateway_harness as harness
 
 MODULE = "tests.test_gateway_patches"
@@ -1021,12 +1022,63 @@ class ToolCallIntegrityTests(_ContentChunkFixture, unittest.TestCase):
 
 # OpenRouter's reasoning record after the answer text, on a third-party key
 # line. Every reply is compared with the control: the same upstream bytes
-# through the same gateway build without the trailing-reasoning-record patch
-# (the 30-patch series of 8.0.76), captured once into
-# TRAILING_RECORD_CONTROL by trailing_record_capture() with that build.
+# through a gateway built from the admitted series with only the
+# trailing-reasoning-record patch left out, captured once into
+# TRAILING_RECORD_CONTROL by trailing_record_capture() with that build. The
+# fixture names that build's ordered series (control.series), and
+# trailing_record_control_problem() refuses a fixture from any other series.
+TRAILING_RECORD_PATCH = "cli-proxy-api-trailing-reasoning-record.patch"
 TRAILING_RECORD_ALIAS = "gwtest-cc-output-config-high"
 TRAILING_RECORD_CONTROL = Path(__file__).resolve().parent / "fixtures/gateway-trailing-record-control.json"
 TRAILING_RECORD_REMOVED = "openrouter reasoning record removed: records="
+
+
+def trailing_record_control_series():
+    """The series the control must come from: the admitted series in order,
+    without the trailing-reasoning-record patch, as basename@sha256."""
+    recipe = json.loads(UPSTREAM_JSON.read_text())
+    return [f"{entry['basename']}@{entry['sha256']}" for entry in recipe["series"]
+            if entry["admitted"] and entry["basename"] != TRAILING_RECORD_PATCH]
+
+
+def trailing_record_control_problem(control):
+    """Why the control fixture is not the output of the admitted series with
+    only the trailing-reasoning-record patch left out, or None."""
+    if control.get("omitted") != [TRAILING_RECORD_PATCH]:
+        return "the control does not name the trailing-reasoning-record patch as the one patch left out"
+    if control.get("series") != trailing_record_control_series():
+        return ("the control was captured from another series than the admitted one without the "
+                "trailing-reasoning-record patch: recapture it with that build")
+    return None
+
+
+# Stream cases whose upstream bytes the reply builders do not say: options for
+# message_stream and an edit of the bytes it built.
+def _trailing_record_edit(old, new):
+    def edit(raw):
+        if raw.count(old) != 1:
+            raise AssertionError(f"the fixture stream does not hold {old!r} once")
+        return raw.replace(old, new)
+    return edit
+
+
+TRAILING_RECORD_REFUSAL = {"type": "refusal", "category": "cyber", "explanation": "gwtest fixture refusal"}
+TRAILING_RECORD_STREAM_SHAPING = {
+    # The tool call that a case-insensitive decoder takes for a record, with
+    # no input delta (one would end any run): only its start and stop.
+    "tool-call-with-a-type-in-another-case": ({}, _trailing_record_edit(
+        harness.sse_frame("content_block_delta", {"type": "content_block_delta", "index": 2, "delta": {
+            "type": "input_json_delta", "partial_json": json.dumps({"k": "v"})}}), b"")),
+    # A finished answer's end that the executor's own observation reads as a
+    # refusal (stop_details), with the record waiting.
+    "refusal-in-the-delta": ({"stop_details": TRAILING_RECORD_REFUSAL}, None),
+    # An extra empty separator after the record's stop: no event, it waits.
+    "extra-blank-separator-in-the-queue": ({}, _trailing_record_edit(
+        harness.sse_frame("content_block_stop", {"type": "content_block_stop", "index": 1}),
+        harness.sse_frame("content_block_stop", {"type": "content_block_stop", "index": 1}) + b"\n")),
+    # "message_stop " is another event than message_stop.
+    "event-name-with-a-trailing-space": ({}, _trailing_record_edit(b"event: message_stop\n", b"event: message_stop \n")),
+}
 
 
 def trailing_record_cases():
@@ -1036,6 +1088,8 @@ def trailing_record_cases():
     think, text, more = h.thinking_block(), h.text_block("answer"), h.text_block("more")
     record, foreign = h.record_block, h.record_block("p", prefix="")
     tool = h.tool_use_block()
+    # A tool call that also names the record's type in another case, and its data.
+    variant = {**tool, "TYPE": "redacted_thinking", "data": h.OPENROUTER_RECORD_PREFIX + "gwtest-record-v"}
     server = [{"type": "server_tool_use", "id": "srvtoolu_gwtest", "name": "web_search", "input": {"query": "gwtest"}},
               {"type": "web_search_tool_result", "tool_use_id": "srvtoolu_gwtest", "content": []}]
     common = {
@@ -1050,6 +1104,7 @@ def trailing_record_cases():
         "tool-use-before-the-text": ([tool, text, record("a")], "end_turn", 0),
         "tool-use-between": ([text, tool, record("a")], "end_turn", 0),
         "server-tool-and-its-result": ([*server, text, record("a")], "end_turn", 0),
+        "tool-call-with-a-type-in-another-case": ([think, text, variant], "end_turn", 0),
         **{"stop-" + (stop or "absent"): ([think, text, record("a")], stop, 0)
            for stop in ("tool_use", "pause_turn", "max_tokens", None, "gwtest_unknown_reason")},
     }
@@ -1063,6 +1118,9 @@ def trailing_record_cases():
         "end-while-queued": ([text, record("a")], "end_turn", "eof", 0),
         "error-after-the-delta": ([text, record("a")], "end_turn", "delta-error", 0),
         "end-after-the-delta": ([text, record("a")], "end_turn", "delta", 0),
+        "refusal-in-the-delta": ([text, record("a")], "end_turn", "stop", 0),
+        "extra-blank-separator-in-the-queue": ([text, record("a")], "end_turn", "stop", 1),
+        "event-name-with-a-trailing-space": ([text, record("a")], "end_turn", "stop", 0),
     })
     body = {name: (*value[:2], None, value[2]) for name, value in common.items()}
     return {"stream": stream, "body": body}
@@ -1073,10 +1131,13 @@ def trailing_record_reply(path, body, raw, _headers=None):
     if not path.endswith("/v1/messages") or not match:
         return 404, "application/json", b'{"error":"unexpected fake upstream path"}'
     stream = bool(body.get("stream"))
-    blocks, stop, ending, _records = trailing_record_cases()["stream" if stream else "body"][match.group(1).decode()]
+    case = match.group(1).decode()
+    blocks, stop, ending, _records = trailing_record_cases()["stream" if stream else "body"][case]
     model = body.get("model", "gwtest-wire")
     if stream:
-        return 200, "text/event-stream", harness.message_stream(blocks, stop, ending=ending, model=model)
+        options, edit = TRAILING_RECORD_STREAM_SHAPING.get(case, ({}, None))
+        raw = harness.message_stream(blocks, stop, ending=ending, model=model, **options)
+        return 200, "text/event-stream", edit(raw) if edit else raw
     return 200, "application/json", json.dumps(harness.message_body(blocks, stop, model=model)).encode()
 
 
@@ -1126,7 +1187,11 @@ class TrailingReasoningRecordTests(unittest.TestCase):
     def setUpClass(cls):
         if not os.environ.get(harness.BINARY_ENV):
             harness.boundary("BOUNDARY: the trailing-record proof needs an explicitly selected manifest build")
-        cls.control = json.loads(TRAILING_RECORD_CONTROL.read_text())["replies"]
+        document = json.loads(TRAILING_RECORD_CONTROL.read_text())
+        problem = trailing_record_control_problem(document["control"])
+        if problem:
+            raise AssertionError(problem)
+        cls.control = document["replies"]
         cls.gateway = harness.GatewayHarness(upstream_factory=lambda path: harness.FakeUpstream(
             path, respond=trailing_record_reply))
         cls.addClassCleanup(cls.gateway.close)
@@ -1171,6 +1236,41 @@ class TrailingReasoningRecordTests(unittest.TestCase):
         cases = self.check("body", False)
         if self._outcome.success:
             record("RRC2", status="passed", cases=cases, byte_identical=True)
+
+
+class TrailingRecordControlProvenanceTests(unittest.TestCase):
+    """The trailing-record control fixture is bound to the build it came
+    from: the admitted series, in order, with only the
+    trailing-reasoning-record patch left out. A fixture captured from any
+    other series (an earlier credential-save patch, the patch itself left in,
+    another order) is refused."""
+
+    def setUp(self):
+        self.document = json.loads(TRAILING_RECORD_CONTROL.read_text())
+
+    def test_control_is_the_series_without_the_patch(self):
+        self.assertIsNone(trailing_record_control_problem(self.document["control"]))
+        self.assertEqual(len(self.document["control"]["series"]), 30)
+        self.assertEqual(sorted(self.document["replies"]), sorted(
+            f"{form}:{case}" for form, cases in trailing_record_cases().items() for case in cases))
+
+    def test_a_control_from_another_series_is_refused(self):
+        series = self.document["control"]["series"]
+        patch_eight = next(i for i, item in enumerate(series) if item.startswith("cli-proxy-api-credential-save-report.patch@"))
+        recipe = json.loads(UPSTREAM_JSON.read_text())
+        with_patch = [f"{entry['basename']}@{entry['sha256']}" for entry in recipe["series"] if entry["admitted"]]
+        others = {
+            "another credential-save patch": [*series[:patch_eight], "cli-proxy-api-credential-save-report.patch@"
+                                              + "f6d9719485a3b1f94bf7b74fd4cdc66310f85f6e87de8df294b01d81dff7d6fe",
+                                              *series[patch_eight + 1:]],
+            "the patch left in": with_patch,
+            "another order": [series[1], series[0], *series[2:]],
+            "a patch missing": series[:-1],
+        }
+        for name, other in others.items():
+            with self.subTest(other=name):
+                self.assertIsNotNone(trailing_record_control_problem({**self.document["control"], "series": other}))
+        self.assertIsNotNone(trailing_record_control_problem({**self.document["control"], "omitted": []}))
 
 
 if __name__ == "__main__":

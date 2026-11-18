@@ -87,7 +87,7 @@
     },
     {
       "basename": "cli-proxy-api-credential-save-report.patch",
-      "sha256": "f6d9719485a3b1f94bf7b74fd4cdc66310f85f6e87de8df294b01d81dff7d6fe",
+      "sha256": "9e5fb97358acc9ec875f74db020862a8fc68aad3ed4868781e54eb0967c511ec",
       "admitted": true
     },
     {
@@ -202,7 +202,7 @@
     },
     {
       "basename": "cli-proxy-api-trailing-reasoning-record.patch",
-      "sha256": "7e8846fb4476a55283f5d455337028089c95d89c001a55a5911d497a1b9fd5a2",
+      "sha256": "493d5bd81e4567b431eb6d945369b4123f951dc7c5319001fc8f076279413b91",
       "admitted": true
     }
   ],
@@ -464,27 +464,6 @@
       ]
     },
     {
-      "name": "result-save-after-request",
-      "packages": [
-        "./sdk/cliproxy/auth",
-        "./sdk/cliproxy"
-      ],
-      "run": "^(TestCredentialSaveResultAfterTheRequestEnded|TestCredentialSaveResultAfterTheRequestEndedKeepsSkipPersist|TestCredentialSaveResultStoreFailureIsStillReported|TestCredentialSaveOtherOperationsKeepTheGate|TestCredentialSaveResultAfterTheRequestEndedWritesTheCredential|TestCredentialSaveResultFailureLatchAcrossAnEndedRequest|TestCredentialSaveResultUnderContentionKeepsTheRefreshLast|TestCredentialSaveResultInFlightAtStop)$",
-      "platforms": "portable",
-      "race": false,
-      "count": null,
-      "expected_tests": [
-        "TestCredentialSaveResultAfterTheRequestEnded",
-        "TestCredentialSaveResultAfterTheRequestEndedKeepsSkipPersist",
-        "TestCredentialSaveResultStoreFailureIsStillReported",
-        "TestCredentialSaveOtherOperationsKeepTheGate",
-        "TestCredentialSaveResultAfterTheRequestEndedWritesTheCredential",
-        "TestCredentialSaveResultFailureLatchAcrossAnEndedRequest",
-        "TestCredentialSaveResultUnderContentionKeepsTheRefreshLast",
-        "TestCredentialSaveResultInFlightAtStop"
-      ]
-    },
-    {
       "name": "sdk-service",
       "packages": [
         "./sdk/cliproxy"
@@ -518,7 +497,7 @@
       "packages": [
         "./sdk/cliproxy/auth"
       ],
-      "run": "^(TestCM053CredentialSaveGenerationOrdering|TestCM053CredentialSaveFailedOncePerTransition|TestCM053CredentialSaveSupersededCompletionIsNoReceipt|TestCM053KeyedCompatConductorClassificationPreserved|TestCM053KeyedCompatAuthIdentityRedacted|TestCM053UpdateSchedulerSnapshotConcurrentReconcile|TestCM053RegisterSchedulerSnapshotConcurrentReconcile|TestCM053AuthSchedulerSnapshotOwnership|TestCredentialSaveResultAfterTheRequestEnded|TestCredentialSaveResultAfterTheRequestEndedKeepsSkipPersist|TestCredentialSaveResultStoreFailureIsStillReported|TestCredentialSaveOtherOperationsKeepTheGate|TestCredentialSaveResultAfterTheRequestEndedWritesTheCredential|TestCredentialSaveResultFailureLatchAcrossAnEndedRequest|TestCredentialSaveResultUnderContentionKeepsTheRefreshLast)$",
+      "run": "^(TestCM053CredentialSaveGenerationOrdering|TestCM053CredentialSaveFailedOncePerTransition|TestCM053CredentialSaveSupersededCompletionIsNoReceipt|TestCM053KeyedCompatConductorClassificationPreserved|TestCM053KeyedCompatAuthIdentityRedacted|TestCM053UpdateSchedulerSnapshotConcurrentReconcile|TestCM053RegisterSchedulerSnapshotConcurrentReconcile|TestCM053AuthSchedulerSnapshotOwnership)$",
       "platforms": "linux",
       "race": true,
       "count": 100,
@@ -530,14 +509,7 @@
         "TestCM053KeyedCompatAuthIdentityRedacted",
         "TestCM053UpdateSchedulerSnapshotConcurrentReconcile",
         "TestCM053RegisterSchedulerSnapshotConcurrentReconcile",
-        "TestCM053AuthSchedulerSnapshotOwnership",
-        "TestCredentialSaveResultAfterTheRequestEnded",
-        "TestCredentialSaveResultAfterTheRequestEndedKeepsSkipPersist",
-        "TestCredentialSaveResultStoreFailureIsStillReported",
-        "TestCredentialSaveOtherOperationsKeepTheGate",
-        "TestCredentialSaveResultAfterTheRequestEndedWritesTheCredential",
-        "TestCredentialSaveResultFailureLatchAcrossAnEndedRequest",
-        "TestCredentialSaveResultUnderContentionKeepsTheRefreshLast"
+        "TestCM053AuthSchedulerSnapshotOwnership"
       ]
     },
     {
@@ -554,19 +526,6 @@
         "TestCM053CredentialSaveWatcherSeesOnlyDestination",
         "TestCM053CredentialSaveSupersededDuringDirSync",
         "TestCM053CredentialSaveSupersededReceiptWithFileStore"
-      ]
-    },
-    {
-      "name": "race-sdk-cliproxy",
-      "packages": [
-        "./sdk/cliproxy"
-      ],
-      "run": "^(TestCredentialSaveResultInFlightAtStop)$",
-      "platforms": "linux",
-      "race": true,
-      "count": 100,
-      "expected_tests": [
-        "TestCredentialSaveResultInFlightAtStop"
       ]
     },
     {
@@ -1186,7 +1145,7 @@
       "packages": [
         "./internal/runtime/executor"
       ],
-      "run": "^(TestClaudeTrailingRecordStreamShapes|TestClaudeTrailingRecordStreamSendsTheTextAtOnce|TestClaudeTrailingRecordStreamLimits|TestClaudeTrailingRecordBody|TestClaudeTrailingRecordEntries|TestClaudeTrailingRecordFailurePaths|TestClaudeTrailingRecordClientGoneWhileQueued|TestClaudeTrailingRecordEntryPredicate)$",
+      "run": "^(TestClaudeTrailingRecordStreamShapes|TestClaudeTrailingRecordStreamSendsTheTextAtOnce|TestClaudeTrailingRecordStreamLimits|TestClaudeTrailingRecordBody|TestClaudeTrailingRecordEntries|TestClaudeTrailingRecordFailurePaths|TestClaudeTrailingRecordClientGoneWhileQueued|TestClaudeTrailingRecordEntryPredicate|TestClaudeTrailingRecordExactKeys|TestClaudeTrailingRecordStreamFraming|TestClaudeTrailingRecordStreamSequence|TestClaudeTrailingRecordCompaction)$",
       "platforms": "portable",
       "race": false,
       "count": null,
@@ -1198,7 +1157,11 @@
         "TestClaudeTrailingRecordEntries",
         "TestClaudeTrailingRecordFailurePaths",
         "TestClaudeTrailingRecordClientGoneWhileQueued",
-        "TestClaudeTrailingRecordEntryPredicate"
+        "TestClaudeTrailingRecordEntryPredicate",
+        "TestClaudeTrailingRecordExactKeys",
+        "TestClaudeTrailingRecordStreamFraming",
+        "TestClaudeTrailingRecordStreamSequence",
+        "TestClaudeTrailingRecordCompaction"
       ]
     },
     {

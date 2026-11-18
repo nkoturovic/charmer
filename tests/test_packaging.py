@@ -1300,15 +1300,7 @@ class AdmittedPatchGateTests(unittest.TestCase):
                              'TestCM053KeyedCompatAuthIdentityRedacted',
                              'TestCM053UpdateSchedulerSnapshotConcurrentReconcile',
                              'TestCM053RegisterSchedulerSnapshotConcurrentReconcile',
-                             'TestCM053AuthSchedulerSnapshotOwnership',
-                             'TestCredentialSaveResultAfterTheRequestEnded',
-                             'TestCredentialSaveResultAfterTheRequestEndedKeepsSkipPersist',
-                             'TestCredentialSaveResultStoreFailureIsStillReported',
-                             'TestCredentialSaveOtherOperationsKeepTheGate',
-                             'TestCredentialSaveResultAfterTheRequestEndedWritesTheCredential',
-                             'TestCredentialSaveResultFailureLatchAcrossAnEndedRequest',
-                             'TestCredentialSaveResultUnderContentionKeepsTheRefreshLast'],
-     './sdk/cliproxy': ['TestCredentialSaveResultInFlightAtStop'],
+                             'TestCM053AuthSchedulerSnapshotOwnership'],
      './sdk/auth': ['TestCM053CredentialSaveCommitCallback',
                     'TestCM053CredentialSaveWatcherSeesOnlyDestination',
                     'TestCM053CredentialSaveSupersededDuringDirSync',
@@ -2041,7 +2033,9 @@ class TrailingReasoningRecordGateTests(unittest.TestCase):
     TESTS = ("TestClaudeTrailingRecordStreamShapes", "TestClaudeTrailingRecordStreamSendsTheTextAtOnce",
              "TestClaudeTrailingRecordStreamLimits", "TestClaudeTrailingRecordBody", "TestClaudeTrailingRecordEntries",
              "TestClaudeTrailingRecordFailurePaths", "TestClaudeTrailingRecordClientGoneWhileQueued",
-             "TestClaudeTrailingRecordEntryPredicate")
+             "TestClaudeTrailingRecordEntryPredicate", "TestClaudeTrailingRecordExactKeys",
+             "TestClaudeTrailingRecordStreamFraming", "TestClaudeTrailingRecordStreamSequence",
+             "TestClaudeTrailingRecordCompaction")
 
     def test_patch_is_last_and_carries_its_tests_and_line(self):
         patch = (PATCH_DIR / self.NAME).read_text()
@@ -2050,6 +2044,12 @@ class TrailingReasoningRecordGateTests(unittest.TestCase):
         self.assertIn("+++ b/internal/runtime/executor/claude_trailing_reasoning_record.go", patch)
         # The fixed removal line a live gateway's log is matched on.
         self.assertIn('+const claudeTrailingRecordLine = "openrouter reasoning record removed: records=%d"', patch)
+        # Only a native Claude Messages request (Claude source and response
+        # format) reaches it, at both call sites; a stream the executor's own
+        # observation found failed is released, never filtered.
+        self.assertIn("+\tif from == to && responseFormat == to {", patch)
+        self.assertIn("newClaudeTrailingRecordStream(ctx, from == to && claudeTrailingRecordEntry(auth, url, fp))", patch)
+        self.assertIn("+\t\t\t\t\t\treturn sendClaudeStreamFrames(ctx, out, trailingRecord.Failed(cloned))", patch)
 
     def test_gates_select_exactly_the_patch_tests(self):
         record = gate("trailing-reasoning-record")
@@ -2067,32 +2067,6 @@ class TrailingReasoningRecordGateTests(unittest.TestCase):
                                                                  prefix + "test_other_bodies_are_the_controls"))
         self.assertLessEqual({"RR1", "RR2", "RRC1", "RRC2"}, harness.REQUIRED_EVIDENCE["tests.test_gateway_patches"]["patches"])
         self.assertNotIn(self.NAME, harness.PATCH_DEPENDENCIES)
-
-
-class ResultSaveAfterTheRequestGateTests(unittest.TestCase):
-    """The credential-save patch saves a request's result after the request
-    ended: its tests run in their own gate (the race selections are pinned
-    with the others in AdmittedPatchGateTests)."""
-
-    NAME = "cli-proxy-api-credential-save-report.patch"
-    TESTS = ("TestCredentialSaveResultAfterTheRequestEnded", "TestCredentialSaveResultAfterTheRequestEndedKeepsSkipPersist",
-             "TestCredentialSaveResultStoreFailureIsStillReported", "TestCredentialSaveOtherOperationsKeepTheGate",
-             "TestCredentialSaveResultAfterTheRequestEndedWritesTheCredential",
-             "TestCredentialSaveResultFailureLatchAcrossAnEndedRequest",
-             "TestCredentialSaveResultUnderContentionKeepsTheRefreshLast", "TestCredentialSaveResultInFlightAtStop")
-
-    def test_patch_saves_both_results_without_the_requests_cancellation(self):
-        patch = (PATCH_DIR / self.NAME).read_text()
-        self.assertEqual(patch.count("+\t\t_ = m.persistLocked(resultSaveContext(ctx), auth, persistOpResult, persistNoSync)"), 2)
-        self.assertIn("+\treturn context.WithoutCancel(ctx)", patch)
-        self.assertLessEqual(set(self.TESTS), set(re.findall(r"^\+func (Test\w+)\(", patch, re.MULTILINE)))
-
-    def test_gate_selects_exactly_the_patch_tests(self):
-        record = gate("result-save-after-request")
-        self.assertEqual(record["packages"], ["./sdk/cliproxy/auth", "./sdk/cliproxy"])
-        self.assertEqual(record["run"], "^(" + "|".join(self.TESTS) + ")$")
-        self.assertEqual(record["expected_tests"], list(self.TESTS))
-        self.assertEqual((record["platforms"], record["race"], record["count"]), ("portable", False, None))
 
 
 if __name__ == "__main__":

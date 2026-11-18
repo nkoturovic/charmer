@@ -1,7 +1,7 @@
 {
   "format": 1,
   "inputs": {
-    "post_apply_tree_sha256": "da4696d495266d150c97214779d82f0e5f65948929670245692be1bf69a792a7",
+    "post_apply_tree_sha256": "6a06481b98b30904961c12bd3220fc4b66ebff33997f27d9b1ee1498739e3df0",
     "series": [
       "cli-proxy-api-loopback-oauth.patch@244e68528cbc72a636d112d4350c9e2e9aeb0c4b55c9097e08ee42a201fa22f4",
       "cli-proxy-api-kimi-claude-compat.patch@a67aa15f4375ba8c901104f65a2a93d8c5f99cff0bb83f55adff28f4b00e3725",
@@ -10,7 +10,7 @@
       "cli-proxy-api-watcher-parentdir.patch@14fd530f8e61d981b1332e2025a1ebd97ec9bfd6ecca7cb7a89ab7cf4acafbcd",
       "cli-proxy-api-serve-after-initial-auth-load.patch@76a5a3973c84095d15853979f64ea01c71f1335cb1ca49d7ea2ed47f867f66af",
       "cli-proxy-api-management-env-only.patch@9e49aa16a0bbe947e8e2d096600949ff8626a7d1344cb7a2dc60d55a79e6035d",
-      "cli-proxy-api-credential-save-report.patch@f6d9719485a3b1f94bf7b74fd4cdc66310f85f6e87de8df294b01d81dff7d6fe",
+      "cli-proxy-api-credential-save-report.patch@9e5fb97358acc9ec875f74db020862a8fc68aad3ed4868781e54eb0967c511ec",
       "cli-proxy-api-credentialed-redirects.patch@c17aefb8e7a557529207e2e2d18a966d4076670ff3a15cbdf7a88ae0e6e3637e",
       "cli-proxy-api-openai-compat-keyed-safety.patch@2c6e65f5c7e3e983c1c35496e0870871b87c473fbc45cc653f0ff6279d8434cc",
       "cli-proxy-api-auth-snapshot-locking.patch@01eab3d01f7ba225f1f19f7c9294f8f715d111817b10f7499540bb30a3720803",
@@ -33,7 +33,7 @@
       "cli-proxy-api-codex-refresh-without-journal.patch@1de4b677ffa9510ee971f12a101831a74bc2c11e5c05318fd93df39e01b584ae",
       "cli-proxy-api-native-advisor-beta-order.patch@e266694e10fc43de9104fb3d5b8413aa4215887fa0266e05ed66c056b6aa41f8",
       "cli-proxy-api-private-network-dial.patch@533513e33beb9b7065957f8534fffb4e9aa2b53157b4185b8534f10dceeb7e50",
-      "cli-proxy-api-trailing-reasoning-record.patch@7e8846fb4476a55283f5d455337028089c95d89c001a55a5911d497a1b9fd5a2"
+      "cli-proxy-api-trailing-reasoning-record.patch@493d5bd81e4567b431eb6d945369b4123f951dc7c5319001fc8f076279413b91"
     ],
     "source_tree_sha256": "fb6c76c2e6b010508e43e34d66cf384fd22d175724b01ecafddde5bafd9f189c",
     "vendor_tree_sha256": "e5af2e9237b46d2a715ca4a690cf3cae1081c627067fb92437d09db6ab9f505f"
@@ -2017,7 +2017,7 @@
     "license": "MIT",
     "modifications": {
       "path": "CLIProxyAPI/MODIFICATIONS.txt",
-      "sha256": "9dd1d9c2d0221b03e47b01e03c2742b5d41ddf132c911c435f2c2f92267e4264"
+      "sha256": "e2d23e86e9f24721f0d3f4b09f23d130ab7cdabdd725920b434162854bfc6173"
     },
     "name": "CLIProxyAPI",
     "repository": "https://github.com/router-for-me/CLIProxyAPI",

@@ -1,40 +1,43 @@
 diff --git a/internal/runtime/executor/claude_executor_execute.go b/internal/runtime/executor/claude_executor_execute.go
-index 5bcd1a9d..62b23f5d 100644
+index 5bcd1a9d..891c98dc 100644
 --- a/internal/runtime/executor/claude_executor_execute.go
 +++ b/internal/runtime/executor/claude_executor_execute.go
 @@ -479,6 +479,9 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, r
  	if responseFormat == sdktranslator.FormatOpenAIResponse {
  		out = helps.EnsureResponsesUsageDetails(out)
  	}
-+	if responseFormat == to {
++	if from == to && responseFormat == to {
 +		out = omitClaudeTrailingRecord(ctx, claudeTrailingRecordEntry(auth, url, fp), out)
 +	}
  	threadBetas.Commit(threadMessageID)
  	resp = cliproxyexecutor.Response{Payload: out, Headers: httpResp.Header.Clone()}
  	return resp, nil
 diff --git a/internal/runtime/executor/claude_executor_stream.go b/internal/runtime/executor/claude_executor_stream.go
-index 0c9a6e2f..b20ba115 100644
+index 0c9a6e2f..db50b28d 100644
 --- a/internal/runtime/executor/claude_executor_stream.go
 +++ b/internal/runtime/executor/claude_executor_stream.go
 @@ -423,6 +423,7 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
  			var upstreamMessageID string
  			var upstreamStreamErr error
  			upstreamCompleted := false
-+			trailingRecord := newClaudeTrailingRecordStream(ctx, claudeTrailingRecordEntry(auth, url, fp))
++			trailingRecord := newClaudeTrailingRecordStream(ctx, from == to && claudeTrailingRecordEntry(auth, url, fp))
  			flushEvent := func() bool {
  				if event.Len() == 0 {
  					return true
-@@ -431,6 +432,9 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
+@@ -431,6 +432,12 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
  				streamUsage.ObserveClaudeSSEEvent(event.Bytes())
  				cloned := bytes.Clone(event.Bytes())
  				event.Reset()
 +				if trailingRecord != nil {
++					if upstreamStreamErr != nil {
++						return sendClaudeStreamFrames(ctx, out, trailingRecord.Failed(cloned))
++					}
 +					return sendClaudeStreamFrames(ctx, out, trailingRecord.Push(cloned))
 +				}
  				select {
  				case out <- cliproxyexecutor.StreamChunk{Payload: cloned}:
  					return true
-@@ -445,6 +449,7 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
+@@ -445,6 +452,7 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
  				streamUsage.ObserveClaudeStream(line)
  				restoredLine, errRestore := restoreClaudeOAuthToolNamesFromStreamLine(line, oauthToolNamesReverseMap)
  				if errRestore != nil {
@@ -42,7 +45,7 @@ index 0c9a6e2f..b20ba115 100644
  					emitResponseError(fmt.Errorf("restore Claude OAuth tool name from streaming response: %w", errRestore))
  					return
  				}
-@@ -461,7 +466,7 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
+@@ -461,7 +469,7 @@ func (e *ClaudeExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
  					}
  				}
  			}
@@ -53,10 +56,10 @@ index 0c9a6e2f..b20ba115 100644
  			}
 diff --git a/internal/runtime/executor/claude_trailing_reasoning_record.go b/internal/runtime/executor/claude_trailing_reasoning_record.go
 new file mode 100644
-index 00000000..7796d51e
+index 00000000..b4f45866
 --- /dev/null
 +++ b/internal/runtime/executor/claude_trailing_reasoning_record.go
-@@ -0,0 +1,436 @@
+@@ -0,0 +1,558 @@
 +package executor
 +
 +import (
@@ -78,19 +81,22 @@ index 00000000..7796d51e
 +// a redacted_thinking block whose data starts with this prefix, after the answer
 +// text. Claude Code takes a one-shot result from the reply's last block, so such
 +// a reply gives an empty result although the model answered. On a third-party
-+// API-key entry the run of such records is left out of a reply when it directly
-+// follows a text block, every other block of the reply is thinking,
++// API-key entry, for a native Claude Messages request (Claude source and Claude
++// response format), the run of such records is left out of a reply when it
++// directly follows a text block, every other block of the reply is thinking,
 +// redacted_thinking or text, and the reply ends with stop_reason end_turn.
-+// Nothing sent is altered, reordered or renumbered, the text is never held, and
-+// no state outlives one response. The client never receives a record left out,
-+// so it is not part of that conversation from then on.
++// Every member the decision reads is read by its exact name; a reply in which
++// one of them appears twice or in another case is passed unchanged. Nothing sent
++// is altered, reordered or renumbered, the text is never held, and no state
++// outlives one response. The client never receives a record left out, so it is
++// not part of that conversation from then on.
 +const claudeTrailingRecordPrefix = "openrouter.reasoning:"
 +
 +// The limits of a stream's pending frames. Only frames that can still belong to
 +// a trailing record wait: from the record's start to the end of the message
-+// (the record, its stop, pings, comment frames and the message_delta). Past
-+// either limit the pending frames are sent in their original order and the
-+// rest of the response passes unchanged.
++// (the record, its stop, pings, comment and empty frames and the
++// message_delta). Past either limit the pending frames are sent in their
++// original order and the rest of the response passes unchanged.
 +//
 +// 8 MiB is about a million reasoning tokens at the size records were measured
 +// at (1,477 bytes for 146 tokens, 2,905 for 343), and a single event may already
@@ -132,8 +138,78 @@ index 00000000..7796d51e
 +	return kind == "text" || kind == "thinking" || kind == "redacted_thinking"
 +}
 +
-+func isClaudeTrailingRecord(kind string, data *string) bool {
-+	return kind == "redacted_thinking" && data != nil && strings.HasPrefix(*data, claudeTrailingRecordPrefix)
++// claudeTrailingRecordFields returns the members of one JSON object that the
++// decision reads, by their exact names. ok is false unless raw is exactly one
++// JSON object in which none of names appears twice or in another case: a
++// decoder that matches names regardless of case (Go's encoding/json among
++// them) or keeps another of a duplicate's values could read such an object as
++// another block than the one seen here, so the reply is then passed unchanged.
++func claudeTrailingRecordFields(raw []byte, names ...string) (map[string]json.RawMessage, bool) {
++	dec := json.NewDecoder(bytes.NewReader(raw))
++	if token, err := dec.Token(); err != nil || token != json.Delim('{') {
++		return nil, false
++	}
++	fields := make(map[string]json.RawMessage, len(names))
++	for dec.More() {
++		token, err := dec.Token()
++		if err != nil {
++			return nil, false
++		}
++		key, isKey := token.(string)
++		var value json.RawMessage
++		if !isKey || dec.Decode(&value) != nil {
++			return nil, false
++		}
++		for _, name := range names {
++			if !strings.EqualFold(key, name) {
++				continue
++			}
++			if _, seen := fields[name]; seen || key != name {
++				return nil, false
++			}
++			fields[name] = value
++		}
++	}
++	if token, err := dec.Token(); err != nil || token != json.Delim('}') {
++		return nil, false
++	}
++	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
++		return nil, false
++	}
++	return fields, true
++}
++
++// claudeTrailingRecordString is a member's value when it is a JSON string.
++func claudeTrailingRecordString(raw json.RawMessage) (string, bool) {
++	var value string
++	if len(raw) == 0 || raw[0] != '"' || json.Unmarshal(raw, &value) != nil {
++		return "", false
++	}
++	return value, true
++}
++
++// claudeTrailingRecordIndex is a block index: a JSON integer, never negative.
++func claudeTrailingRecordIndex(raw json.RawMessage) (int64, bool) {
++	var value int64
++	if len(raw) == 0 || raw[0] < '0' || raw[0] > '9' || json.Unmarshal(raw, &value) != nil {
++		return 0, false
++	}
++	return value, true
++}
++
++// claudeTrailingRecordBlock reads one content block: its type, and whether it
++// is one of OpenRouter's records. ok is false for a block the decision cannot
++// read unambiguously.
++func claudeTrailingRecordBlock(raw json.RawMessage) (kind string, record, ok bool) {
++	fields, ok := claudeTrailingRecordFields(raw, "type", "data")
++	if !ok {
++		return "", false, false
++	}
++	if kind, ok = claudeTrailingRecordString(fields["type"]); !ok {
++		return "", false, false
++	}
++	data, isString := claudeTrailingRecordString(fields["data"])
++	return kind, kind == "redacted_thinking" && isString && strings.HasPrefix(data, claudeTrailingRecordPrefix), true
 +}
 +
 +// omitClaudeTrailingRecord returns a non-streaming Messages body without its
@@ -157,9 +233,10 @@ index 00000000..7796d51e
 +
 +// claudeTrailingRecordSpan finds the byte span [cut, end) of a body's trailing
 +// record run. ok is false unless the body is one JSON object with exactly one
-+// content array and one stop_reason, the stop reason is end_turn, every element
-+// is a text, thinking or redacted_thinking block, and the content ends in one
-+// or more records directly after a text block.
++// content array and one stop_reason, neither of them (nor type) also present
++// in another case, the stop reason is end_turn, every element is a text,
++// thinking or redacted_thinking block read by its exact keys, and the content
++// ends in one or more records directly after a text block.
 +func claudeTrailingRecordSpan(body []byte) (cut, end, records int, ok bool) {
 +	type element struct {
 +		start, end int
@@ -171,17 +248,24 @@ index 00000000..7796d51e
 +		return 0, 0, 0, false
 +	}
 +	var elements []element
-+	var stop *string
-+	contents, stops := 0, 0
++	var stop json.RawMessage
++	seen := map[string]bool{}
 +	for dec.More() {
 +		token, err := dec.Token()
 +		if err != nil {
 +			return 0, 0, 0, false
 +		}
 +		key, _ := token.(string)
++		for _, name := range []string{"type", "content", "stop_reason"} {
++			if strings.EqualFold(key, name) {
++				if key != name || seen[name] {
++					return 0, 0, 0, false
++				}
++				seen[name] = true
++			}
++		}
 +		switch key {
 +		case "content":
-+			contents++
 +			if token, err = dec.Token(); err != nil || token != json.Delim('[') {
 +				return 0, 0, 0, false
 +			}
@@ -190,22 +274,17 @@ index 00000000..7796d51e
 +				if err = dec.Decode(&raw); err != nil {
 +					return 0, 0, 0, false
 +				}
-+				var block struct {
-+					Type string  `json:"type"`
-+					Data *string `json:"data"`
-+				}
-+				if err = json.Unmarshal(raw, &block); err != nil || !claudeTrailingRecordAllowedBlock(block.Type) {
++				kind, record, readable := claudeTrailingRecordBlock(raw)
++				if !readable || !claudeTrailingRecordAllowedBlock(kind) {
 +					return 0, 0, 0, false
 +				}
 +				offset := int(dec.InputOffset())
-+				elements = append(elements, element{start: offset - len(raw), end: offset, kind: block.Type,
-+					record: isClaudeTrailingRecord(block.Type, block.Data)})
++				elements = append(elements, element{start: offset - len(raw), end: offset, kind: kind, record: record})
 +			}
 +			if token, err = dec.Token(); err != nil || token != json.Delim(']') {
 +				return 0, 0, 0, false
 +			}
 +		case "stop_reason":
-+			stops++
 +			if err = dec.Decode(&stop); err != nil {
 +				return 0, 0, 0, false
 +			}
@@ -222,7 +301,7 @@ index 00000000..7796d51e
 +	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 +		return 0, 0, 0, false
 +	}
-+	if contents != 1 || stops != 1 || stop == nil || *stop != "end_turn" {
++	if reason, isString := claudeTrailingRecordString(stop); !seen["content"] || !isString || reason != "end_turn" {
 +		return 0, 0, 0, false
 +	}
 +	last := len(elements)
@@ -238,7 +317,9 @@ index 00000000..7796d51e
 +
 +// claudeStreamFrame is what the stream filter reads from one complete SSE event.
 +type claudeStreamFrame struct {
-+	kind         string // the event type, "comment" for a comment-only frame, "unknown" otherwise
++	// kind is the event type; "comment" for a comment-only frame, "blank" for a
++	// frame of empty lines only (an extra separator), "unknown" otherwise.
++	kind         string
 +	index        int64
 +	blockType    string
 +	record       bool
@@ -246,71 +327,93 @@ index 00000000..7796d51e
 +	contentEmpty bool
 +}
 +
++// claudeStreamFieldValue is an SSE field's value: what follows the colon,
++// without the one space that may follow it. Nothing else is trimmed.
++func claudeStreamFieldValue(line []byte, field string) []byte {
++	return bytes.TrimPrefix(line[len(field)+1:], []byte(" "))
++}
++
 +func parseClaudeStreamFrame(frame []byte) claudeStreamFrame {
 +	unknown := claudeStreamFrame{kind: "unknown"}
-+	var name string
++	// A carriage return ends a line for an event-stream client wherever it
++	// stands; the executor splits lines at line feeds only, so a client could
++	// read a frame that holds one as other events than the ones read here.
++	if bytes.IndexByte(frame, '\r') >= 0 {
++		return unknown
++	}
++	var name []byte
++	named := false
 +	var data [][]byte
 +	comments := 0
 +	for _, line := range bytes.Split(frame, []byte("\n")) {
-+		line = bytes.TrimSuffix(line, []byte("\r"))
 +		switch {
-+		case len(bytes.TrimSpace(line)) == 0:
++		case len(line) == 0:
 +		case line[0] == ':':
 +			comments++
 +		case bytes.HasPrefix(line, []byte("event:")):
-+			if name != "" {
++			if named {
 +				return unknown
 +			}
-+			name = string(bytes.TrimSpace(line[len("event:"):]))
++			name, named = claudeStreamFieldValue(line, "event"), true
 +		case bytes.HasPrefix(line, []byte("data:")):
-+			value := line[len("data:"):]
-+			data = append(data, bytes.TrimPrefix(value, []byte(" ")))
++			data = append(data, claudeStreamFieldValue(line, "data"))
 +		default:
++			// Another field, or a line of spaces: the executor ends a frame at a
++			// line of spaces, an event-stream client does not.
 +			return unknown
 +		}
 +	}
 +	if len(data) == 0 {
-+		if name == "" && comments > 0 {
++		switch {
++		case named:
++			return unknown
++		case comments > 0:
 +			return claudeStreamFrame{kind: "comment"}
++		default:
++			return claudeStreamFrame{kind: "blank"}
 +		}
++	}
++	fields, ok := claudeTrailingRecordFields(bytes.Join(data, []byte("\n")), "type", "index", "content_block", "delta", "message")
++	if !ok {
 +		return unknown
 +	}
-+	var event struct {
-+		Type         string `json:"type"`
-+		Index        *int64 `json:"index"`
-+		ContentBlock *struct {
-+			Type string  `json:"type"`
-+			Data *string `json:"data"`
-+		} `json:"content_block"`
-+		Delta *struct {
-+			StopReason *string `json:"stop_reason"`
-+		} `json:"delta"`
-+		Message *struct {
-+			Content []json.RawMessage `json:"content"`
-+		} `json:"message"`
-+	}
-+	if err := json.Unmarshal(bytes.Join(data, []byte("\n")), &event); err != nil || event.Type == "" ||
-+		(name != "" && name != event.Type) {
++	kind, ok := claudeTrailingRecordString(fields["type"])
++	if !ok || !named || kind != string(name) {
 +		return unknown
 +	}
-+	parsed := claudeStreamFrame{kind: event.Type}
-+	switch event.Type {
++	parsed := claudeStreamFrame{kind: kind}
++	switch kind {
 +	case "message_start":
-+		parsed.contentEmpty = event.Message != nil && len(event.Message.Content) == 0
++		message, readable := claudeTrailingRecordFields(fields["message"], "content")
++		if !readable {
++			return unknown
++		}
++		var content []json.RawMessage
++		parsed.contentEmpty = len(message["content"]) > 0 && message["content"][0] == '[' &&
++			json.Unmarshal(message["content"], &content) == nil && len(content) == 0
 +	case "content_block_start":
-+		if event.Index == nil || event.ContentBlock == nil {
++		index, readable := claudeTrailingRecordIndex(fields["index"])
++		if !readable {
 +			return unknown
 +		}
-+		parsed.index, parsed.blockType = *event.Index, event.ContentBlock.Type
-+		parsed.record = isClaudeTrailingRecord(event.ContentBlock.Type, event.ContentBlock.Data)
++		blockType, record, readable := claudeTrailingRecordBlock(fields["content_block"])
++		if !readable {
++			return unknown
++		}
++		parsed.index, parsed.blockType, parsed.record = index, blockType, record
 +	case "content_block_delta", "content_block_stop":
-+		if event.Index == nil {
++		index, readable := claudeTrailingRecordIndex(fields["index"])
++		if !readable {
 +			return unknown
 +		}
-+		parsed.index = *event.Index
++		parsed.index = index
 +	case "message_delta":
-+		if event.Delta != nil {
-+			parsed.stopReason = event.Delta.StopReason
++		delta, readable := claudeTrailingRecordFields(fields["delta"], "stop_reason")
++		if !readable {
++			return unknown
++		}
++		if reason, isString := claudeTrailingRecordString(delta["stop_reason"]); isString {
++			parsed.stopReason = &reason
 +		}
 +	case "message_stop", "ping", "error":
 +	default:
@@ -334,7 +437,9 @@ index 00000000..7796d51e
 +
 +// claudeTrailingRecordStream decides, frame by frame, what a streamed reply's
 +// client is sent. It runs in the executor's response goroutine; nothing else
-+// touches it.
++// touches it. It reads one message: a second message_start, a block out of
++// sequence or a delta for a block that is not open passes the rest unchanged,
++// so nothing seen before a message can authorize a removal in it.
 +type claudeTrailingRecordStream struct {
 +	ctx      context.Context
 +	maxBytes int
@@ -342,6 +447,8 @@ index 00000000..7796d51e
 +	now      func() time.Time
 +
 +	state       claudeTrailingRecordState
++	started     bool   // the message_start passed
++	next        int64  // the index the next content block is to have
 +	open        string // the type of the block open now, "" when none is
 +	openIndex   int64
 +	lastStopped string // the type of the block stopped last
@@ -378,12 +485,13 @@ index 00000000..7796d51e
 +	}
 +	switch event.kind {
 +	case "message_start":
-+		if !event.contentEmpty {
++		if s.started || !event.contentEmpty {
 +			s.state = claudeTrailingRecordPassing
 +		}
++		s.started = true
 +	case "content_block_start":
 +		switch {
-+		case !claudeTrailingRecordAllowedBlock(event.blockType):
++		case !s.started || event.index != s.next || !claudeTrailingRecordAllowedBlock(event.blockType):
 +			s.state = claudeTrailingRecordPassing
 +		case event.record && s.open == "" && s.lastStopped == "text" && !s.delta:
 +			s.state, s.queuedAt = claudeTrailingRecordQueued, s.now()
@@ -392,6 +500,11 @@ index 00000000..7796d51e
 +			s.state = claudeTrailingRecordPassing
 +		default:
 +			s.open, s.openIndex = event.blockType, event.index
++			s.next++
++		}
++	case "content_block_delta":
++		if s.open == "" || event.index != s.openIndex {
++			s.state = claudeTrailingRecordPassing
 +		}
 +	case "content_block_stop":
 +		if s.open == "" || event.index != s.openIndex {
@@ -401,7 +514,7 @@ index 00000000..7796d51e
 +		}
 +	case "message_delta":
 +		s.delta = true
-+	case "content_block_delta", "ping", "comment":
++	case "ping", "comment", "blank":
 +	default: // message_stop, error, an event type the filter does not know
 +		s.state = claudeTrailingRecordPassing
 +	}
@@ -417,17 +530,18 @@ index 00000000..7796d51e
 +	record := false
 +	switch event.kind {
 +	case "content_block_start":
-+		if !event.record || s.runOpen || s.deltaQueue {
++		if !event.record || s.runOpen || s.deltaQueue || event.index != s.next {
 +			return s.release(frame)
 +		}
 +		record, s.runOpen, s.runIndex = true, true, event.index
++		s.next++
 +		s.records++
 +	case "content_block_stop":
 +		if !s.runOpen || event.index != s.runIndex {
 +			return s.release(frame)
 +		}
 +		record, s.runOpen = true, false
-+	case "ping", "comment":
++	case "ping", "comment", "blank":
 +	case "message_delta":
 +		if s.runOpen || s.deltaQueue || event.stopReason == nil || *event.stopReason != "end_turn" {
 +			return s.release(frame)
@@ -468,6 +582,17 @@ index 00000000..7796d51e
 +	return frames
 +}
 +
++// Failed takes a frame after the executor's own observation of the stream
++// found it failed (an error event, a refusal in the message_delta): the frames
++// that waited go first, in arrival order, then frame, and the rest of the
++// response passes unchanged. A failed stream never has a record left out.
++func (s *claudeTrailingRecordStream) Failed(frame []byte) [][]byte {
++	if s == nil {
++		return [][]byte{frame}
++	}
++	return s.release(frame)
++}
++
 +// End returns the frames still waiting when the stream ends before its
 +// message_stop (an early end, a scanner or restore error): they are sent, in
 +// order, before the executor reports the error it reports today.
@@ -495,10 +620,10 @@ index 00000000..7796d51e
 +}
 diff --git a/internal/runtime/executor/claude_trailing_reasoning_record_test.go b/internal/runtime/executor/claude_trailing_reasoning_record_test.go
 new file mode 100644
-index 00000000..387a7f39
+index 00000000..2ac32985
 --- /dev/null
 +++ b/internal/runtime/executor/claude_trailing_reasoning_record_test.go
-@@ -0,0 +1,667 @@
+@@ -0,0 +1,927 @@
 +package executor
 +
 +import (
@@ -509,8 +634,10 @@ index 00000000..387a7f39
 +	"net/http"
 +	"net/http/httptest"
 +	"net/url"
++	"strconv"
 +	"strings"
 +	"sync"
++	"sync/atomic"
 +	"testing"
 +	"time"
 +
@@ -624,6 +751,49 @@ index 00000000..387a7f39
 +
 +func (s *trStream) end(stop any) *trStream { return s.delta(stop).stop() }
 +
++// startRaw adds a content_block_start frame whose data is written as given
++// (%d stands for the block's index, the next one) and the block's stop.
++func (s *trStream) startRaw(data string, run bool) *trStream {
++	index := s.index
++	s.index++
++	if run {
++		s.removed[len(s.frames)] = true
++	}
++	s.raw([]byte("event: content_block_start\ndata: " + fmt.Sprintf(data, index) + "\n\n"))
++	if run {
++		s.removed[len(s.frames)] = true
++	}
++	return s.raw(trEvent("content_block_stop", map[string]any{"type": "content_block_stop", "index": index}))
++}
++
++// deltaRaw adds a message_delta frame whose data is written as given.
++func (s *trStream) deltaRaw(data string) *trStream {
++	return s.raw([]byte("event: message_delta\ndata: " + data + "\n\n"))
++}
++
++// textWithDeltaAt adds a text block whose delta names the index at.
++func (s *trStream) textWithDeltaAt(at int) *trStream {
++	index := s.index
++	s.index++
++	s.raw(trEvent("content_block_start", map[string]any{"type": "content_block_start", "index": index,
++		"content_block": map[string]any{"type": "text", "text": ""}}))
++	s.raw(trEvent("content_block_delta", map[string]any{"type": "content_block_delta", "index": at,
++		"delta": map[string]any{"type": "text_delta", "text": "answer"}}))
++	return s.raw(trEvent("content_block_stop", map[string]any{"type": "content_block_stop", "index": index}))
++}
++
++// skip leaves one block index out.
++func (s *trStream) skip() *trStream {
++	s.index++
++	return s
++}
++
++// restart begins a second message in the same stream.
++func (s *trStream) restart() *trStream {
++	s.index = 0
++	return s.raw(newTRStream().frames[0])
++}
++
 +func (s *trStream) bytes() []byte { return bytes.Join(s.frames, nil) }
 +
 +// kept is the stream the client is to get: every frame but the run's.
@@ -677,6 +847,21 @@ index 00000000..387a7f39
 +		{"end-while-queued", newTRStream().text("answer").record("a", false), 0},
 +		{"error-after-the-delta", newTRStream().text("answer").record("a", false).delta("end_turn").errorEvent(), 0},
 +		{"end-after-the-delta", newTRStream().text("answer").record("a", false).delta("end_turn"), 0},
++	}
++}
++
++// trailingRecordObservedFailures are streams the executor's own observation
++// finds failed although they end like a finished answer: a message_delta with
++// stop_reason end_turn whose stop_details are a refusal. Every frame reaches
++// the client once, in order, before the one refusal error.
++func trailingRecordObservedFailures() []trCase {
++	refusal := `{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,` +
++		`"stop_details":{"type":"refusal","category":"cyber","explanation":"gwtest fixture refusal"}},` +
++		`"usage":{"output_tokens":9}}`
++	return []trCase{
++		{"refusal-in-the-delta", newTRStream().text("answer").record("a", false).deltaRaw(refusal).stop(), 0},
++		{"refusal-in-the-delta-of-two-records", newTRStream().thinking().text("answer").record("a", false).
++			record("b", false).deltaRaw(refusal).stop(), 0},
 +	}
 +}
 +
@@ -737,9 +922,18 @@ index 00000000..387a7f39
 +// A qualifying reply loses its run's frames and nothing else; every other
 +// shape, and every stream that ends early, reaches the client unchanged.
 +func TestClaudeTrailingRecordStreamShapes(t *testing.T) {
++	trDriveCases(t, append(trShapes(), trailingRecordFailures()...))
++}
++
++// trDriveCases runs each case through a bare filter: a case that leaves
++// records out gets the stream without its run's frames and logs one line,
++// every other case gets the stream as it came and logs nothing.
++func trDriveCases(t *testing.T, cases []trCase) {
++	t.Helper()
 +	logs := trCaptureLog(t)
-+	for _, tc := range append(trShapes(), trailingRecordFailures()...) {
++	for _, tc := range cases {
 +		t.Run(tc.name, func(t *testing.T) {
++			logs.take() // what an earlier failed case logged
 +			want := tc.stream.bytes()
 +			if tc.records > 0 {
 +				want = tc.stream.kept()
@@ -1054,8 +1248,10 @@ index 00000000..387a7f39
 +// message is invented.
 +func TestClaudeTrailingRecordFailurePaths(t *testing.T) {
 +	entry := trEntries()[0]
-+	for _, tc := range trailingRecordFailures() {
++	logs := trCaptureLog(t)
++	for _, tc := range append(trailingRecordFailures(), trailingRecordObservedFailures()...) {
 +		t.Run(tc.name, func(t *testing.T) {
++			logs.take() // what an earlier failed case logged
 +			server := trServer(t, "text/event-stream", tc.stream.bytes())
 +			got, errs := trExecuteStream(t, trContext(t, entry, server), entry.auth(server.URL))
 +			if !bytes.Equal(got, tc.stream.bytes()) {
@@ -1067,8 +1263,14 @@ index 00000000..387a7f39
 +			if strings.HasPrefix(tc.name, "end-") && !strings.Contains(errs[0].Error(), "message_stop") {
 +				t.Fatalf("error %q, want the stream's truncation error", errs[0])
 +			}
-+			if bytes.Contains(got, []byte("message_stop")) {
++			if strings.HasPrefix(tc.name, "refusal-") && !strings.Contains(errs[0].Error(), "refusal") {
++				t.Fatalf("error %q, want the refusal", errs[0])
++			}
++			if !bytes.Contains(tc.stream.bytes(), []byte("message_stop")) && bytes.Contains(got, []byte("message_stop")) {
 +				t.Fatal("the client got a message_stop the upstream never sent")
++			}
++			if lines := logs.take(); len(lines) != 0 {
++				t.Fatalf("a failed stream had records left out: %q", lines)
 +			}
 +		})
 +	}
@@ -1162,6 +1364,189 @@ index 00000000..387a7f39
 +		t.Run(tc.name, func(t *testing.T) {
 +			if got := claudeTrailingRecordEntry(tc.auth, tc.url, claudeFingerprintPolicy{AuthIsOAuthToken: tc.oauth}); got != tc.want {
 +				t.Fatalf("claudeTrailingRecordEntry = %t, want %t", got, tc.want)
++			}
++		})
++	}
++}
++
++// Every member the decision reads is read by its exact name. A block or event
++// in which one of them appears twice or in another case (Go's encoding/json
++// matches names regardless of case and keeps a duplicate's last value) passes
++// unchanged: a tool call is never taken for a record.
++func TestClaudeTrailingRecordExactKeys(t *testing.T) {
++	record := `{"type":"redacted_thinking","data":"` + claudeTrailingRecordPrefix + `gwtest-record-a"}`
++	toolWithAnotherType := `{"type":"tool_use","id":"toolu_gwtest","name":"gwtest_tool","input":{},` +
++		`"TYPE":"redacted_thinking","data":"` + claudeTrailingRecordPrefix + `gwtest-record-a"}`
++	toolWithASecondType := `{"type":"tool_use","id":"toolu_gwtest","name":"gwtest_tool","input":{},` +
++		`"type":"redacted_thinking","data":"` + claudeTrailingRecordPrefix + `gwtest-record-a"}`
++	recordWithAnotherData := `{"type":"redacted_thinking","Data":"` + claudeTrailingRecordPrefix + `gwtest-record-a"}`
++	start := func(block string) string {
++		return `{"type":"content_block_start","index":%d,"content_block":` + block + `}`
++	}
++	t.Run("stream", func(t *testing.T) {
++		anotherContent := newTRStream()
++		anotherContent.frames[0] = []byte("event: message_start\ndata: {\"type\":\"message_start\",\"message\":" +
++			"{\"id\":\"msg_gwtest_trailing\",\"type\":\"message\",\"role\":\"assistant\",\"CONTENT\":[{\"type\":\"tool_use\"}]," +
++			"\"content\":[]}}\n\n")
++		trDriveCases(t, []trCase{
++			{"exact-keys-are-read", newTRStream().text("answer").startRaw(start(record), true).end("end_turn"), 1},
++			{"tool-call-with-a-type-in-another-case", newTRStream().text("answer").startRaw(start(toolWithAnotherType), false).
++				end("end_turn"), 0},
++			{"tool-call-with-a-second-type", newTRStream().text("answer").startRaw(start(toolWithASecondType), false).
++				end("end_turn"), 0},
++			{"record-with-data-in-another-case", newTRStream().text("answer").startRaw(start(recordWithAnotherData), false).
++				end("end_turn"), 0},
++			{"index-in-another-case", newTRStream().text("answer").startRaw(
++				`{"type":"content_block_start","INDEX":%d,"content_block":`+record+`}`, false).end("end_turn"), 0},
++			{"event-type-twice", newTRStream().text("answer").startRaw(
++				`{"type":"content_block_start","type":"content_block_start","index":%d,"content_block":`+record+`}`, false).
++				end("end_turn"), 0},
++			{"content-block-twice", newTRStream().text("answer").startRaw(
++				`{"type":"content_block_start","index":%d,"content_block":{"type":"tool_use","id":"toolu_gwtest",`+
++					`"name":"gwtest_tool","input":{}},"content_block":`+record+`}`, false).end("end_turn"), 0},
++			{"stop-reason-in-another-case", newTRStream().text("answer").record("a", false).deltaRaw(
++				`{"type":"message_delta","delta":{"ſtop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":9}}`).
++				stop(), 0},
++			{"stop-reason-twice", newTRStream().text("answer").record("a", false).deltaRaw(
++				`{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_reason":"end_turn"},"usage":{"output_tokens":9}}`).
++				stop(), 0},
++			{"message-content-in-another-case", anotherContent.text("answer").record("a", false).end("end_turn"), 0},
++		})
++	})
++	t.Run("body", func(t *testing.T) {
++		text := `{"type":"text","text":"answer"}`
++		body := func(blocks, tail string) string {
++			return `{"id":"msg_gwtest_trailing","type":"message","role":"assistant","content":[` + blocks +
++				`],"stop_reason":"end_turn"` + tail + `}`
++		}
++		cases := []struct {
++			name, in string
++			records  int
++		}{
++			{"exact-keys-are-read", body(text+","+record, ""), 1},
++			{"tool-call-with-a-type-in-another-case", body(text+","+toolWithAnotherType, ""), 0},
++			{"tool-call-with-a-second-type", body(text+","+toolWithASecondType, ""), 0},
++			{"record-with-data-in-another-case", body(text+","+recordWithAnotherData, ""), 0},
++			{"content-in-another-case", body(text+","+record, `,"Content":[]`), 0},
++			{"stop-reason-in-another-case", body(text+","+record, `,"STOP_REASON":"tool_use"`), 0},
++			{"type-in-another-case", body(text+","+record, `,"Type":"message"`), 0},
++			{"stop-reason-twice", `{"content":[` + text + `,` + record + `],"stop_reason":"tool_use","stop_reason":"end_turn"}`, 0},
++		}
++		logs := trCaptureLog(t)
++		for _, tc := range cases {
++			t.Run(tc.name, func(t *testing.T) {
++				logs.take() // what an earlier failed case logged
++				want := tc.in
++				if tc.records > 0 {
++					want = strings.Replace(tc.in, ","+record, "", 1)
++				}
++				if got := string(omitClaudeTrailingRecord(context.Background(), true, []byte(tc.in))); got != want {
++					t.Fatalf("body:\n%s\nwant:\n%s", got, want)
++				}
++				if got := logs.take(); fmt.Sprint(got) != fmt.Sprint(trWantLog(tc.records)) {
++					t.Fatalf("log lines %q, want %q", got, trWantLog(tc.records))
++				}
++			})
++		}
++	})
++}
++
++// SSE framing: an extra empty separator is no event and waits with the run;
++// a field value loses only the one space after its colon, so an event name with
++// a trailing space is another event; a carriage return, a line of spaces or a
++// frame without its event line pass the reply unchanged.
++func TestClaudeTrailingRecordStreamFraming(t *testing.T) {
++	stop := func(field string) []byte { return []byte(field + "\ndata: {\"type\":\"message_stop\"}\n\n") }
++	trDriveCases(t, []trCase{
++		{"extra-blank-separator-in-the-queue", newTRStream().text("answer").record("a", true).raw([]byte("\n")).
++			end("end_turn"), 1},
++		{"extra-blank-separator-before-the-record", newTRStream().text("answer").raw([]byte("\n")).record("a", true).
++			end("end_turn"), 1},
++		{"event-name-without-a-space", newTRStream().text("answer").record("a", true).delta("end_turn").
++			raw(stop("event:message_stop")), 1},
++		{"event-name-with-a-trailing-space", newTRStream().text("answer").record("a", false).delta("end_turn").
++			raw(stop("event: message_stop ")), 0},
++		{"event-name-after-two-spaces", newTRStream().text("answer").record("a", false).delta("end_turn").
++			raw(stop("event:  message_stop")), 0},
++		{"carriage-return-in-a-frame", newTRStream().text("answer").record("a", false).
++			raw([]byte("event: ping\r\ndata: {\"type\":\"ping\"}\n\n")).end("end_turn"), 0},
++		{"a-line-of-spaces-ends-a-frame", newTRStream().text("answer").record("a", false).
++			raw([]byte("event: ping\ndata: {\"type\":\"ping\"}\n \n")).end("end_turn"), 0},
++		{"frame-without-an-event-line", newTRStream().text("answer").record("a", false).
++			raw([]byte("data: {\"type\":\"ping\"}\n\n")).end("end_turn"), 0},
++	})
++}
++
++// The filter reads one message: a second message_start, a block that starts
++// out of sequence, a delta for a block that is not open or a block before the
++// message_start passes the rest unchanged, so nothing seen earlier authorizes a
++// removal later.
++func TestClaudeTrailingRecordStreamSequence(t *testing.T) {
++	closedDelta := trEvent("content_block_delta", map[string]any{"type": "content_block_delta", "index": 0,
++		"delta": map[string]any{"type": "text_delta", "text": "more"}})
++	noStart := newTRStream()
++	noStart.frames = nil
++	trDriveCases(t, []trCase{
++		{"second-message-start", newTRStream().text("answer").restart().record("a", false).end("end_turn"), 0},
++		{"second-message-with-its-own-text", newTRStream().text("first").restart().text("answer").record("a", false).
++			end("end_turn"), 0},
++		{"delta-for-another-block", newTRStream().textWithDeltaAt(5).record("a", false).end("end_turn"), 0},
++		{"delta-for-a-closed-block", newTRStream().text("answer").raw(closedDelta).record("a", false).end("end_turn"), 0},
++		{"text-index-out-of-sequence", newTRStream().skip().text("answer").record("a", false).end("end_turn"), 0},
++		{"record-index-out-of-sequence", newTRStream().text("answer").skip().record("a", false).end("end_turn"), 0},
++		{"second-record-index-out-of-sequence", newTRStream().text("answer").record("a", false).skip().
++			record("b", false).end("end_turn"), 0},
++		{"block-before-the-message-start", noStart.text("answer").record("a", false).end("end_turn"), 0},
++	})
++}
++
++// A Responses compaction summarizes through Execute with a Responses source
++// and a Claude response format, streamed and not: neither is a native Claude
++// Messages request, so a record in the summary reply is never left out.
++func TestClaudeTrailingRecordCompaction(t *testing.T) {
++	logs := trCaptureLog(t)
++	reply := []byte(`{"id":"msg_gwtest_trailing","type":"message","role":"assistant","model":"` + trModel +
++		`","content":[{"type":"text","text":"Sealed summary of the build."},{"type":"redacted_thinking","data":"` +
++		claudeTrailingRecordPrefix + `gwtest-record-a"}],"stop_reason":"end_turn","stop_sequence":null,` +
++		`"usage":{"input_tokens":7,"output_tokens":9}}`)
++	for _, stream := range []bool{false, true} {
++		t.Run("stream="+strconv.FormatBool(stream), func(t *testing.T) {
++			var hits atomic.Int32
++			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
++				hits.Add(1)
++				w.Header().Set("Content-Type", "application/json")
++				_, _ = w.Write(reply)
++			}))
++			defer server.Close()
++			payload := []byte(`{"model":"` + trModel + `","stream":` + strconv.FormatBool(stream) + `,"input":[` +
++				`{"type":"message","role":"user","content":[{"type":"input_text","text":"Check the build next."}]},` +
++				`{"type":"message","role":"assistant","content":[{"type":"output_text","text":"OK, I will check the build."}]},` +
++				`{"type":"compaction_trigger"}]}`)
++			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
++			defer cancel()
++			executor := NewClaudeExecutor(&config.Config{})
++			req := cliproxyexecutor.Request{Model: trModel, Payload: payload}
++			opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAIResponse,
++				ResponseFormat: sdktranslator.FormatOpenAIResponse, Stream: stream, OriginalRequest: payload}
++			auth := trEntries()[0].auth(server.URL)
++			if stream {
++				result, err := executor.ExecuteStream(ctx, auth, req, opts)
++				if err != nil {
++					t.Fatalf("ExecuteStream: %v", err)
++				}
++				for chunk := range result.Chunks {
++					if chunk.Err != nil {
++						t.Fatalf("chunk error: %v", chunk.Err)
++					}
++				}
++			} else if _, err := executor.Execute(ctx, auth, req, opts); err != nil {
++				t.Fatalf("Execute: %v", err)
++			}
++			if got := hits.Load(); got != 1 {
++				t.Fatalf("summary requests %d, want 1", got)
++			}
++			if lines := logs.take(); len(lines) != 0 {
++				t.Fatalf("a compaction summary had a record left out: %q", lines)
 +			}
 +		})
 +	}

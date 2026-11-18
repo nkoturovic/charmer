@@ -1646,16 +1646,24 @@ class TrailingRecordThroughGatewayTests(_GatedCase):
         type(self).verdict = ("PASS" if ok else "FAIL", case, detail)
         return detail
 
+    @staticmethod
+    def _lead_attempts(observed: dict[str, Any]) -> list[tuple[str, bool]]:
+        return [hit for hit in observed["upstream"] if hit[0] == "lead"]
+
     def test_the_one_shot_result_of_a_streamed_reply(self) -> None:
+        # One streamed lead request, no fallback, and one removal.
         observed = self._guard(lambda: self._run(_RecordUpstream(), "client check trailing record stream"))
-        ok = observed["results"] == [_RECORD_ANSWER] and ("lead", True) in observed["upstream"]
+        ok = (observed["results"] == [_RECORD_ANSWER] and self._lead_attempts(observed) == [("lead", True)]
+              and observed["removed"] == 1)
         self.assertTrue(ok, self._verdict("one-shot-stream", ok, observed))
 
     def test_the_one_shot_result_of_a_reply_in_one_body(self) -> None:
         # The client's streamed request gets a stream with no block, so it asks
-        # again without streaming: the gateway gets a non-streaming request.
+        # again without streaming: the gateway gets the streamed lead request,
+        # then the non-streaming one, in that order, and removes the record once.
         observed = self._guard(lambda: self._run(_RecordUpstream(unary=True), "client check trailing record body"))
-        ok = observed["results"] == [_RECORD_ANSWER] and ("lead", False) in observed["upstream"]
+        ok = (observed["results"] == [_RECORD_ANSWER]
+              and self._lead_attempts(observed) == [("lead", True), ("lead", False)] and observed["removed"] == 1)
         self.assertTrue(ok, self._verdict("one-shot-body", ok, observed))
 
     def _report_case(self, kind: str) -> None:
