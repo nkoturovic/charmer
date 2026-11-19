@@ -2590,10 +2590,10 @@ if mode == "fail":
         policy = self.tool.dispositions(REPO_ROOT / "gateway/vulnerability-dispositions.json")
         self.assertEqual(policy["dispositions"], [])
         self.assertEqual(policy["gateway"], {"version": "8.0.76", "targets": {
-            "darwin-arm64": "b152f38baf829c153bace09f42722bee02546db294fb741946536ba40578f52d",
-            "darwin-x86_64": "08cb4b2414b8c4d1eb7ef79d65e1fb77301ecee1a076650c13f24344e1dd3265",
-            "linux-aarch64": "158ca0adb099e521e277a8a3b7cfaf2f63207cf68922f9ab4829c0fd3185ec8c",
-            "linux-x86_64": "27aa691c79a848dd7e931f466aa097ca7f4121d8c6d78d136355e1206569e4a9",
+            "darwin-arm64": "065df47366c7693cb44835f15ca296b72b9a8cb42238f97864c053a023755b72",
+            "darwin-x86_64": "b74c98f667b572357c47c85b68ecd490c53edb3a4f4c1a510a10e851f2327e55",
+            "linux-aarch64": "00c0bd132e688654e4402fb33ac1f1f83467b9f5d359808caa525e8c6c57542a",
+            "linux-x86_64": "65e70f9c88c041cee793ad30c4faacfa461706fe2d2d4131538a2d5c609313c3",
         }})
         modules = json.loads((REPO_ROOT / "gateway/licenses/modules.json").read_text())["modules"]
         self.assertEqual([row["version"] for row in modules if row["path"] == "golang.org/x/crypto"], ["v0.59.0"])
