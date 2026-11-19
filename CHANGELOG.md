@@ -74,14 +74,15 @@ follow [Semantic Versioning](https://semver.org/).
   when a frame arrives and at the end of the stream, not on a timer.
 - Fixtures are synthetic; no raw OpenRouter stream was captured.
 
-- The trailing record was measured live on 2026-11-18 and 2026-11-19, in three runs at effort `high`. On 2.6.0,
-  Gemini 4 Hydrogen (`or-gemini`) and Gemini 4 Carbon (`or-gemini-carbon`) returned an empty one-shot result and the
-  other five shipped OpenRouter lines did not. On 2.6.1 every one-shot result carried its text, the gateway logged
-  one removal each on Hydrogen, Carbon and Neon, a resumed conversation continued correctly after a removal, and a
-  subagent's report reached its lead.
-- On Hydrogen and Carbon, a turn that offered the Read tool had its first request refused by OpenRouter with HTTP
-  400 three times before it succeeded, with or without an earlier removal; the turn recovered without intervention.
-  The cause is not known yet.
+- The trailing record was measured live on 2026-11-18 and 2026-11-19, in three runs (the Gemini 4 lines at effort
+  `high`). On 2.6.0, Gemini 4 Hydrogen (`or-gemini`) and Gemini 4 Carbon (`or-gemini-carbon`) returned an empty
+  one-shot result and the other five shipped OpenRouter lines did not. On 2.6.1 every one-shot result carried its
+  text, and in each run the gateway logged a removal on the one-shot turns of Hydrogen, Carbon and Neon. On Hydrogen
+  and Carbon, a session resumed after a removal recalled a value from its first turn, and a subagent's report reached
+  its lead.
+- On Hydrogen and Carbon, every turn that offered the Read tool had its first request refused by OpenRouter with
+  HTTP 400 three times before it succeeded, in a fresh session as well as after a removal; in these runs the turn
+  then completed by itself. The cause is not known yet.
 
 ## [2.6.0] — 2026-11-18
 

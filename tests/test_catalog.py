@@ -3365,20 +3365,23 @@ class GenerationMoveTests(unittest.TestCase):
                                  (1000000, 1000000, 200000))
                 for fact in (f"OpenRouter models list, 2026-11-18: {wire}, created {created}",
                              "max_completion_tokens 943,718",
-                             "Live-checked at effort high on 2026-11-18/19 (charmer 2.6.1 live check, D316)",
+                             "Live-checked at effort high on 2026-11-18/19 (charmer 2.6.1 live check)",
                              "provider_tokens=1000000 is listing-based", "not measured on Gemini 4", "200,000 floor"):
                     self.assertIn(fact, context["qualification"])
                 if name == "Neon":
                     for fact in ("on every endpoint", "943,718 (65,536 on one AI Studio endpoint)",
                                  "reasoning and reasoning_effort accepted",
                                  "Google AI Studio lists Neon as stable",
-                                 "a one-shot turn succeeded through 2.6.1's gateway; no tool, continuation or subagent turn"):
+                                 "one-shot turns only, which passed through 2.6.1's gateway"):
                         self.assertIn(fact, context["qualification"])
+                    self.assertIn("One-shot turns live-checked at effort high in 2.6.1", line["routing_note"])
                 else:
-                    self.assertIn("one-shot, Read-tool, continuation and subagent turns succeeded through 2.6.1's "
-                                  "gateway", context["qualification"])
-                    self.assertIn("known limit", context["qualification"])
-                self.assertIn("D316", line["routing_note"])
+                    for fact in ("one-shot, remember and subagent-report turns passed through 2.6.1's gateway",
+                                 "fresh and resumed Read-tool turns completed with the right content after their first "
+                                 "request got HTTP 400 three times (known limit)"):
+                        self.assertIn(fact, context["qualification"])
+                    self.assertIn("Live-checked at effort high in 2.6.1", line["routing_note"])
+                self.assertNotRegex(context["qualification"] + line["routing_note"], r"\bD[0-9]{3}\b")
                 if status == "new":
                     self.assertIn("minimum_tested is scaffold metadata", context["qualification"])
                     unmeasured = "/".join(level for level in levels if level != "high")
