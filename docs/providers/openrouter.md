@@ -107,7 +107,7 @@ floor and the gateway baseline, not a test. Their efforts come from the
 listings.
 
 Live checks on Gemini 4: in charmer 2.6.1's live check (2026-11-18 and 2026-11-19, effort `high`),
-`or-gemini` and `or-gemini-carbon` passed one-shot turns and a subagent's report. A Read-tool turn, in a
+`or-gemini` and `or-gemini-carbon` passed one-shot turns, a remember turn and a subagent's report. A Read-tool turn, in a
 fresh session and in a session resumed after a removal (which recalled a value from its first turn),
 completed with the right content only after OpenRouter refused its first request with HTTP 400 three
 times; in these runs the turn then completed by itself. `or-gemini-neon` was checked with one-shot turns

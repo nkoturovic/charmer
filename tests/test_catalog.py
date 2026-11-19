@@ -3381,7 +3381,8 @@ class GenerationMoveTests(unittest.TestCase):
                                  "request got HTTP 400 three times (known limit)"):
                         self.assertIn(fact, context["qualification"])
                     self.assertIn("Live-checked at effort high in 2.6.1", line["routing_note"])
-                self.assertNotRegex(context["qualification"] + line["routing_note"], r"\bD[0-9]{3}\b")
+                for text in (context["qualification"], line["routing_note"]):
+                    self.assertNotRegex(text, r"\bD[0-9]{3}\b")
                 if status == "new":
                     self.assertIn("minimum_tested is scaffold metadata", context["qualification"])
                     unmeasured = "/".join(level for level in levels if level != "high")
